@@ -1,0 +1,113 @@
+{
+    "name": "loom",
+    "displayName": "Loom",
+    "description": "Weaving context for AI - Unified MCP hub management for VS Code, Codex, Kilocode, and Claude Code.",
+    "version": "0.2.2",
+    "publisher": "cblevins",
+    "repository": {
+        "type": "git",
+        "url": "https://gitlab.flexinfer.ai/root/gitops.git"
+    },
+    "engines": {
+        "vscode": "^1.80.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "loom.showStatus",
+                "title": "Loom: Show Context Status"
+            },
+            {
+                "command": "loom.showSyncStatus",
+                "title": "Loom: Show Config Sync Status"
+            },
+            {
+                "command": "loom.showMeshReport",
+                "title": "Loom: Show MCP Mesh Report"
+            },
+            {
+                "command": "loom.syncConfigs",
+                "title": "Loom: Sync MCP Configs"
+            },
+            {
+                "command": "loom.checkMcpHealth",
+                "title": "Loom: Check MCP Server Health"
+            },
+            {
+                "command": "loom.snapshotContext",
+                "title": "Loom: Snapshot Context to Qdrant"
+            },
+            {
+                "command": "loom.bootstrapContext",
+                "title": "Loom: Bootstrap Workspace Context"
+            },
+            {
+                "command": "loom.refreshHubStatus",
+                "title": "Loom: Refresh MCP Hub Status"
+            },
+            {
+                "command": "loom.verifyHubClient",
+                "title": "Loom: Verify MCP Hub Client"
+            }
+        ],
+        "views": {
+            "explorer": [
+                {
+                    "id": "loomHubOverview",
+                    "name": "Loom Hub"
+                },
+                {
+                    "id": "loomServers",
+                    "name": "Loom Servers"
+                }
+            ]
+        },
+        "configuration": {
+            "title": "Loom",
+            "properties": {
+                "loom.hubUrl": {
+                    "type": "string",
+                    "default": "wss://mcp.flexinfer.ai/ws",
+                    "description": "WebSocket URL for the centralized MCP hub gateway."
+                },
+                "loom.hubProfile": {
+                    "type": "string",
+                    "default": "codex",
+                    "description": "Profile sent to the MCP hub (codex, kilocode, vscode, etc.)."
+                },
+                "loom.autoSyncOnDrift": {
+                    "type": "string",
+                    "enum": [
+                        "off",
+                        "prompt",
+                        "auto"
+                    ],
+                    "default": "prompt",
+                    "description": "Action when config drift is detected. 'off' = ignore, 'prompt' = ask user, 'auto' = sync automatically."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "package": "vsce package"
+    },
+    "devDependencies": {
+        "@vscode/vsce": "^3.1.0",
+        "@types/node": "^20.0.0",
+        "@types/vscode": "^1.80.0",
+        "typescript": "^5.4.0"
+    },
+    "dependencies": {
+        "yaml": "^2.4.2"
+    }
+}
