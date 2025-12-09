@@ -96,6 +96,20 @@ const SNAPSHOT_STATE_KEY = "loom.lastSnapshotISO";
 const HUB_REFRESH_INTERVAL_MS = 60_000;
 const DEFAULT_HUB_URL = "wss://mcp.flexinfer.ai/ws";
 
+// Find registry.yaml - check home directory first, then workspace
+function findRegistryPath(workspaceRoot: string): string | null {
+  const candidates = [
+    path.join(os.homedir(), ".config", "loom", "registry.yaml"),
+    path.join(workspaceRoot, "mcp", "context", "registry.yaml"),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 class HubClient {
   private readonly settings: HubSettings;
 
@@ -370,11 +384,11 @@ class ConfigSyncManager implements vscode.Disposable {
     }
 
     try {
-      const genParsed = JSON.parse(generated) as { servers?: Record<string, unknown> };
-      const appParsed = JSON.parse(applied) as { servers?: Record<string, unknown> };
+      const genParsed = JSON.parse(generated) as { mcpServers?: Record<string, unknown> };
+      const appParsed = JSON.parse(applied) as { mcpServers?: Record<string, unknown> };
 
-      const genServers = new Set(Object.keys(genParsed.servers ?? {}));
-      const appServers = new Set(Object.keys(appParsed.servers ?? {}));
+      const genServers = new Set(Object.keys(genParsed.mcpServers ?? {}));
+      const appServers = new Set(Object.keys(appParsed.mcpServers ?? {}));
 
       const diffs: string[] = [];
 
@@ -458,11 +472,13 @@ export async function activate(context: vscode.ExtensionContext) {
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
   const workspaceRoot = workspaceFolder?.uri.fsPath ?? "";
   const pythonExecutable = getPythonExecutable();
-  const hubChannel = vscode.window.createOutputChannel("Loom Hub");
-  context.subscriptions.push(hubChannel);
+
+  // Single consolidated output channel for all Loom operations
+  const loomChannel = vscode.window.createOutputChannel("Loom");
+  context.subscriptions.push(loomChannel);
 
   const initialHubSettings = deriveHubSettings();
-  const hubStatusManager = new HubStatusManager(initialHubSettings, hubChannel);
+  const hubStatusManager = new HubStatusManager(initialHubSettings, loomChannel);
   context.subscriptions.push(hubStatusManager);
   void hubStatusManager.refresh();
   // Write initial daemon config
@@ -479,12 +495,12 @@ export async function activate(context: vscode.ExtensionContext) {
       ) {
         const next = deriveHubSettings();
         hubStatusManager.updateSettings(next);
-        hubChannel.appendLine(
+        loomChannel.appendLine(
           `[${new Date().toISOString()}] Hub settings updated (url=${next.hubUrl}, profile=${next.profile})`,
         );
         // Write daemon config file so daemon can pick up changes on restart
         void writeDaemonConfig(next).then(() => {
-          hubChannel.appendLine(
+          loomChannel.appendLine(
             `[${new Date().toISOString()}] Daemon config written to ~/.config/loom/config.yaml`,
           );
         });
@@ -492,8 +508,12 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
   );
 
+  // Find registry - check home directory first
+  const registryPath = findRegistryPath(workspaceRoot);
+
   const registryProvider = new RegistryProvider(
     workspaceRoot,
+    registryPath,
     context.workspaceState,
     hubStatusManager,
   );
@@ -508,19 +528,6 @@ export async function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(serverTree);
 
-  const healthChannel = vscode.window.createOutputChannel("Loom Health");
-  context.subscriptions.push(healthChannel);
-  const snapshotChannel = vscode.window.createOutputChannel("Loom Snapshot");
-  context.subscriptions.push(snapshotChannel);
-  const syncChannel = vscode.window.createOutputChannel("Loom Sync");
-  context.subscriptions.push(syncChannel);
-  const bootstrapChannel = vscode.window.createOutputChannel("Loom Bootstrap");
-  context.subscriptions.push(bootstrapChannel);
-  const ensureChannel = vscode.window.createOutputChannel("Loom Ensure");
-  context.subscriptions.push(ensureChannel);
-  const meshChannel = vscode.window.createOutputChannel("Loom Mesh");
-  context.subscriptions.push(meshChannel);
-
   const watcher = watchRegistry(workspaceRoot, () => {
     registryProvider.refresh();
     serverProvider.refresh();
@@ -530,11 +537,11 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   if (workspaceRoot) {
-    void ensureServersOnStartup(pythonExecutable, workspaceRoot, ensureChannel);
+    void ensureServersOnStartup(pythonExecutable, workspaceRoot, loomChannel);
   }
 
   // Config sync drift detection
-  const syncManager = new ConfigSyncManager(workspaceRoot, syncChannel);
+  const syncManager = new ConfigSyncManager(workspaceRoot, loomChannel);
   context.subscriptions.push(syncManager);
   void syncManager.checkSync();
 
@@ -634,8 +641,8 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      meshChannel.clear();
-      meshChannel.appendLine(`[${new Date().toISOString()}] MCP mesh diagnostics`);
+      loomChannel.clear();
+      loomChannel.appendLine(`[${new Date().toISOString()}] MCP mesh diagnostics`);
 
       const registry = await registryProvider.getRegistrySnapshot();
       const hubSnapshot = hubStatusManager.getStatus();
@@ -645,24 +652,24 @@ export async function activate(context: vscode.ExtensionContext) {
       const hubNames = new Set<string>(hubSnapshot.servers?.map((server) => server.name) ?? []);
       const configNames = new Set<string>(configSnapshot?.serverNames ?? []);
 
-      meshChannel.appendLine(
+      loomChannel.appendLine(
         `Hub status: ${hubSnapshot.health?.status ?? hubSnapshot.error ?? "unknown"} (ready=${Boolean(hubSnapshot.readiness?.ready)}, sessions=${hubSnapshot.health?.sessions ?? 0})`,
       );
-      meshChannel.appendLine(`Hub URL: ${hubStatusManager.getSettings().hubUrl}`);
-      meshChannel.appendLine(`Profile: ${hubStatusManager.getSettings().profile}`);
+      loomChannel.appendLine(`Hub URL: ${hubStatusManager.getSettings().hubUrl}`);
+      loomChannel.appendLine(`Profile: ${hubStatusManager.getSettings().profile}`);
 
       if (!registry) {
-        meshChannel.appendLine("Registry: registry.yaml not found");
+        loomChannel.appendLine("Registry: registry.yaml not found");
       } else {
-        meshChannel.appendLine(`Registry servers: ${registryNames.size}`);
+        loomChannel.appendLine(`Registry servers: ${registryNames.size}`);
       }
 
       if (configSnapshot) {
-        meshChannel.appendLine(
+        loomChannel.appendLine(
           `VS Code config: ${configSnapshot.serverNames.length} servers (${configSnapshot.hubRouted.length} via hub, ${configSnapshot.localRouted.length} local) [${path.relative(workspaceRoot, configSnapshot.source)}]`,
         );
       } else {
-        meshChannel.appendLine("VS Code config: not found (run sync to generate)");
+        loomChannel.appendLine("VS Code config: not found (run sync to generate)");
       }
 
       if (registryNames.size > 0) {
@@ -672,33 +679,33 @@ export async function activate(context: vscode.ExtensionContext) {
         const configOnly = Array.from(configNames).filter((name) => !registryNames.has(name));
 
         if (missingFromHub.length > 0) {
-          meshChannel.appendLine(`Registry → hub gaps: ${formatNameList(missingFromHub)}`);
+          loomChannel.appendLine(`Registry → hub gaps: ${formatNameList(missingFromHub)}`);
         } else {
-          meshChannel.appendLine("Registry → hub gaps: none");
+          loomChannel.appendLine("Registry → hub gaps: none");
         }
 
         if (missingFromConfig.length > 0) {
-          meshChannel.appendLine(`Registry → VS Code gaps: ${formatNameList(missingFromConfig)}`);
+          loomChannel.appendLine(`Registry → VS Code gaps: ${formatNameList(missingFromConfig)}`);
         } else {
-          meshChannel.appendLine("Registry → VS Code gaps: none");
+          loomChannel.appendLine("Registry → VS Code gaps: none");
         }
 
         if (hubOnly.length > 0) {
-          meshChannel.appendLine(`Hub-only servers: ${formatNameList(hubOnly)}`);
+          loomChannel.appendLine(`Hub-only servers: ${formatNameList(hubOnly)}`);
         }
 
         if (configOnly.length > 0) {
-          meshChannel.appendLine(`VS Code-only servers: ${formatNameList(configOnly)}`);
+          loomChannel.appendLine(`VS Code-only servers: ${formatNameList(configOnly)}`);
         }
       }
 
       if (configSnapshot?.localRouted.length) {
-        meshChannel.appendLine(
+        loomChannel.appendLine(
           `Local-mode servers: ${formatNameList(configSnapshot.localRouted)} (consider hub-mode)`,
         );
       }
 
-      meshChannel.show(true);
+      loomChannel.show(true);
       void vscode.window.showInformationMessage("Loom: mesh report ready");
     }),
   );
@@ -710,8 +717,8 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      syncChannel.clear();
-      syncChannel.appendLine(`[${new Date().toISOString()}] Running MCP sync via loom CLI...`);
+      loomChannel.clear();
+      loomChannel.appendLine(`[${new Date().toISOString()}] Running MCP sync via loom CLI...`);
       await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
@@ -723,38 +730,38 @@ export async function activate(context: vscode.ExtensionContext) {
             const loomBinary = resolveLoomBinary(workspaceRoot);
 
             // Sync vscode profile (generates and copies to .vscode/)
-            syncChannel.appendLine(`→ ${loomBinary} sync vscode --regen`);
+            loomChannel.appendLine(`→ ${loomBinary} sync vscode --regen`);
             await execFileAsync(loomBinary, ["sync", "vscode", "--regen"], {
               cwd: workspaceRoot,
               env: { ...process.env, MCP_HUB_URL: hubSettings.hubUrl },
             });
-            syncChannel.appendLine("✓ vscode profile synced");
+            loomChannel.appendLine("✓ vscode profile synced");
 
             // Sync claude profile (generates and copies to .claude/)
-            syncChannel.appendLine(`→ ${loomBinary} sync claude --regen`);
+            loomChannel.appendLine(`→ ${loomBinary} sync claude --regen`);
             await execFileAsync(loomBinary, ["sync", "claude", "--regen"], {
               cwd: workspaceRoot,
               env: { ...process.env, MCP_HUB_URL: hubSettings.hubUrl },
             });
-            syncChannel.appendLine("✓ claude profile synced");
+            loomChannel.appendLine("✓ claude profile synced");
 
             // Sync codex and kilocode profiles
             for (const profile of ["codex", "kilocode"]) {
-              syncChannel.appendLine(`→ ${loomBinary} sync ${profile} --regen`);
+              loomChannel.appendLine(`→ ${loomBinary} sync ${profile} --regen`);
               await execFileAsync(loomBinary, ["sync", profile, "--regen"], {
                 cwd: workspaceRoot,
                 env: { ...process.env, MCP_HUB_URL: hubSettings.hubUrl },
               });
-              syncChannel.appendLine(`✓ ${profile} profile synced`);
+              loomChannel.appendLine(`✓ ${profile} profile synced`);
             }
 
             // Apply keychain/env resolution to .vscode/mcp.json
-            await applyGeneratedConfigs(workspaceRoot, syncChannel);
+            await applyGeneratedConfigs(workspaceRoot, loomChannel);
 
             // Check sync status
             await syncManager.checkSync();
 
-            syncChannel.show(true);
+            loomChannel.show(true);
             registryProvider.refresh();
             serverProvider.refresh();
             void vscode.window.showInformationMessage(
@@ -762,8 +769,8 @@ export async function activate(context: vscode.ExtensionContext) {
             );
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            syncChannel.appendLine(`✗ Sync failed: ${message}`);
-            syncChannel.show(true);
+            loomChannel.appendLine(`✗ Sync failed: ${message}`);
+            loomChannel.show(true);
             void vscode.window.showErrorMessage(
               `Loom: failed to sync configs (${message})`,
             );
@@ -780,10 +787,10 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
       const scriptPath = path.join(workspaceRoot, "test_mcp_servers.py");
-      healthChannel.clear();
-      healthChannel.appendLine(`[${new Date().toISOString()}] Running MCP health check...`);
+      loomChannel.clear();
+      loomChannel.appendLine(`[${new Date().toISOString()}] Running MCP health check...`);
 
-      await runHealthCheck(pythonExecutable, scriptPath, workspaceRoot, healthChannel);
+      await runHealthCheck(pythonExecutable, scriptPath, workspaceRoot, loomChannel);
     }),
   );
 
@@ -793,7 +800,7 @@ export async function activate(context: vscode.ExtensionContext) {
         void vscode.window.showErrorMessage("Loom: workspace folder not detected.");
         return;
       }
-      const ok = await runSnapshot(pythonExecutable, workspaceRoot, snapshotChannel);
+      const ok = await runSnapshot(pythonExecutable, workspaceRoot, loomChannel);
       if (ok) {
         registryProvider.setLastSnapshot(new Date().toISOString());
       }
@@ -806,8 +813,8 @@ export async function activate(context: vscode.ExtensionContext) {
         void vscode.window.showErrorMessage("Loom: workspace folder not detected.");
         return;
       }
-      bootstrapChannel.clear();
-      bootstrapChannel.appendLine(`[${new Date().toISOString()}] Starting bootstrap sequence...`);
+      loomChannel.clear();
+      loomChannel.appendLine(`[${new Date().toISOString()}] Starting bootstrap sequence...`);
 
       await vscode.window.withProgress(
         {
@@ -822,16 +829,16 @@ export async function activate(context: vscode.ExtensionContext) {
             // Sync all profiles using loom CLI
             const profiles = ["vscode", "claude", "codex", "kilocode"];
             for (const profile of profiles) {
-              bootstrapChannel.appendLine(`→ ${loomBinary} sync ${profile} --regen`);
+              loomChannel.appendLine(`→ ${loomBinary} sync ${profile} --regen`);
               await execFileAsync(loomBinary, ["sync", profile, "--regen"], {
                 cwd: workspaceRoot,
                 env: { ...process.env, MCP_HUB_URL: hubSettings.hubUrl },
               });
             }
-            bootstrapChannel.appendLine("✓ Generated and synced MCP configs for all profiles");
+            loomChannel.appendLine("✓ Generated and synced MCP configs for all profiles");
 
-            await applyGeneratedConfigs(workspaceRoot, bootstrapChannel);
-            bootstrapChannel.appendLine("✓ Applied keychain/env resolution to workspace config");
+            await applyGeneratedConfigs(workspaceRoot, loomChannel);
+            loomChannel.appendLine("✓ Applied keychain/env resolution to workspace config");
 
             // Check sync status
             await syncManager.checkSync();
@@ -839,23 +846,23 @@ export async function activate(context: vscode.ExtensionContext) {
             const snapshotOk = await runSnapshot(
               pythonExecutable,
               workspaceRoot,
-              snapshotChannel,
+              loomChannel,
             );
             if (snapshotOk) {
-              bootstrapChannel.appendLine("✓ Snapshot captured in Qdrant");
+              loomChannel.appendLine("✓ Snapshot captured in Qdrant");
               registryProvider.setLastSnapshot(new Date().toISOString());
             } else {
-              bootstrapChannel.appendLine("⚠ Snapshot step reported errors; see snapshot channel.");
+              loomChannel.appendLine("⚠ Snapshot step reported errors; see snapshot channel.");
             }
 
-            bootstrapChannel.show(true);
+            loomChannel.show(true);
             void vscode.window.showInformationMessage(
               "Loom: bootstrap completed",
             );
           } catch (error) {
             const execError = error as { message?: string };
             const message = execError.message ?? "Loom: bootstrap failed";
-            bootstrapChannel.show(true);
+            loomChannel.show(true);
             void vscode.window.showErrorMessage(message);
           }
         },
@@ -880,18 +887,18 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("loom.verifyHubClient", async () => {
       const wrapperPath = resolveHubWrapperCommand(workspaceRoot);
-      hubChannel.appendLine(
+      loomChannel.appendLine(
         `[${new Date().toISOString()}] Checking hub client via ${wrapperPath || "mcp-hub-wrapper"}`,
       );
       try {
         await execFileAsync(wrapperPath, ["--help"]);
-        hubChannel.appendLine("✓ mcp-hub-wrapper responded to --help");
-        hubChannel.show(true);
+        loomChannel.appendLine("✓ mcp-hub-wrapper responded to --help");
+        loomChannel.show(true);
         void vscode.window.showInformationMessage("Loom: hub client detected");
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        hubChannel.appendLine(`✗ Hub client check failed: ${message}`);
-        hubChannel.show(true);
+        loomChannel.appendLine(`✗ Hub client check failed: ${message}`);
+        loomChannel.show(true);
         void vscode.window.showErrorMessage(`Loom: hub client unavailable (${message})`);
       }
     }),
@@ -904,6 +911,7 @@ export function deactivate() {
 
 class RegistryProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   private readonly root: string;
+  private readonly registryPath: string | null;
   private readonly emitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.emitter.event;
   private cache: RegistryDocument | null = null;
@@ -911,8 +919,9 @@ class RegistryProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   private readonly state: vscode.Memento;
   private readonly hubStatus: HubStatusManager;
 
-  constructor(root: string, workspaceState: vscode.Memento, hubStatus: HubStatusManager) {
+  constructor(root: string, registryPath: string | null, workspaceState: vscode.Memento, hubStatus: HubStatusManager) {
     this.root = root;
+    this.registryPath = registryPath;
     this.state = workspaceState;
     this.hubStatus = hubStatus;
     this.lastSnapshotIso = this.state.get<string>(SNAPSHOT_STATE_KEY);
@@ -1147,12 +1156,11 @@ class RegistryProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
     if (this.cache) {
       return this.cache;
     }
-    if (!this.root) {
+    if (!this.registryPath) {
       return null;
     }
-    const absPath = path.join(this.root, REGISTRY_PATH);
     try {
-      const raw = await fsp.readFile(absPath, "utf-8");
+      const raw = await fsp.readFile(this.registryPath, "utf-8");
       const parsed = parse(raw) as RegistryDocument;
       this.cache = parsed;
       return parsed;
@@ -1593,24 +1601,22 @@ async function buildSnapshotEnv(workspaceRoot: string): Promise<SnapshotEnvResul
     env.QDRANT_COLLECTION = env.COLLECTION_NAME;
   }
 
+  const secrets = await loadSecretsFromEnvFile();
+
   if (!env.MORPH_API_KEY) {
-    const morphFromEnv = process.env.MORPH_API_KEY;
+    const morphFromEnv = process.env.MORPH_API_KEY ?? secrets["MORPH_API_KEY"];
     if (morphFromEnv) {
       env.MORPH_API_KEY = morphFromEnv;
+      resolved.add("MORPH_API_KEY");
+      missing.delete("MORPH_API_KEY");
     } else {
-      const morphSecret = await readKeychainSecret("MORPH_API_KEY");
-      if (morphSecret) {
-        env.MORPH_API_KEY = morphSecret;
-        resolved.add("MORPH_API_KEY");
-        missing.delete("MORPH_API_KEY");
-      } else {
-        missing.add("MORPH_API_KEY");
-      }
+      missing.add("MORPH_API_KEY");
     }
   }
 
   if (!env.QDRANT_API_KEY) {
-    const qdrantSecret = await readKeychainSecret("QDRANT_API_KEY");
+    // Use MORPH_API_KEY as fallback for QDRANT_API_KEY
+    const qdrantSecret = secrets["QDRANT_API_KEY"] ?? secrets["MORPH_API_KEY"];
     if (qdrantSecret) {
       env.QDRANT_API_KEY = qdrantSecret;
       resolved.add("QDRANT_API_KEY");
@@ -1651,13 +1657,13 @@ async function applyGeneratedConfigs(workspaceRoot: string, channel: vscode.Outp
 
   try {
     const raw = await fsp.readFile(generatedVscode, "utf-8");
-    const parsed = JSON.parse(raw) as { servers?: Record<string, any> };
+    const parsed = JSON.parse(raw) as { mcpServers?: Record<string, any> };
     const resolvedSecrets: string[] = [];
     const missingSecrets: string[] = [];
 
-    if (parsed.servers) {
+    if (parsed.mcpServers) {
       await Promise.all(
-        Object.entries(parsed.servers).map(async ([serverName, serverConfig]) => {
+        Object.entries(parsed.mcpServers).map(async ([serverName, serverConfig]) => {
           if (!serverConfig || typeof serverConfig !== "object") {
             return;
           }
@@ -1716,8 +1722,8 @@ async function loadVscodeConfigSnapshot(workspaceRoot: string): Promise<VscodeCo
   for (const candidate of candidates) {
     try {
       const raw = await fsp.readFile(candidate, "utf-8");
-      const parsed = JSON.parse(raw) as { servers?: Record<string, unknown> };
-      const servers = parsed.servers && typeof parsed.servers === "object" ? parsed.servers : {};
+      const parsed = JSON.parse(raw) as { mcpServers?: Record<string, unknown> };
+      const servers = parsed.mcpServers && typeof parsed.mcpServers === "object" ? parsed.mcpServers : {};
       const hubRouted: string[] = [];
       const localRouted: string[] = [];
       const serverNames: string[] = [];
@@ -1838,22 +1844,76 @@ async function ensureServersOnStartup(
   }
 }
 
+// Cache for secrets loaded from env file
+let secretsCache: Record<string, string> | null = null;
+
+async function loadSecretsFromEnvFile(): Promise<Record<string, string>> {
+  if (secretsCache !== null) {
+    return secretsCache;
+  }
+
+  secretsCache = {};
+  const envFilePath = path.join(os.homedir(), ".config", "secrets", "ai.env");
+
+  try {
+    const content = await fsp.readFile(envFilePath, "utf-8");
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) {
+        continue;
+      }
+      // Handle "export VAR=value" or "VAR=value"
+      const match = trimmed.match(/^(?:export\s+)?([A-Z_][A-Z0-9_]*)=["']?(.+?)["']?$/i);
+      if (match) {
+        secretsCache[match[1]] = match[2];
+      }
+    }
+  } catch (error) {
+    // File doesn't exist or can't be read, that's fine
+  }
+
+  return secretsCache;
+}
+
 async function resolvePlaceholder(value: string): Promise<string | undefined> {
+  // Handle ${keychain:VAR} - read from env file instead of keychain
   const keychainMatch = value.match(/^\$\{keychain:([^}]+)}$/);
   if (keychainMatch) {
-    const secret = await readKeychainSecret(keychainMatch[1]);
-    if (secret) {
-      return secret;
+    const secrets = await loadSecretsFromEnvFile();
+    const varName = keychainMatch[1];
+    // Try exact match first, then common aliases
+    if (secrets[varName]) {
+      return secrets[varName];
+    }
+    // Handle GITLAB_PERSONAL_ACCESS_TOKEN -> GITLAB_PAT alias
+    if (varName === "GITLAB_PERSONAL_ACCESS_TOKEN" && secrets["GITLAB_PAT"]) {
+      return secrets["GITLAB_PAT"];
+    }
+    // Handle GRAFANA_API_TOKEN -> GRAFANA_API_KEY alias
+    if (varName === "GRAFANA_API_TOKEN" && secrets["GRAFANA_API_KEY"]) {
+      return secrets["GRAFANA_API_KEY"];
+    }
+    // Handle QDRANT_API_KEY and MORPH_QDRANT_API_KEY from MORPH_API_KEY
+    if ((varName === "QDRANT_API_KEY" || varName === "MORPH_QDRANT_API_KEY") && secrets["MORPH_API_KEY"]) {
+      return secrets["MORPH_API_KEY"];
     }
     return undefined;
   }
+
+  // Handle ${env:VAR} or ${env:VAR:-default}
   const envMatch = value.match(/^\$\{env:([^}:]+)(:-([^}]*))?}$/);
   if (envMatch) {
     const envKey = envMatch[1];
     const defaultValue = envMatch[3];
+    // Check process.env first
     const envValue = process.env[envKey];
     if (envValue !== undefined) {
       return envValue;
+    }
+    // Then check secrets file
+    const secrets = await loadSecretsFromEnvFile();
+    if (secrets[envKey]) {
+      return secrets[envKey];
     }
     if (defaultValue !== undefined) {
       return defaultValue;
@@ -1933,24 +1993,3 @@ function findBinaryInPath(binaryName: string): string | undefined {
   return undefined;
 }
 
-async function readKeychainSecret(name: string): Promise<string | undefined> {
-  if (process.platform !== "darwin") {
-    return undefined;
-  }
-  const user = process.env.USER || os.userInfo().username;
-  try {
-    const { stdout } = await execFileAsync("security", [
-      "find-generic-password",
-      "-a",
-      user,
-      "-s",
-      name,
-      "-w",
-    ]);
-    const trimmed = stdout.trim();
-    return trimmed ? trimmed : undefined;
-  } catch (error) {
-    console.warn(`Keychain lookup failed for ${name}: ${(error as Error).message}`);
-    return undefined;
-  }
-}

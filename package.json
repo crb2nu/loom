@@ -2,7 +2,7 @@
     "name": "loom",
     "displayName": "Loom",
     "description": "Weaving context for AI - Unified MCP hub management for VS Code, Codex, Kilocode, and Claude Code.",
-    "version": "0.2.2",
+    "version": "0.3.0",
     "publisher": "cblevins",
     "repository": {
         "type": "git",
