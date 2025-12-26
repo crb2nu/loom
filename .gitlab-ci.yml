@@ -1,0 +1,100 @@
+# GitLab CI for Loom VSCode Extension
+
+stages:
+  - lint
+  - build
+  - package
+  - release
+
+variables:
+  NODE_VERSION: "20"
+
+default:
+  image: node:${NODE_VERSION}-alpine
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - node_modules/
+
+# Install dependencies
+.install:
+  before_script:
+    - npm ci --prefer-offline
+
+# Type checking with TypeScript
+lint:typecheck:
+  stage: lint
+  extends: .install
+  script:
+    - npx tsc --noEmit
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Compile TypeScript
+build:compile:
+  stage: build
+  extends: .install
+  script:
+    - npm run compile
+  artifacts:
+    paths:
+      - out/
+    expire_in: 1 hour
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Package extension as .vsix
+package:vsix:
+  stage: package
+  extends: .install
+  needs:
+    - build:compile
+  script:
+    - npm run package
+    - mv *.vsix loom-${CI_COMMIT_SHORT_SHA}.vsix
+  artifacts:
+    paths:
+      - "*.vsix"
+    expire_in: 1 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Release on tags
+release:publish:
+  stage: release
+  extends: .install
+  needs:
+    - package:vsix
+  script:
+    - npm run package
+    - |
+      VERSION=$(node -p "require('./package.json').version")
+      mv *.vsix loom-${VERSION}.vsix
+      echo "Packaged loom-${VERSION}.vsix"
+  artifacts:
+    paths:
+      - "*.vsix"
+    expire_in: 30 days
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+
+# Manual publish to VS Code Marketplace (requires VSCE_PAT variable)
+release:marketplace:
+  stage: release
+  extends: .install
+  needs:
+    - release:publish
+  script:
+    - |
+      if [ -z "$VSCE_PAT" ]; then
+        echo "VSCE_PAT not set, skipping marketplace publish"
+        exit 0
+      fi
+      npx vsce publish -p $VSCE_PAT
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+      when: manual
+  allow_failure: true

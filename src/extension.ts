@@ -65,6 +65,19 @@ interface HubServerInfo {
   categories?: string[];
 }
 
+interface DaemonServerInfo {
+  name: string;
+  categories?: string[];
+  description?: string;
+  running: boolean;
+}
+
+interface DaemonToolInfo {
+  name: string;
+  description?: string;
+  server: string;
+}
+
 interface HubStatusSnapshot {
   health?: HubHealthResponse;
   readiness?: HubReadyResponse;
@@ -95,6 +108,100 @@ const execFileAsync = promisify(execFile);
 const SNAPSHOT_STATE_KEY = "loom.lastSnapshotISO";
 const HUB_REFRESH_INTERVAL_MS = 60_000;
 const DEFAULT_HUB_URL = "wss://mcp.flexinfer.ai/ws";
+
+interface ActionableError {
+  message: string;
+  actions: { label: string; command?: string; url?: string }[];
+}
+
+function analyzeError(error: unknown, context: string): ActionableError {
+  const err = error as { code?: string; message?: string; stderr?: string };
+  const message = err.message ?? String(error);
+  const code = err.code ?? "";
+  const stderr = err.stderr ?? "";
+
+  // Daemon not running
+  if (message.includes("ECONNREFUSED") || message.includes("connect ENOENT") ||
+      message.includes("no such file") || stderr.includes("daemon not running")) {
+    return {
+      message: `${context}: Daemon is not running`,
+      actions: [
+        { label: "Start Daemon", command: "loom.startDaemon" },
+        { label: "Check Status", command: "loom.daemonStatus" },
+      ],
+    };
+  }
+
+  // Binary not found
+  if (code === "ENOENT" || message.includes("spawn") && message.includes("ENOENT")) {
+    return {
+      message: `${context}: Loom binary not found`,
+      actions: [
+        { label: "Install Loom", url: "https://github.com/crb2nu/loom" },
+      ],
+    };
+  }
+
+  // Timeout
+  if (message.includes("timeout") || message.includes("ETIMEDOUT")) {
+    return {
+      message: `${context}: Operation timed out`,
+      actions: [
+        { label: "Restart Daemon", command: "loom.restartDaemon" },
+        { label: "Check Status", command: "loom.daemonStatus" },
+      ],
+    };
+  }
+
+  // Permission denied
+  if (code === "EACCES" || message.includes("permission denied")) {
+    return {
+      message: `${context}: Permission denied`,
+      actions: [],
+    };
+  }
+
+  // Config sync issues
+  if (message.includes("registry") || message.includes("config")) {
+    return {
+      message: `${context}: Configuration error`,
+      actions: [
+        { label: "Sync Configs", command: "loom.syncConfigs" },
+        { label: "Show Mesh Report", command: "loom.showMeshReport" },
+      ],
+    };
+  }
+
+  // Default
+  return {
+    message: `${context}: ${message}`,
+    actions: [],
+  };
+}
+
+async function showActionableError(error: unknown, context: string): Promise<void> {
+  const analyzed = analyzeError(error, context);
+
+  if (analyzed.actions.length === 0) {
+    void vscode.window.showErrorMessage(analyzed.message);
+    return;
+  }
+
+  const actionLabels = analyzed.actions.map((a) => a.label);
+  const selection = await vscode.window.showErrorMessage(
+    analyzed.message,
+    ...actionLabels,
+  );
+
+  if (selection) {
+    const action = analyzed.actions.find((a) => a.label === selection);
+    if (action?.command) {
+      void vscode.commands.executeCommand(action.command);
+    } else if (action?.url) {
+      void vscode.env.openExternal(vscode.Uri.parse(action.url));
+    }
+  }
+}
 
 // Find registry.yaml - check home directory first, then workspace
 function findRegistryPath(workspaceRoot: string): string | null {
@@ -146,6 +253,144 @@ class HubClient {
       headers["CF-Access-Client-Secret"] = this.settings.cfAccessClientSecret;
     }
     return headers;
+  }
+}
+
+class DaemonClient {
+  private readonly workspaceRoot: string;
+  private readonly channel: vscode.OutputChannel;
+  private cachedServers: DaemonServerInfo[] = [];
+  private lastFetch: Date | null = null;
+  private readonly cacheTimeoutMs = 5000;
+
+  constructor(workspaceRoot: string, channel: vscode.OutputChannel) {
+    this.workspaceRoot = workspaceRoot;
+    this.channel = channel;
+  }
+
+  async getServers(forceRefresh = false): Promise<DaemonServerInfo[]> {
+    const now = new Date();
+    if (
+      !forceRefresh &&
+      this.lastFetch &&
+      now.getTime() - this.lastFetch.getTime() < this.cacheTimeoutMs
+    ) {
+      return this.cachedServers;
+    }
+
+    try {
+      const loomBinary = resolveLoomBinary(this.workspaceRoot);
+      const { stdout } = await execFileAsync(loomBinary, ["servers", "--json"], {
+        cwd: this.workspaceRoot || os.homedir(),
+        timeout: 5000,
+      });
+
+      const parsed = JSON.parse(stdout) as { servers?: DaemonServerInfo[] };
+      this.cachedServers = parsed.servers ?? [];
+      this.lastFetch = now;
+      return this.cachedServers;
+    } catch (error) {
+      // Daemon might not be running - try parsing text output
+      try {
+        const loomBinary = resolveLoomBinary(this.workspaceRoot);
+        const { stdout } = await execFileAsync(loomBinary, ["servers"], {
+          cwd: this.workspaceRoot || os.homedir(),
+          timeout: 5000,
+        });
+
+        // Parse text output format: "NAME  STATUS  DESCRIPTION"
+        const servers: DaemonServerInfo[] = [];
+        const lines = stdout.split("\n").slice(2); // Skip header lines
+        for (const line of lines) {
+          const match = line.match(/^(\S+)\s+(running|idle)\s*(.*)/);
+          if (match) {
+            servers.push({
+              name: match[1],
+              running: match[2] === "running",
+              description: match[3]?.trim() || undefined,
+            });
+          }
+        }
+        this.cachedServers = servers;
+        this.lastFetch = now;
+        return this.cachedServers;
+      } catch {
+        // Daemon not running or error
+        return [];
+      }
+    }
+  }
+
+  async isDaemonRunning(): Promise<boolean> {
+    try {
+      const loomBinary = resolveLoomBinary(this.workspaceRoot);
+      await execFileAsync(loomBinary, ["daemon", "status"], {
+        cwd: this.workspaceRoot || os.homedir(),
+        timeout: 2000,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  invalidateCache(): void {
+    this.lastFetch = null;
+    this.cachedServers = [];
+    this.cachedTools = [];
+    this.lastToolFetch = null;
+  }
+
+  private cachedTools: DaemonToolInfo[] = [];
+  private lastToolFetch: Date | null = null;
+
+  async getTools(forceRefresh = false): Promise<DaemonToolInfo[]> {
+    const now = new Date();
+    if (
+      !forceRefresh &&
+      this.lastToolFetch &&
+      now.getTime() - this.lastToolFetch.getTime() < this.cacheTimeoutMs
+    ) {
+      return this.cachedTools;
+    }
+
+    try {
+      const loomBinary = resolveLoomBinary(this.workspaceRoot);
+      const { stdout } = await execFileAsync(loomBinary, ["tools", "list"], {
+        cwd: this.workspaceRoot || os.homedir(),
+        timeout: 30000,
+      });
+
+      // Parse text output format: "tool_name  description"
+      const tools: DaemonToolInfo[] = [];
+      const lines = stdout.split("\n");
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("NAME") || trimmed.startsWith("----")) {
+          continue;
+        }
+        // Tool name format: server__toolname
+        const match = trimmed.match(/^(\S+)\s*(.*)/);
+        if (match) {
+          const fullName = match[1];
+          const description = match[2]?.trim() || undefined;
+          // Parse server from tool name (format: server__toolname)
+          const serverMatch = fullName.match(/^([^_]+(?:__)?[^_]*)__(.+)$/);
+          const server = serverMatch ? serverMatch[1] : "unknown";
+          tools.push({
+            name: fullName,
+            description,
+            server,
+          });
+        }
+      }
+      this.cachedTools = tools;
+      this.lastToolFetch = now;
+      return this.cachedTools;
+    } catch {
+      // Daemon not running or error
+      return [];
+    }
   }
 }
 
@@ -522,11 +767,21 @@ export async function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(registryTree);
 
-  const serverProvider = new ServerProvider(registryProvider, hubStatusManager);
+  // Create daemon client for server status queries
+  const daemonClient = new DaemonClient(workspaceRoot, loomChannel);
+
+  const serverProvider = new ServerProvider(registryProvider, hubStatusManager, daemonClient);
   const serverTree = vscode.window.createTreeView("loomServers", {
     treeDataProvider: serverProvider,
   });
   context.subscriptions.push(serverTree);
+
+  // Tool browser view
+  const toolProvider = new ToolProvider(daemonClient);
+  const toolTree = vscode.window.createTreeView("loomTools", {
+    treeDataProvider: toolProvider,
+  });
+  context.subscriptions.push(toolTree);
 
   const watcher = watchRegistry(workspaceRoot, () => {
     registryProvider.refresh();
@@ -903,6 +1158,328 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     }),
   );
+
+  // Daemon lifecycle commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand("loom.startDaemon", async () => {
+      const loomBinary = resolveLoomBinary(workspaceRoot);
+      loomChannel.appendLine(`[${new Date().toISOString()}] Starting loom daemon...`);
+      loomChannel.appendLine(`→ ${loomBinary} daemon start`);
+
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Starting Loom daemon",
+        },
+        async () => {
+          try {
+            const { stdout, stderr } = await execFileAsync(loomBinary, ["daemon", "start"], {
+              cwd: workspaceRoot || os.homedir(),
+              timeout: 10000,
+            });
+            if (stdout) {
+              loomChannel.append(stdout);
+            }
+            if (stderr) {
+              loomChannel.append(stderr);
+            }
+            loomChannel.appendLine("✓ Daemon started");
+            loomChannel.show(true);
+            void vscode.window.showInformationMessage("Loom: daemon started successfully");
+            // Refresh hub status and server list after daemon starts
+            await hubStatusManager.refresh();
+            serverProvider.refresh();
+          } catch (error) {
+            const execError = error as { stdout?: string; stderr?: string; message?: string };
+            if (execError.stdout) {
+              loomChannel.append(execError.stdout);
+            }
+            if (execError.stderr) {
+              loomChannel.append(execError.stderr);
+            }
+            loomChannel.appendLine(`✗ ${execError.message ?? "Failed to start daemon"}`);
+            loomChannel.show(true);
+            await showActionableError(error, "Failed to start daemon");
+          }
+        },
+      );
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("loom.stopDaemon", async () => {
+      const loomBinary = resolveLoomBinary(workspaceRoot);
+      loomChannel.appendLine(`[${new Date().toISOString()}] Stopping loom daemon...`);
+      loomChannel.appendLine(`→ ${loomBinary} daemon stop`);
+
+      try {
+        const { stdout, stderr } = await execFileAsync(loomBinary, ["daemon", "stop"], {
+          cwd: workspaceRoot || os.homedir(),
+          timeout: 5000,
+        });
+        if (stdout) {
+          loomChannel.append(stdout);
+        }
+        if (stderr) {
+          loomChannel.append(stderr);
+        }
+        loomChannel.appendLine("✓ Daemon stopped");
+        loomChannel.show(true);
+        void vscode.window.showInformationMessage("Loom: daemon stopped");
+        serverProvider.refresh();
+      } catch (error) {
+        const execError = error as { stdout?: string; stderr?: string; message?: string };
+        if (execError.stdout) {
+          loomChannel.append(execError.stdout);
+        }
+        if (execError.stderr) {
+          loomChannel.append(execError.stderr);
+        }
+        loomChannel.appendLine(`✗ ${execError.message ?? "Failed to stop daemon"}`);
+        loomChannel.show(true);
+        await showActionableError(error, "Failed to stop daemon");
+        serverProvider.refresh();
+      }
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("loom.restartDaemon", async () => {
+      const loomBinary = resolveLoomBinary(workspaceRoot);
+      loomChannel.appendLine(`[${new Date().toISOString()}] Restarting loom daemon...`);
+
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Restarting Loom daemon",
+        },
+        async () => {
+          try {
+            // Stop first
+            loomChannel.appendLine(`→ ${loomBinary} daemon stop`);
+            try {
+              await execFileAsync(loomBinary, ["daemon", "stop"], {
+                cwd: workspaceRoot || os.homedir(),
+                timeout: 5000,
+              });
+              loomChannel.appendLine("✓ Daemon stopped");
+            } catch {
+              loomChannel.appendLine("⚠ Daemon was not running");
+            }
+
+            // Wait a moment for cleanup
+            await new Promise((resolve) => setTimeout(resolve, 500));
+
+            // Start
+            loomChannel.appendLine(`→ ${loomBinary} daemon start`);
+            const { stdout, stderr } = await execFileAsync(loomBinary, ["daemon", "start"], {
+              cwd: workspaceRoot || os.homedir(),
+              timeout: 10000,
+            });
+            if (stdout) {
+              loomChannel.append(stdout);
+            }
+            if (stderr) {
+              loomChannel.append(stderr);
+            }
+            loomChannel.appendLine("✓ Daemon restarted");
+            loomChannel.show(true);
+            void vscode.window.showInformationMessage("Loom: daemon restarted successfully");
+            // Refresh hub status and server list after restart
+            await hubStatusManager.refresh();
+            serverProvider.refresh();
+          } catch (error) {
+            const execError = error as { stdout?: string; stderr?: string; message?: string };
+            if (execError.stdout) {
+              loomChannel.append(execError.stdout);
+            }
+            if (execError.stderr) {
+              loomChannel.append(execError.stderr);
+            }
+            loomChannel.appendLine(`✗ ${execError.message ?? "Failed to restart daemon"}`);
+            loomChannel.show(true);
+            await showActionableError(error, "Failed to restart daemon");
+          }
+        },
+      );
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("loom.daemonStatus", async () => {
+      const loomBinary = resolveLoomBinary(workspaceRoot);
+      loomChannel.appendLine(`[${new Date().toISOString()}] Checking daemon status...`);
+      loomChannel.appendLine(`→ ${loomBinary} daemon status`);
+
+      try {
+        const { stdout, stderr } = await execFileAsync(loomBinary, ["daemon", "status"], {
+          cwd: workspaceRoot || os.homedir(),
+          timeout: 5000,
+        });
+
+        loomChannel.clear();
+        loomChannel.appendLine(`[${new Date().toISOString()}] Daemon Status`);
+        loomChannel.appendLine("─".repeat(40));
+        if (stdout) {
+          loomChannel.append(stdout);
+        }
+        if (stderr) {
+          loomChannel.append(stderr);
+        }
+        loomChannel.show(true);
+
+        // Parse status to show in notification
+        const isRunning = stdout?.toLowerCase().includes("running") ||
+                          stdout?.toLowerCase().includes("active") ||
+                          stdout?.toLowerCase().includes("pid");
+        const statusMessage = isRunning ? "Daemon is running" : "Daemon status retrieved";
+        void vscode.window.showInformationMessage(`Loom: ${statusMessage}`);
+      } catch (error) {
+        const execError = error as { stdout?: string; stderr?: string; message?: string; code?: number };
+        loomChannel.clear();
+        loomChannel.appendLine(`[${new Date().toISOString()}] Daemon Status`);
+        loomChannel.appendLine("─".repeat(40));
+        if (execError.stdout) {
+          loomChannel.append(execError.stdout);
+        }
+        if (execError.stderr) {
+          loomChannel.append(execError.stderr);
+        }
+        loomChannel.show(true);
+
+        // Exit code 1 often means daemon is not running, which is informational
+        if (execError.code === 1) {
+          void vscode.window.showInformationMessage("Loom: daemon is not running");
+        } else {
+          void vscode.window.showErrorMessage(`Loom: ${execError.message ?? "Failed to get daemon status"}`);
+        }
+      }
+    }),
+  );
+
+  // Tool browser commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand("loom.refreshTools", async () => {
+      const loomBinary = resolveLoomBinary(workspaceRoot);
+      loomChannel.appendLine(`[${new Date().toISOString()}] Refreshing tool list...`);
+      loomChannel.appendLine(`→ ${loomBinary} tools list`);
+
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Refreshing Loom tools",
+        },
+        async () => {
+          try {
+            const { stdout, stderr } = await execFileAsync(loomBinary, ["tools", "list"], {
+              cwd: workspaceRoot || os.homedir(),
+              timeout: 30000,
+            });
+
+            loomChannel.clear();
+            loomChannel.appendLine(`[${new Date().toISOString()}] Available Tools`);
+            loomChannel.appendLine("─".repeat(60));
+            if (stdout) {
+              loomChannel.append(stdout);
+            }
+            if (stderr) {
+              loomChannel.append(stderr);
+            }
+            loomChannel.show(true);
+
+            // Refresh the tool tree view
+            toolProvider.refresh();
+
+            // Count tools from output
+            const toolCount = (stdout?.match(/^[a-z0-9_-]+__/gm) || []).length ||
+                              stdout?.split("\n").filter((line: string) => line.trim()).length || 0;
+            void vscode.window.showInformationMessage(`Loom: ${toolCount} tools available`);
+          } catch (error) {
+            const execError = error as { stdout?: string; stderr?: string; message?: string };
+            if (execError.stdout) {
+              loomChannel.append(execError.stdout);
+            }
+            if (execError.stderr) {
+              loomChannel.append(execError.stderr);
+            }
+            loomChannel.appendLine(`✗ ${execError.message ?? "Failed to list tools"}`);
+            loomChannel.show(true);
+            await showActionableError(error, "Failed to list tools");
+          }
+        },
+      );
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("loom.searchTools", async () => {
+      const query = await vscode.window.showInputBox({
+        prompt: "Search tools by name or description",
+        placeHolder: "e.g., git, kubernetes, search",
+        value: "",
+      });
+
+      if (query === undefined) {
+        return; // User cancelled
+      }
+
+      if (query === "") {
+        // Clear filter
+        toolProvider.clearFilter();
+        void vscode.window.showInformationMessage("Loom: Tool filter cleared");
+        return;
+      }
+
+      // Apply filter to tool tree view
+      toolProvider.setFilter(query);
+
+      // Also run CLI search and show in output channel
+      const loomBinary = resolveLoomBinary(workspaceRoot);
+      loomChannel.appendLine(`[${new Date().toISOString()}] Searching tools for: ${query}`);
+      loomChannel.appendLine(`→ ${loomBinary} tools search ${query}`);
+
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `Searching tools for "${query}"`,
+        },
+        async () => {
+          try {
+            const { stdout, stderr } = await execFileAsync(loomBinary, ["tools", "search", query], {
+              cwd: workspaceRoot || os.homedir(),
+              timeout: 30000,
+            });
+
+            loomChannel.clear();
+            loomChannel.appendLine(`[${new Date().toISOString()}] Search Results: "${query}"`);
+            loomChannel.appendLine("─".repeat(60));
+            if (stdout) {
+              loomChannel.append(stdout);
+            }
+            if (stderr) {
+              loomChannel.append(stderr);
+            }
+            loomChannel.show(true);
+
+            // Count results
+            const matchCount = stdout?.split("\n").filter((line: string) => line.trim()).length || 0;
+            void vscode.window.showInformationMessage(`Loom: ${matchCount} tools match "${query}" (filter applied to tree view)`);
+          } catch (error) {
+            const execError = error as { stdout?: string; stderr?: string; message?: string };
+            if (execError.stdout) {
+              loomChannel.append(execError.stdout);
+            }
+            if (execError.stderr) {
+              loomChannel.append(execError.stderr);
+            }
+            loomChannel.appendLine(`✗ ${execError.message ?? "Failed to search tools"}`);
+            loomChannel.show(true);
+            await showActionableError(error, "Failed to search tools");
+          }
+        },
+      );
+    }),
+  );
 }
 
 export function deactivate() {
@@ -1177,16 +1754,19 @@ class RegistryProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 class ServerProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   private readonly registryProvider: RegistryProvider;
   private readonly hubStatus: HubStatusManager;
+  private readonly daemonClient: DaemonClient;
   private readonly emitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.emitter.event;
 
-  constructor(registryProvider: RegistryProvider, hubStatus: HubStatusManager) {
+  constructor(registryProvider: RegistryProvider, hubStatus: HubStatusManager, daemonClient: DaemonClient) {
     this.registryProvider = registryProvider;
     this.hubStatus = hubStatus;
+    this.daemonClient = daemonClient;
     this.hubStatus.onDidChange(() => this.refresh());
   }
 
   refresh() {
+    this.daemonClient.invalidateCache();
     this.emitter.fire();
   }
 
@@ -1208,9 +1788,17 @@ class ServerProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
       hubServers.set(server.name, server);
     }
 
+    // Get daemon server status
+    const daemonServers = await this.daemonClient.getServers();
+    const daemonServerMap = new Map<string, DaemonServerInfo>();
+    for (const server of daemonServers) {
+      daemonServerMap.set(server.name, server);
+    }
+
     const names = new Set<string>([
       ...registryServers.keys(),
       ...hubServers.keys(),
+      ...daemonServerMap.keys(),
     ]);
 
     if (names.size === 0) {
@@ -1227,15 +1815,26 @@ class ServerProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
       .map((name) => {
         const registryEntry = registryServers.get(name);
         const hubEntry = hubServers.get(name);
+        const daemonEntry = daemonServerMap.get(name);
         const label = name;
         const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
-        item.description = registryEntry?.common?.description ?? hubEntry?.description ?? "";
-        item.tooltip = buildServerTooltip(name, registryEntry, hubEntry);
+        item.description = registryEntry?.common?.description ?? hubEntry?.description ?? daemonEntry?.description ?? "";
+        item.tooltip = buildServerTooltip(name, registryEntry, hubEntry, daemonEntry);
 
-        if (registryEntry && hubEntry) {
+        // Determine icon based on status
+        if (daemonEntry?.running) {
+          // Server is actively running in daemon
+          item.iconPath = new vscode.ThemeIcon("circle-filled", new vscode.ThemeColor("testing.iconPassed"));
+          item.description = `running${item.description ? " - " + item.description : ""}`;
+        } else if (daemonEntry && !daemonEntry.running) {
+          // Server is known to daemon but idle (lazy loaded)
+          item.iconPath = new vscode.ThemeIcon("circle-outline", new vscode.ThemeColor("charts.gray"));
+          item.description = `idle${item.description ? " - " + item.description : ""}`;
+        } else if (registryEntry && hubEntry) {
+          // In both registry and hub but daemon not running
           item.iconPath = new vscode.ThemeIcon("plug");
         } else if (registryEntry && !hubEntry) {
-          item.iconPath = new vscode.ThemeIcon("warning");
+          item.iconPath = new vscode.ThemeIcon("warning", new vscode.ThemeColor("charts.yellow"));
           item.description = item.description || "Registry only";
         } else {
           item.iconPath = new vscode.ThemeIcon("question");
@@ -1247,10 +1846,162 @@ class ServerProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   }
 }
 
+class ToolTreeItem extends vscode.TreeItem {
+  constructor(
+    public readonly label: string,
+    public readonly collapsibleState: vscode.TreeItemCollapsibleState,
+    public readonly isServer: boolean = false,
+    public readonly serverName?: string,
+    public readonly toolInfo?: DaemonToolInfo,
+  ) {
+    super(label, collapsibleState);
+  }
+}
+
+class ToolProvider implements vscode.TreeDataProvider<ToolTreeItem> {
+  private readonly daemonClient: DaemonClient;
+  private readonly emitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeTreeData = this.emitter.event;
+  private filterQuery: string = "";
+
+  constructor(daemonClient: DaemonClient) {
+    this.daemonClient = daemonClient;
+  }
+
+  refresh() {
+    this.daemonClient.invalidateCache();
+    this.emitter.fire();
+  }
+
+  setFilter(query: string) {
+    this.filterQuery = query.toLowerCase();
+    this.emitter.fire();
+  }
+
+  clearFilter() {
+    this.filterQuery = "";
+    this.emitter.fire();
+  }
+
+  getTreeItem(element: ToolTreeItem): vscode.TreeItem {
+    return element;
+  }
+
+  async getChildren(element?: ToolTreeItem): Promise<ToolTreeItem[]> {
+    if (!element) {
+      // Root level: show servers with tools
+      const tools = await this.daemonClient.getTools();
+
+      if (tools.length === 0) {
+        const placeholder = new ToolTreeItem(
+          "No tools available (daemon not running?)",
+          vscode.TreeItemCollapsibleState.None,
+        );
+        placeholder.iconPath = new vscode.ThemeIcon("warning");
+        placeholder.command = {
+          command: "loom.startDaemon",
+          title: "Start Daemon",
+        };
+        return [placeholder];
+      }
+
+      // Filter tools if query is set
+      const filteredTools = this.filterQuery
+        ? tools.filter(
+            (t) =>
+              t.name.toLowerCase().includes(this.filterQuery) ||
+              t.description?.toLowerCase().includes(this.filterQuery),
+          )
+        : tools;
+
+      if (filteredTools.length === 0 && this.filterQuery) {
+        const noMatch = new ToolTreeItem(
+          `No tools match "${this.filterQuery}"`,
+          vscode.TreeItemCollapsibleState.None,
+        );
+        noMatch.iconPath = new vscode.ThemeIcon("search-stop");
+        return [noMatch];
+      }
+
+      // Group by server
+      const serverMap = new Map<string, DaemonToolInfo[]>();
+      for (const tool of filteredTools) {
+        const serverTools = serverMap.get(tool.server) ?? [];
+        serverTools.push(tool);
+        serverMap.set(tool.server, serverTools);
+      }
+
+      // Create server items
+      return Array.from(serverMap.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([serverName, serverTools]) => {
+          const item = new ToolTreeItem(
+            serverName,
+            vscode.TreeItemCollapsibleState.Collapsed,
+            true,
+            serverName,
+          );
+          item.description = `${serverTools.length} tools`;
+          item.iconPath = new vscode.ThemeIcon("server-process");
+          return item;
+        });
+    }
+
+    // Child level: show tools for a server
+    if (element.isServer && element.serverName) {
+      const tools = await this.daemonClient.getTools();
+      const serverTools = tools.filter((t) => t.server === element.serverName);
+
+      // Apply filter
+      const filteredTools = this.filterQuery
+        ? serverTools.filter(
+            (t) =>
+              t.name.toLowerCase().includes(this.filterQuery) ||
+              t.description?.toLowerCase().includes(this.filterQuery),
+          )
+        : serverTools;
+
+      return filteredTools.map((tool) => {
+        // Extract tool name without server prefix
+        const shortName = tool.name.replace(`${element.serverName}__`, "");
+        const item = new ToolTreeItem(
+          shortName,
+          vscode.TreeItemCollapsibleState.None,
+          false,
+          element.serverName,
+          tool,
+        );
+        item.description = tool.description ?? "";
+        item.iconPath = new vscode.ThemeIcon("symbol-method");
+        item.tooltip = this.buildToolTooltip(tool, shortName);
+        return item;
+      });
+    }
+
+    return [];
+  }
+
+  private buildToolTooltip(tool: DaemonToolInfo, shortName: string): vscode.MarkdownString {
+    const lines: string[] = [
+      `**${shortName}**`,
+      "",
+      `Server: \`${tool.server}\``,
+      `Full name: \`${tool.name}\``,
+    ];
+    if (tool.description) {
+      lines.push("", tool.description);
+    }
+    const tooltip = new vscode.MarkdownString(lines.join("\n"));
+    tooltip.isTrusted = true;
+    return tooltip;
+  }
+}
+
 function buildServerTooltip(
   serverName: string,
   registryServer?: RegistryServer,
   hubInfo?: HubServerInfo,
+  daemonInfo?: DaemonServerInfo,
 ): vscode.MarkdownString {
   const lines: string[] = [`**${serverName}**`];
   const base = registryServer?.common ?? {};
@@ -1258,15 +2009,25 @@ function buildServerTooltip(
     lines.push(base.description);
   } else if (hubInfo?.description) {
     lines.push(hubInfo.description);
+  } else if (daemonInfo?.description) {
+    lines.push(daemonInfo.description);
+  }
+
+  // Daemon status
+  if (daemonInfo) {
+    const status = daemonInfo.running ? "$(circle-filled) **Running**" : "$(circle-outline) Idle (lazy-loaded)";
+    lines.push(`Daemon: ${status}`);
+  } else {
+    lines.push("Daemon: not connected");
   }
 
   if (hubInfo) {
-    lines.push("Hub: available via gateway");
+    lines.push("Hub: $(plug) available via gateway");
     if (hubInfo.categories?.length) {
       lines.push(`Hub categories: ${hubInfo.categories.join(", ")}`);
     }
   } else {
-    lines.push("Hub: not advertising this server");
+    lines.push("Hub: $(warning) not advertising this server");
   }
 
   if (registryServer) {

@@ -2,7 +2,7 @@
     "name": "loom",
     "displayName": "Loom",
     "description": "Weaving context for AI - Unified MCP hub management for VS Code, Codex, Kilocode, and Claude Code.",
-    "version": "0.3.0",
+    "version": "0.5.0",
     "publisher": "cblevins",
     "repository": {
         "type": "git",
@@ -55,6 +55,30 @@
             {
                 "command": "loom.verifyHubClient",
                 "title": "Loom: Verify MCP Hub Client"
+            },
+            {
+                "command": "loom.startDaemon",
+                "title": "Loom: Start Daemon"
+            },
+            {
+                "command": "loom.stopDaemon",
+                "title": "Loom: Stop Daemon"
+            },
+            {
+                "command": "loom.restartDaemon",
+                "title": "Loom: Restart Daemon"
+            },
+            {
+                "command": "loom.daemonStatus",
+                "title": "Loom: Show Daemon Status"
+            },
+            {
+                "command": "loom.refreshTools",
+                "title": "Loom: Refresh Tools"
+            },
+            {
+                "command": "loom.searchTools",
+                "title": "Loom: Search Tools"
             }
         ],
         "views": {
@@ -66,6 +90,10 @@
                 {
                     "id": "loomServers",
                     "name": "Loom Servers"
+                },
+                {
+                    "id": "loomTools",
+                    "name": "Loom Tools"
                 }
             ]
         },
