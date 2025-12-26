@@ -1,4 +1,6 @@
 # GitLab CI for Loom VSCode Extension
+# Disable Auto DevOps for this project
+include: []
 
 stages:
   - lint
