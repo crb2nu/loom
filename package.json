@@ -79,6 +79,26 @@
             {
                 "command": "loom.searchTools",
                 "title": "Loom: Search Tools"
+            },
+            {
+                "command": "loom.listSecrets",
+                "title": "Loom: List Secrets"
+            },
+            {
+                "command": "loom.setSecret",
+                "title": "Loom: Set Secret"
+            },
+            {
+                "command": "loom.importSecrets",
+                "title": "Loom: Import Secrets from File"
+            },
+            {
+                "command": "loom.validateSecrets",
+                "title": "Loom: Validate Config Secrets"
+            },
+            {
+                "command": "loom.refreshSecrets",
+                "title": "Loom: Refresh Secrets Cache"
             }
         ],
         "views": {
@@ -94,6 +114,10 @@
                 {
                     "id": "loomTools",
                     "name": "Loom Tools"
+                },
+                {
+                    "id": "loomSecrets",
+                    "name": "Loom Secrets"
                 }
             ]
         },

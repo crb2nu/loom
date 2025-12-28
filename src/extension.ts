@@ -1480,6 +1480,244 @@ export async function activate(context: vscode.ExtensionContext) {
       );
     }),
   );
+
+  // Secrets tree view provider
+  const secretsProvider = new SecretsProvider(workspaceRoot, loomChannel);
+  context.subscriptions.push(
+    vscode.window.registerTreeDataProvider("loomSecrets", secretsProvider)
+  );
+
+  // Secrets commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand("loom.listSecrets", async () => {
+      const loomBinary = resolveLoomBinary(workspaceRoot);
+      loomChannel.clear();
+      loomChannel.appendLine(`[${new Date().toISOString()}] Listing secrets`);
+      loomChannel.appendLine(`→ ${loomBinary} secrets list --backends`);
+
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Listing secrets...",
+        },
+        async () => {
+          try {
+            const { stdout, stderr } = await execFileAsync(loomBinary, ["secrets", "list", "--backends"], {
+              cwd: workspaceRoot || os.homedir(),
+              timeout: 10000,
+            });
+
+            loomChannel.appendLine("─".repeat(60));
+            if (stdout) {
+              loomChannel.append(stdout);
+            }
+            if (stderr) {
+              loomChannel.append(stderr);
+            }
+            loomChannel.show(true);
+
+            // Refresh the secrets tree view
+            secretsProvider.refresh();
+          } catch (error) {
+            const execError = error as { stdout?: string; stderr?: string; message?: string };
+            if (execError.stdout) {
+              loomChannel.append(execError.stdout);
+            }
+            if (execError.stderr) {
+              loomChannel.append(execError.stderr);
+            }
+            loomChannel.appendLine(`✗ ${execError.message ?? "Failed to list secrets"}`);
+            loomChannel.show(true);
+          }
+        },
+      );
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("loom.setSecret", async () => {
+      const key = await vscode.window.showInputBox({
+        prompt: "Enter secret key name",
+        placeHolder: "e.g., GITHUB_TOKEN, OPENAI_API_KEY",
+      });
+
+      if (!key) {
+        return;
+      }
+
+      const value = await vscode.window.showInputBox({
+        prompt: `Enter value for ${key}`,
+        password: true,
+      });
+
+      if (value === undefined) {
+        return;
+      }
+
+      const loomBinary = resolveLoomBinary(workspaceRoot);
+      loomChannel.appendLine(`[${new Date().toISOString()}] Setting secret: ${key}`);
+      loomChannel.appendLine(`→ ${loomBinary} secrets set ${key} [REDACTED]`);
+
+      try {
+        const { stdout, stderr } = await execFileAsync(loomBinary, ["secrets", "set", key, value], {
+          cwd: workspaceRoot || os.homedir(),
+          timeout: 10000,
+        });
+
+        if (stdout) {
+          loomChannel.appendLine(stdout);
+        }
+        if (stderr) {
+          loomChannel.appendLine(stderr);
+        }
+
+        // Clear secrets cache so it gets refreshed
+        secretsCache = null;
+        secretsProvider.refresh();
+
+        void vscode.window.showInformationMessage(`Loom: Secret '${key}' stored successfully`);
+      } catch (error) {
+        const execError = error as { stdout?: string; stderr?: string; message?: string };
+        loomChannel.appendLine(`✗ ${execError.message ?? "Failed to set secret"}`);
+        void vscode.window.showErrorMessage(`Failed to set secret: ${execError.message}`);
+      }
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("loom.importSecrets", async () => {
+      const fileUri = await vscode.window.showOpenDialog({
+        canSelectFiles: true,
+        canSelectFolders: false,
+        canSelectMany: false,
+        filters: {
+          "Environment files": ["env"],
+          "All files": ["*"],
+        },
+        title: "Select secrets file to import",
+      });
+
+      if (!fileUri || fileUri.length === 0) {
+        return;
+      }
+
+      const filePath = fileUri[0].fsPath;
+      const loomBinary = resolveLoomBinary(workspaceRoot);
+
+      loomChannel.clear();
+      loomChannel.appendLine(`[${new Date().toISOString()}] Importing secrets from: ${filePath}`);
+      loomChannel.appendLine(`→ ${loomBinary} secrets import "${filePath}"`);
+      loomChannel.show(true);
+
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Importing secrets...",
+        },
+        async () => {
+          try {
+            const { stdout, stderr } = await execFileAsync(loomBinary, ["secrets", "import", filePath], {
+              cwd: workspaceRoot || os.homedir(),
+              timeout: 30000,
+            });
+
+            loomChannel.appendLine("─".repeat(60));
+            if (stdout) {
+              loomChannel.append(stdout);
+            }
+            if (stderr) {
+              loomChannel.append(stderr);
+            }
+
+            // Clear secrets cache
+            secretsCache = null;
+            secretsProvider.refresh();
+
+            void vscode.window.showInformationMessage("Loom: Secrets imported successfully");
+          } catch (error) {
+            const execError = error as { stdout?: string; stderr?: string; message?: string };
+            if (execError.stdout) {
+              loomChannel.append(execError.stdout);
+            }
+            if (execError.stderr) {
+              loomChannel.append(execError.stderr);
+            }
+            loomChannel.appendLine(`✗ ${execError.message ?? "Failed to import secrets"}`);
+            void vscode.window.showErrorMessage(`Failed to import secrets: ${execError.message}`);
+          }
+        },
+      );
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("loom.validateSecrets", async () => {
+      const loomBinary = resolveLoomBinary(workspaceRoot);
+
+      loomChannel.clear();
+      loomChannel.appendLine(`[${new Date().toISOString()}] Validating config secrets`);
+      loomChannel.appendLine(`→ ${loomBinary} validate configs --all`);
+      loomChannel.show(true);
+
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Validating config secrets...",
+        },
+        async () => {
+          try {
+            const { stdout, stderr } = await execFileAsync(loomBinary, ["validate", "configs", "--all"], {
+              cwd: workspaceRoot || os.homedir(),
+              timeout: 60000,
+            });
+
+            loomChannel.appendLine("─".repeat(60));
+            if (stdout) {
+              loomChannel.append(stdout);
+            }
+            if (stderr) {
+              loomChannel.append(stderr);
+            }
+
+            if (stdout?.includes("No plaintext secrets found")) {
+              void vscode.window.showInformationMessage("Loom: No plaintext secrets found in configs ✓");
+            } else {
+              void vscode.window.showWarningMessage("Loom: Potential plaintext secrets detected - check output");
+            }
+          } catch (error) {
+            const execError = error as { stdout?: string; stderr?: string; message?: string };
+            if (execError.stdout) {
+              loomChannel.append(execError.stdout);
+            }
+            if (execError.stderr) {
+              loomChannel.append(execError.stderr);
+            }
+            loomChannel.appendLine(`\n✗ Validation found issues - see above`);
+
+            // Show the specific error count if available
+            const match = execError.message?.match(/found (\d+) potential plaintext/);
+            if (match) {
+              void vscode.window.showWarningMessage(`Loom: Found ${match[1]} potential plaintext secrets - check output`);
+            } else {
+              void vscode.window.showWarningMessage("Loom: Validation found issues - check output");
+            }
+          }
+        },
+      );
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("loom.refreshSecrets", async () => {
+      // Clear the local cache
+      secretsCache = null;
+
+      // Refresh tree view
+      secretsProvider.refresh();
+
+      void vscode.window.showInformationMessage("Loom: Secrets cache refreshed");
+    }),
+  );
 }
 
 export function deactivate() {
@@ -1994,6 +2232,110 @@ class ToolProvider implements vscode.TreeDataProvider<ToolTreeItem> {
     const tooltip = new vscode.MarkdownString(lines.join("\n"));
     tooltip.isTrusted = true;
     return tooltip;
+  }
+}
+
+// SecretsProvider - displays secrets from loom secret store
+class SecretsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
+  private readonly workspaceRoot: string | undefined;
+  private readonly channel: vscode.OutputChannel;
+  private readonly emitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeTreeData = this.emitter.event;
+  private cachedSecrets: string[] | null = null;
+
+  constructor(workspaceRoot: string | undefined, channel: vscode.OutputChannel) {
+    this.workspaceRoot = workspaceRoot;
+    this.channel = channel;
+  }
+
+  refresh() {
+    this.cachedSecrets = null;
+    this.emitter.fire();
+  }
+
+  getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
+    return element;
+  }
+
+  async getChildren(element?: vscode.TreeItem): Promise<vscode.TreeItem[]> {
+    if (element) {
+      return []; // No children for secret items
+    }
+
+    // Root level: fetch secrets from loom CLI
+    try {
+      const secrets = await this.fetchSecrets();
+
+      if (secrets.length === 0) {
+        const placeholder = new vscode.TreeItem(
+          "No secrets configured",
+          vscode.TreeItemCollapsibleState.None,
+        );
+        placeholder.iconPath = new vscode.ThemeIcon("key");
+        placeholder.command = {
+          command: "loom.setSecret",
+          title: "Add Secret",
+        };
+        placeholder.tooltip = "Click to add a secret";
+        return [placeholder];
+      }
+
+      return secrets.map((secretKey) => {
+        const item = new vscode.TreeItem(secretKey, vscode.TreeItemCollapsibleState.None);
+        item.iconPath = new vscode.ThemeIcon("key");
+        item.contextValue = "secret";
+        item.tooltip = `Secret: ${secretKey}\nClick to copy name`;
+        item.command = {
+          command: "workbench.action.quickOpen",
+          title: "Copy Secret Name",
+          arguments: [`>Loom: `],
+        };
+        return item;
+      });
+    } catch (error) {
+      const errorItem = new vscode.TreeItem(
+        "Failed to load secrets",
+        vscode.TreeItemCollapsibleState.None,
+      );
+      errorItem.iconPath = new vscode.ThemeIcon("warning");
+      errorItem.tooltip = "Click to retry or check if loom CLI is available";
+      errorItem.command = {
+        command: "loom.refreshSecrets",
+        title: "Retry",
+      };
+      return [errorItem];
+    }
+  }
+
+  private async fetchSecrets(): Promise<string[]> {
+    if (this.cachedSecrets !== null) {
+      return this.cachedSecrets;
+    }
+
+    const loomBinary = resolveLoomBinary(this.workspaceRoot);
+    const { stdout } = await execFileAsync(loomBinary, ["secrets", "list"], {
+      cwd: this.workspaceRoot || os.homedir(),
+      timeout: 10000,
+    });
+
+    // Parse output - look for lines that are secret names (after "Secrets (N):" header)
+    const lines = stdout.split("\n");
+    const secrets: string[] = [];
+    let inSecretsList = false;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("Secrets (")) {
+        inSecretsList = true;
+        continue;
+      }
+      if (inSecretsList && trimmed && !trimmed.startsWith("Configured") && !trimmed.startsWith("No secrets")) {
+        secrets.push(trimmed);
+      }
+    }
+
+    this.cachedSecrets = secrets;
+    return secrets;
   }
 }
 
