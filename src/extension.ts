@@ -2505,6 +2505,7 @@ function deriveHubSettings(): HubSettings {
 }
 
 interface DaemonConfig {
+  repo_root?: string;
   hub: {
     url: string;
     enabled: boolean;
@@ -2519,7 +2520,20 @@ async function writeDaemonConfig(settings: HubSettings): Promise<void> {
   const configDir = path.join(os.homedir(), ".config", "loom");
   const configPath = path.join(configDir, "config.yaml");
 
+  // Read existing config to preserve repo_root if set
+  let existingRepoRoot: string | undefined;
+  try {
+    const existingContent = await fsp.readFile(configPath, "utf-8");
+    const repoRootMatch = existingContent.match(/^repo_root:\s*(.+)$/m);
+    if (repoRootMatch) {
+      existingRepoRoot = repoRootMatch[1].trim().replace(/^["']|["']$/g, "");
+    }
+  } catch {
+    // File doesn't exist yet, that's fine
+  }
+
   const config: DaemonConfig = {
+    repo_root: existingRepoRoot,
     hub: {
       url: settings.hubUrl,
       enabled: true,
@@ -2537,11 +2551,14 @@ async function writeDaemonConfig(settings: HubSettings): Promise<void> {
 
   try {
     await fsp.mkdir(configDir, { recursive: true });
+    const repoRootLine = config.repo_root
+      ? `# Workspace root for resolving \${repo} in registry.yaml\nrepo_root: ${config.repo_root}\n\n`
+      : "";
     const yaml = `# Loom daemon configuration
 # This file is managed by the Loom VS Code extension
 # Changes will be applied on next daemon restart
 
-hub:
+${repoRootLine}hub:
   url: "${config.hub.url}"
   enabled: ${config.hub.enabled}
   profile: "${config.hub.profile}"
