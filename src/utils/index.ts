@@ -1,2 +1,5 @@
 export * from "./errors";
 export * from "./binary";
+export * from "./http";
+export * from "./config";
+export * from "./helpers";

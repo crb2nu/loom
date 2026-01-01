@@ -1,0 +1,6 @@
+out/
+node_modules/
+*.js
+*.d.ts
+coverage/
+src/__tests__/

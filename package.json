@@ -151,13 +151,40 @@
         "vscode:prepublish": "npm run compile",
         "compile": "tsc -p ./",
         "watch": "tsc -watch -p ./",
-        "package": "vsce package"
+        "package": "vsce package",
+        "lint": "eslint src --ext .ts",
+        "lint:fix": "eslint src --ext .ts --fix",
+        "format": "prettier --write \"src/**/*.ts\"",
+        "format:check": "prettier --check \"src/**/*.ts\"",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:coverage": "vitest run --coverage",
+        "check": "npm run lint && npm run format:check && tsc --noEmit"
+    },
+    "lint-staged": {
+        "*.{ts,tsx,js,json,md}": [
+            "prettier --write"
+        ],
+        "src/**/*.{ts,tsx}": [
+            "eslint --fix"
+        ]
     },
     "devDependencies": {
-        "@vscode/vsce": "^3.1.0",
         "@types/node": "^20.0.0",
         "@types/vscode": "^1.80.0",
-        "typescript": "^5.4.0"
+        "@typescript-eslint/eslint-plugin": "^8.18.0",
+        "@typescript-eslint/parser": "^8.18.0",
+        "@vitest/coverage-v8": "^2.1.0",
+        "@vscode/vsce": "^3.1.0",
+        "eslint": "^8.57.0",
+        "eslint-config-prettier": "^9.1.0",
+        "eslint-import-resolver-typescript": "^4.4.4",
+        "eslint-plugin-import": "^2.31.0",
+        "husky": "^9.0.0",
+        "lint-staged": "^15.0.0",
+        "prettier": "^3.4.2",
+        "typescript": "^5.4.0",
+        "vitest": "^2.1.0"
     },
     "dependencies": {
         "yaml": "^2.4.2"

@@ -1,5 +1,3 @@
-import * as vscode from "vscode";
-
 export interface TargetSpec {
   description?: string;
   command?: string;
@@ -90,4 +88,22 @@ export interface ConfigSyncState {
 export interface ActionableError {
   message: string;
   actions: { label: string; command?: string; url?: string }[];
+}
+
+export interface DaemonConfig {
+  repo_root?: string;
+  hub: {
+    url: string;
+    enabled: boolean;
+    profile: string;
+    cf_access_client_id?: string;
+    cf_access_client_secret?: string;
+  };
+  debug: boolean;
+}
+
+export interface SnapshotEnvResult {
+  env: Record<string, string>;
+  resolved: string[];
+  missing: string[];
 }

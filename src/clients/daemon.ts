@@ -1,7 +1,9 @@
-import * as vscode from "vscode";
-import * as os from "os";
 import { execFile } from "child_process";
+import * as os from "os";
 import { promisify } from "util";
+
+import * as vscode from "vscode";
+
 import { DaemonServerInfo, DaemonToolInfo } from "../types";
 import { resolveLoomBinary } from "../utils/binary";
 
@@ -42,7 +44,7 @@ export class DaemonClient {
       this.cachedServers = parsed.servers ?? [];
       this.lastFetch = now;
       return this.cachedServers;
-    } catch (error) {
+    } catch {
       // Daemon might not be running - try parsing text output
       try {
         const loomBinary = resolveLoomBinary(this.workspaceRoot);

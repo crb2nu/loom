@@ -1,6 +1,6 @@
-import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
+import * as path from "path";
 
 export function findBinaryInPath(binaryName: string): string | undefined {
   const pathEntries = process.env.PATH?.split(path.delimiter) ?? [];
@@ -12,7 +12,7 @@ export function findBinaryInPath(binaryName: string): string | undefined {
         if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
           return candidate;
         }
-      } catch (error) {
+      } catch {
         continue;
       }
     }

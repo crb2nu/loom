@@ -4,6 +4,7 @@ include: []
 
 stages:
   - lint
+  - test
   - build
   - package
   - release
@@ -23,12 +24,51 @@ default:
   before_script:
     - npm ci --prefer-offline
 
+# ESLint check
+lint:eslint:
+  stage: lint
+  extends: .install
+  script:
+    - npm run lint
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Prettier format check
+lint:prettier:
+  stage: lint
+  extends: .install
+  script:
+    - npm run format:check
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
 # Type checking with TypeScript
 lint:typecheck:
   stage: lint
   extends: .install
   script:
     - npx tsc --noEmit
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Unit tests with Vitest
+test:unit:
+  stage: test
+  extends: .install
+  script:
+    - npm run test
+  coverage: '/All files[^|]*\|[^|]*\s+([\d\.]+)/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage/cobertura-coverage.xml
+    paths:
+      - coverage/
+    expire_in: 1 week
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

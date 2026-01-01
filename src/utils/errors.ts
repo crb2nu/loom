@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+
 import { ActionableError } from "../types";
 
 export function analyzeError(error: unknown, context: string): ActionableError {
@@ -8,8 +9,12 @@ export function analyzeError(error: unknown, context: string): ActionableError {
   const stderr = err.stderr ?? "";
 
   // Daemon not running
-  if (message.includes("ECONNREFUSED") || message.includes("connect ENOENT") ||
-      message.includes("no such file") || stderr.includes("daemon not running")) {
+  if (
+    message.includes("ECONNREFUSED") ||
+    message.includes("connect ENOENT") ||
+    message.includes("no such file") ||
+    stderr.includes("daemon not running")
+  ) {
     return {
       message: `${context}: Daemon is not running`,
       actions: [
@@ -20,12 +25,10 @@ export function analyzeError(error: unknown, context: string): ActionableError {
   }
 
   // Binary not found
-  if (code === "ENOENT" || message.includes("spawn") && message.includes("ENOENT")) {
+  if (code === "ENOENT" || (message.includes("spawn") && message.includes("ENOENT"))) {
     return {
       message: `${context}: Loom binary not found`,
-      actions: [
-        { label: "Install Loom", url: "https://github.com/crb2nu/loom" },
-      ],
+      actions: [{ label: "Install Loom", url: "https://github.com/crb2nu/loom" }],
     };
   }
 
@@ -75,10 +78,7 @@ export async function showActionableError(error: unknown, context: string): Prom
   }
 
   const actionLabels = analyzed.actions.map((a) => a.label);
-  const selection = await vscode.window.showErrorMessage(
-    analyzed.message,
-    ...actionLabels,
-  );
+  const selection = await vscode.window.showErrorMessage(analyzed.message, ...actionLabels);
 
   if (selection) {
     const action = analyzed.actions.find((a) => a.label === selection);
