@@ -1,3 +1,5 @@
+![Loom Banner](assets/banner.png)
+
 # Codex Context Manager (Preview)
 
 Workspace tooling to surface Codex/Kilocode context and keep MCP server definitions synchronized across the CLI, VS Code extension, and Kilocode client.

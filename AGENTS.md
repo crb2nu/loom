@@ -43,3 +43,7 @@ npm install
 npm run compile
 # Press F5 in VSCode to launch Extension Development Host
 ```
+
+## Planning
+- See `ROADMAP.md` for project status and plans.
+
