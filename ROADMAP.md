@@ -19,7 +19,7 @@ Loom (aka Codex Context Manager) is in **Preview**. It serves as the VS Code/Cur
 ### Phase 1: Stability & Polish
 
 - [x] **Config Watcher**: Auto-reload when `registry.yaml` changes (replacing manual sync).
-- [ ] **Error Handling**: Better UI feedback when the Hub is unreachable.
+- [x] **Error Handling**: Better UI feedback when the Hub is unreachable.
 - [ ] **Onboarding**: "Welcome" walkthrough for new users to set up their context.
 
 ### Phase 2: Advanced Context

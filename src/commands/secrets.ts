@@ -62,10 +62,14 @@ async function listSecrets(ctx: CommandContext): Promise<void> {
     },
     async () => {
       try {
-        const { stdout, stderr } = await execFileAsync(loomBinary, ["secrets", "list", "--backends"], {
-          cwd: workspaceRoot || os.homedir(),
-          timeout: 10000,
-        });
+        const { stdout, stderr } = await execFileAsync(
+          loomBinary,
+          ["secrets", "list", "--backends"],
+          {
+            cwd: workspaceRoot || os.homedir(),
+            timeout: 10000,
+          }
+        );
 
         loomChannel.appendLine("─".repeat(60));
         if (stdout) {
@@ -176,10 +180,14 @@ async function importSecrets(ctx: CommandContext): Promise<void> {
     },
     async () => {
       try {
-        const { stdout, stderr } = await execFileAsync(loomBinary, ["secrets", "import", filePath], {
-          cwd: workspaceRoot || os.homedir(),
-          timeout: 30000,
-        });
+        const { stdout, stderr } = await execFileAsync(
+          loomBinary,
+          ["secrets", "import", filePath],
+          {
+            cwd: workspaceRoot || os.homedir(),
+            timeout: 30000,
+          }
+        );
 
         loomChannel.appendLine("─".repeat(60));
         if (stdout) {
@@ -225,10 +233,14 @@ async function validateSecrets(ctx: CommandContext): Promise<void> {
     },
     async () => {
       try {
-        const { stdout, stderr } = await execFileAsync(loomBinary, ["validate", "configs", "--all"], {
-          cwd: workspaceRoot || os.homedir(),
-          timeout: 60000,
-        });
+        const { stdout, stderr } = await execFileAsync(
+          loomBinary,
+          ["validate", "configs", "--all"],
+          {
+            cwd: workspaceRoot || os.homedir(),
+            timeout: 60000,
+          }
+        );
 
         loomChannel.appendLine("─".repeat(60));
         if (stdout) {
@@ -239,7 +251,9 @@ async function validateSecrets(ctx: CommandContext): Promise<void> {
         }
 
         if (stdout?.includes("No plaintext secrets found")) {
-          void vscode.window.showInformationMessage("Loom: No plaintext secrets found in configs ✓");
+          void vscode.window.showInformationMessage(
+            "Loom: No plaintext secrets found in configs ✓"
+          );
         } else {
           void vscode.window.showWarningMessage(
             "Loom: Potential plaintext secrets detected - check output"

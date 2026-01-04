@@ -86,6 +86,12 @@ export class RegistryProvider implements vscode.TreeDataProvider<vscode.TreeItem
       : `Hub status: ${hubSnapshot.health?.status ?? "unknown"} (${hubSnapshot.health?.sessions ?? 0} sessions)`;
     const hubItem = new vscode.TreeItem(hubStatusLabel, vscode.TreeItemCollapsibleState.None);
     hubItem.iconPath = new vscode.ThemeIcon(hubSnapshot.error ? "error" : "server-process");
+    if (hubSnapshot.error) {
+      hubItem.tooltip = `Hub Error: ${hubSnapshot.error}`;
+      hubItem.contextValue = "hubError";
+    } else {
+      hubItem.tooltip = "Connection to MCP Hub is healthy";
+    }
     hubItem.command = {
       command: "loom.refreshHubStatus",
       title: "Refresh hub status",
