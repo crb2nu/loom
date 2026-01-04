@@ -94,14 +94,33 @@ export async function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(toolTree);
 
+  let syncTimeout: NodeJS.Timeout | undefined;
+
   const watcher = registryPath
     ? watchRegistry(workspaceRoot, registryPath, () => {
+        // Refresh UI immediately
         registryProvider.refresh();
         serverProvider.refresh();
+
+        // Debounce sync trigger to avoid multiple runs during file writes
+        if (syncTimeout) {
+          clearTimeout(syncTimeout);
+        }
+        syncTimeout = setTimeout(() => {
+          void vscode.commands.executeCommand("loom.syncConfigs");
+          syncTimeout = undefined;
+        }, 1000); // Wait 1s for file write to settle
       })
     : undefined;
   if (watcher) {
-    context.subscriptions.push({ dispose: () => watcher.close() });
+    context.subscriptions.push({
+      dispose: () => {
+        watcher.close();
+        if (syncTimeout) {
+          clearTimeout(syncTimeout);
+        }
+      },
+    });
   }
 
   if (workspaceRoot) {
@@ -174,9 +193,7 @@ async function ensureServersOnStartup(
   }
 
   channel.clear();
-  channel.appendLine(
-    `[${new Date().toISOString()}] ensure_mcp_servers.py --fix --refresh-zep-map`
-  );
+  channel.appendLine(`[${new Date().toISOString()}] ensure_mcp_servers.py --fix --refresh-zep-map`);
   try {
     const { stdout, stderr } = await execFileAsync(
       pythonExecutable,
