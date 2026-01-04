@@ -54,6 +54,18 @@ export interface DaemonServerInfo {
   running: boolean;
 }
 
+export interface ToolInputSchema {
+  type: string;
+  properties?: Record<string, unknown>;
+  required?: string[];
+}
+
+export interface Tool {
+  name: string;
+  description?: string;
+  inputSchema?: ToolInputSchema;
+}
+
 export interface DaemonToolInfo {
   name: string;
   description?: string;

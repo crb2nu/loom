@@ -158,6 +158,48 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.window.registerTreeDataProvider("loomSecrets", secretsProvider)
   );
 
+  // Deep Search
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { DeepSearchManager } = require("./managers/deepSearch");
+  const deepSearchManager = new DeepSearchManager(daemonClient, loomChannel);
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("loom.deepSearch", async () => {
+      const query = await vscode.window.showInputBox({
+        prompt: "Search across all connected MCP servers",
+        placeHolder: "Enter query (e.g. 'error handling', 'PR #123')",
+      });
+
+      if (!query) return;
+
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `Searching for "${query}"...`,
+          cancellable: false,
+        },
+        async (_progress) => {
+          const results: any[] = await deepSearchManager.search(query);
+
+          // Simple output for now - create a new untitled document with JSON results
+          // Long term: Use a Webview or QuickPick
+          const content = results
+            .map(
+              (r: { source: string; tool: string; error?: string; data: any }) =>
+                `## ${r.source.toUpperCase()} (${r.tool})\n${r.error ? `⚠️ Error: ${r.error}` : JSON.stringify(r.data, null, 2)}\n`
+            )
+            .join("\n---\n\n");
+
+          const doc = await vscode.workspace.openTextDocument({
+            content: `# Deep Search Results: "${query}"\n\n${content}`,
+            language: "markdown",
+          });
+          await vscode.window.showTextDocument(doc);
+        }
+      );
+    })
+  );
+
   // Create command context with all dependencies
   const commandContext: CommandContext = {
     workspaceRoot,
