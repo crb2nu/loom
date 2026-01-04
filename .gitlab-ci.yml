@@ -6,8 +6,7 @@ stages:
   - lint
   - test
   - build
-  - package
-  - release
+  - deploy
 
 variables:
   NODE_VERSION: "20"
@@ -89,10 +88,8 @@ build:compile:
 
 # Package extension as .vsix
 package:vsix:
-  stage: package
+  stage: build
   extends: .install
-  needs:
-    - build:compile
   script:
     - npm run package
     - mv *.vsix loom-${CI_COMMIT_SHORT_SHA}.vsix
@@ -106,7 +103,7 @@ package:vsix:
 
 # Release on tags
 release:publish:
-  stage: release
+  stage: deploy
   extends: .install
   needs:
     - package:vsix
@@ -125,10 +122,8 @@ release:publish:
 
 # Manual publish to VS Code Marketplace (requires VSCE_PAT variable)
 release:marketplace:
-  stage: release
+  stage: deploy
   extends: .install
-  needs:
-    - release:publish
   script:
     - |
       if [ -z "$VSCE_PAT" ]; then
