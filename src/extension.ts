@@ -176,6 +176,20 @@ export async function activate(context: vscode.ExtensionContext) {
   // Register all commands
   const commandDisposables = registerAllCommands(commandContext);
   context.subscriptions.push(...commandDisposables);
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("loom.showContextGraph", () => {
+      const { ContextGraphPanel } = require("./webviews/ContextGraphPanel");
+      ContextGraphPanel.render(context.extensionUri);
+
+      // Initial update
+      if (ContextGraphPanel.currentPanel) {
+        void registryProvider.getRegistrySnapshot().then((registry) => {
+          ContextGraphPanel.currentPanel?.updateGraph(registry, hubStatusManager.getStatus());
+        });
+      }
+    })
+  );
 }
 
 export function deactivate() {

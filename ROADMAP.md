@@ -24,7 +24,7 @@ Loom (aka Codex Context Manager) is in **Preview**. It serves as the VS Code/Cur
 
 ### Phase 2: Advanced Context
 
-- [ ] **Context Graph**: Visual node graph of connected MCP servers.
+- [x] **Context Graph**: Visual node graph of connected MCP servers.
 - [ ] **Deep Search**: Search across _all_ connected MCP resources directly from VS Code.
 - [ ] **Remote Tunnels**: Secure tunneling to remote k8s MCP servers (replacing `kubectl port-forward`).
 
