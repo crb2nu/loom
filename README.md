@@ -1,67 +1,272 @@
 ![Loom Banner](assets/banner.png)
 
-# Codex Context Manager (Preview)
+# Loom - MCP Context Manager for VS Code
 
-Workspace tooling to surface Codex/Kilocode context and keep MCP server definitions synchronized across the CLI, VS Code extension, and Kilocode client.
+**Weaving context for AI** - Unified MCP hub management across VS Code, Antigravity, Gemini, Claude, Codex, and Kilocode.
 
-## Status
+## Overview
 
-- **Stage:** Hub-aware UI with registry + generator integration
-- **Highlights:**
-  - Canonical registry at `mcp/context/registry.yaml`
-  - Hub-facing tree views (**MCP Hub Overview**, **MCP Hub Servers**) that poll gateway `/health`, `/ready`, and `/api/servers`
-  - Generator `scripts/mcp/generate_mcp_configs.py --emit --hub-mode` produces target-specific artifacts under `generated/mcp/`
-  - Hub settings (`codexContextManager.hubUrl`, `codexContextManager.hubProfile`) feed both UI status and generator invocations
-  - Local `vsce` dev dependency for hassle-free packaging (`npm run package`)
+Loom is a VS Code extension that manages MCP (Model Context Protocol) server configurations across multiple AI coding assistant platforms. It provides:
 
-## Current Commands
+- **Multi-platform sync**: Keep MCP configs consistent across 6 platforms
+- **Hub integration**: Connect to centralized MCP gateway
+- **Skills registry**: Browse and manage agent skills
+- **Agent context**: Persistent memory across sessions
+- **Server health**: Monitor MCP server status
 
-| Command | Description |
-| ------- | ----------- |
-| `Codex: Show Context Status` | Summarises registry metadata (server count/version). |
-| `Codex: Show MCP Mesh Report` | Prints registry ↔ hub ↔ VS Code coverage and hub/local routing details to the `Codex MCP Mesh` channel. |
-| `Codex: Sync MCP Configs` | Invokes the Python generator in hub mode, runs Codex/Kilocode sync scripts, and refreshes `.vscode/mcp.json` from generated output. |
-| `Codex: Check MCP Server Health` | Runs `test_mcp_servers.py` and streams results to the `Codex MCP Health` output channel. |
-| `Codex: Snapshot Context to Qdrant` | Invokes `scripts/context/snapshot_qdrant.py` to embed documentation and upsert into Qdrant for retrieval. |
-| `Codex: Bootstrap Workspace Context` | Generator → sync scripts → MCP cache warm-up → Qdrant snapshot (one-shot onboarding). |
-| `Codex: Refresh MCP Hub Status` | Polls hub `/health`, `/ready`, and `/api/servers` and refreshes tree views. |
-| `Codex: Verify MCP Hub Client` | Confirms `mcp-hub-wrapper` is available (pyenv/Path-aware) for hub-mode configs. |
+## Features
 
-The sync command honours the `CM_PYTHON_EXECUTABLE` environment variable (defaults to `python3`).
+### Platform Configuration Management (v0.7.0)
 
-## Registry-Driven Generation
+Manage MCP configurations for multiple AI assistants from a single interface:
 
-- The registry captures per-server defaults in `common`, with overrides for `codex`, `kilocode`, and `vscode` targets. Current coverage includes Tavily, Context7, GitHub, Kubernetes/ops servers, SequentialThinking, Time, and Qdrant.
+| Platform | Config Format | Status |
+|----------|---------------|--------|
+| VS Code | JSON | Supported |
+| Antigravity | JSON | Supported |
+| Gemini | JSON | Supported |
+| Claude | JSON | Supported |
+| Codex | TOML | Supported |
+| Kilocode | TOML | Supported |
 
-## Qdrant Snapshot Workflow
+**Platform Commands:**
+- `Loom: Show Platform Configs` - View sync status for all platforms
+- `Loom: Sync Platform Config` - Sync a single platform
+- `Loom: Sync All Platforms` - Sync all enabled platforms
+- `Loom: Show Sync Dashboard` - Visual sync status grid
+- `Loom: Diff Platform Config` - Compare repo vs home configs
 
-`Codex: Snapshot Context to Qdrant` relies on:
-- `MORPH_API_KEY` for embedding via Morph
-- `QDRANT_URL`/`QDRANT_API_KEY` environment (or keychain entry for Codex)
+### MCP Hub Integration
 
-The script scans `docs/`, `research/`, `README.md`, `PLAN.md`, and `AGENTS.md`, chunks content to ~1.2K characters, embeds in batches, ensures the target collection exists, then upserts payloads with file metadata. Adjust patterns by passing `--glob` arguments inside `.vscode/tasks.json` or invoking the script directly.
-- Generator output:
-  - `generated/mcp/codex/config.toml`
-  - `generated/mcp/kilocode/config.toml`
-  - `generated/mcp/vscode/mcp.json`
-- Paths declared as `scripts/...` or `mcp/...` are expanded to absolute workspace paths for emitted artifacts.
+Connect to centralized MCP gateway for server aggregation:
 
-## Development
+- **Hub Overview**: Registry metadata and server count
+- **Server Status**: Live health polling
+- **Routing**: Hub vs local server routing
+
+### Skills Registry
+
+Browse and manage agent skills:
+
+- **Category filtering**: Filter by kubernetes, gitops, etc.
+- **Platform filtering**: Show skills for specific platforms
+- **Script execution**: Run skill scripts from VS Code
+- **Resource access**: Open skill references and assets
+
+### Agent Context (Persistent Memory)
+
+Track context across sessions with mcp-agent-context:
+
+- **Sessions**: Start/end agent work sessions
+- **Context entries**: Record decisions, findings, questions
+- **Tasks**: Track agent work items
+- **Knowledge graph**: Visual context relationships
+
+### Server Health Monitoring
+
+Monitor MCP server health and performance:
+
+- **Health dashboard**: Per-server status
+- **Metrics collection**: Response times, error rates
+- **Profile switching**: Quick server set changes
+
+## Installation
+
+### From VSIX
 
 ```bash
-cd services/codex-context-manager
+# Build the extension
+cd services/loom
+npm install
+npm run package
+
+# Install in VS Code
+code --install-extension loom-0.7.0.vsix
+
+# Or in Antigravity
+antigravity --install-extension loom-0.7.0.vsix
+```
+
+### Development
+
+```bash
+cd services/loom
 npm install
 npm run watch
 ```
 
-Launch the extension via `F5` (Extension Development Host). Use the explorer views **MCP Hub Overview** and **MCP Hub Servers** to inspect registry and live hub data.
+Press `F5` to launch the Extension Development Host.
 
-### Packaging
+## Configuration
 
-```bash
-cd services/codex-context-manager
-npm run compile          # optional preflight
-npm run package          # uses local @vscode/vsce
+### Settings
+
+```json
+{
+  // Platform detection (auto | vscode | antigravity)
+  "loom.platform": "auto",
+
+  // Platforms to manage
+  "loom.enabledPlatforms": ["vscode", "antigravity", "gemini", "claude"],
+
+  // Auto-sync on startup
+  "loom.syncOnStartup": false,
+
+  // Sync status polling interval (ms)
+  "loom.syncStatusPollingInterval": 60000,
+
+  // MCP Hub URL
+  "loom.hubUrl": "wss://mcp.flexinfer.ai/ws",
+
+  // Hub profile
+  "loom.hubProfile": "codex",
+
+  // Drift detection behavior (off | prompt | auto)
+  "loom.autoSyncOnDrift": "prompt",
+
+  // Active server profile
+  "loom.activeProfile": "full",
+
+  // Custom server profiles
+  "loom.profiles": {}
+}
 ```
 
-Install the generated `.vsix` via VS Code: **Extensions: Install from VSIX…**.
+### Server Profiles
+
+Define custom server profiles for quick switching:
+
+```json
+{
+  "loom.profiles": {
+    "minimal": {
+      "servers": ["git", "filesystem"],
+      "hubEnabled": false,
+      "platforms": ["vscode"]
+    },
+    "k8s-ops": {
+      "servers": ["k8s", "helm", "flux", "prometheus"],
+      "hubEnabled": true,
+      "platforms": ["vscode", "antigravity", "claude"]
+    }
+  }
+}
+```
+
+## Views
+
+Loom adds these views to the Explorer sidebar:
+
+| View | Description |
+|------|-------------|
+| **Loom Platforms** | Platform config sync status |
+| **Loom Hub** | MCP hub overview |
+| **Loom Servers** | Running MCP servers |
+| **Loom Tools** | Available MCP tools |
+| **Loom Skills** | Skills registry browser |
+| **Loom Secrets** | Configured secrets |
+| **Loom Agent Context** | Session context entries |
+| **Loom Tasks** | Agent task tracking |
+
+## Commands
+
+### Platform Management
+
+| Command | Description |
+|---------|-------------|
+| `Loom: Show Platform Configs` | Refresh platform configs view |
+| `Loom: Sync Platform Config` | Sync specific platform |
+| `Loom: Sync All Platforms` | Sync all enabled platforms |
+| `Loom: Diff Platform Config` | Show repo vs home diff |
+| `Loom: Open Platform Config` | Open config in editor |
+| `Loom: Show Sync Dashboard` | Visual sync status dashboard |
+
+### Hub & Servers
+
+| Command | Description |
+|---------|-------------|
+| `Loom: Refresh MCP Hub Status` | Poll hub status |
+| `Loom: Check MCP Server Health` | Run health checks |
+| `Loom: Show Server Health Dashboard` | Health metrics view |
+| `Loom: Switch Server Profile` | Change active profile |
+
+### Skills
+
+| Command | Description |
+|---------|-------------|
+| `Loom: Refresh Skills` | Reload skills registry |
+| `Loom: Search Skills` | Search by name/category |
+| `Loom: Filter Skills by Platform` | Filter by target platform |
+| `Loom: Show Skill Details` | View skill instructions |
+| `Loom: Run Skill Script` | Execute skill script |
+
+### Agent Context
+
+| Command | Description |
+|---------|-------------|
+| `Loom: Start Agent Session` | Begin new session |
+| `Loom: End Agent Session` | End current session |
+| `Loom: Add Context Entry` | Record context |
+| `Loom: Recall Context` | Search past context |
+| `Loom: Show Knowledge Graph` | Visual context graph |
+
+### Secrets
+
+| Command | Description |
+|---------|-------------|
+| `Loom: List Secrets` | Show configured secrets |
+| `Loom: Set Secret` | Add/update secret |
+| `Loom: Validate Config Secrets` | Check for missing secrets |
+
+## CLI Integration
+
+Loom integrates with the `loom` CLI from loom-core:
+
+```bash
+# Check sync status
+loom sync status
+
+# Sync specific platform
+loom sync vscode --regen
+loom sync antigravity --regen
+loom sync claude --regen
+
+# Sync all platforms
+for p in vscode antigravity codex claude gemini kilocode; do
+  loom sync $p --regen
+done
+```
+
+## Architecture
+
+```
+services/
+├── loom/           # VS Code extension (TypeScript)
+│   ├── src/
+│   │   ├── clients/        # API clients
+│   │   ├── commands/       # Command handlers
+│   │   ├── providers/      # Tree view providers
+│   │   ├── managers/       # Background managers
+│   │   ├── webviews/       # Webview panels
+│   │   └── utils/          # Utilities
+│   └── package.json
+└── loom-core/      # Backend (Go)
+    └── cmd/loom/   # CLI tool
+```
+
+## Related Documentation
+
+- [AGENTS.md](AGENTS.md) - Agent working notes
+- [ROADMAP.md](ROADMAP.md) - Project roadmap
+- [CHANGELOG.md](CHANGELOG.md) - Version history
+- [.agents/skills/mcp-config.md](../../.agents/skills/mcp-config.md) - MCP config guide
+
+## Requirements
+
+- VS Code 1.80.0+
+- `loom` CLI from loom-core (for sync operations)
+- Node.js 18+ (for development)
+
+## License
+
+MIT

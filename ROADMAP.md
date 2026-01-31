@@ -2,35 +2,124 @@
 
 > Last Updated: January 2026
 
-## Current Status
+## Current Status: v0.7.0
 
-Loom (aka Codex Context Manager) is in **Preview**. It serves as the VS Code/Cursor/Kilocode extension that bridges the local development environment with the broader MCP ecosystem.
+Loom is a VS Code extension for MCP (Model Context Protocol) context management. It provides unified configuration sync across multiple AI coding assistant platforms.
 
-### Implemented Features
+### v0.7.0 Highlights
 
-- ✅ **Registry Sync**: Generates `mcp.json` configs from a central `registry.yaml`.
-- ✅ **Hub Integration**: Polling and status display for `mcp-gateway`.
-- ✅ **Context Snapshotting**: `scripts/context/snapshot_qdrant.py` for RAG ingestion.
-- ✅ **Health Checks**: Automated testing of MCP server connectivity.
-- ✅ **UI**: Tree views for Hub Status and Server Lists.
+- **Multi-platform support**: VS Code, Antigravity, Gemini, Claude, Codex, Kilocode
+- **Platform detection**: Auto-detects VS Code vs Antigravity
+- **Sync dashboard**: Visual status grid across all platforms
+- **Skills filtering**: Filter by target platform
+
+## Implemented Features
+
+### Platform Management (v0.7.0)
+- [x] Platform detection (VS Code vs Antigravity)
+- [x] Loom Platforms tree view
+- [x] Sync dashboard webview
+- [x] Platform sync commands (sync, diff, open, regenerate)
+- [x] Profile platforms support
+- [x] Skills platform filtering
+
+### Server Health (v0.6.0)
+- [x] Health monitoring dashboard
+- [x] Profile manager with quick switching
+- [x] Hub vs local routing status
+
+### Agent Context (v0.5.0)
+- [x] Session management (start/end)
+- [x] Context entries (decisions, findings, questions)
+- [x] Task tracking
+- [x] Knowledge graph visualization
+- [x] Code annotations with gutter decorations
+
+### Skills Registry (v0.4.0)
+- [x] Skills browser with categories
+- [x] Script execution from VS Code
+- [x] Skill search and filtering
+- [x] Resource and asset access
+
+### Secrets Management (v0.3.0)
+- [x] Secrets view and management
+- [x] Config validation for missing secrets
+- [x] Keychain integration
+
+### Core Features (v0.1.0-0.2.0)
+- [x] MCP Hub integration
+- [x] Server status polling
+- [x] Tools browser
+- [x] Daemon control (start/stop/restart)
+- [x] Config sync from registry
 
 ## Upcoming Work
 
-### Phase 1: Stability & Polish
+### Phase 1: Polish & Stability (v0.7.x)
 
-- [x] **Config Watcher**: Auto-reload when `registry.yaml` changes (replacing manual sync).
-- [x] **Error Handling**: Better UI feedback when the Hub is unreachable.
-- [ ] **Onboarding**: "Welcome" walkthrough for new users to set up their context.
+- [ ] **Onboarding flow**: Welcome walkthrough for new users
+- [ ] **Error recovery**: Better handling of daemon/CLI failures
+- [ ] **Offline mode**: Graceful degradation when hub unreachable
+- [ ] **Unit tests**: Increase test coverage to 80%
 
-### Phase 2: Advanced Context
+### Phase 2: Advanced Features (v0.8.0)
 
-- [x] **Context Graph**: Visual node graph of connected MCP servers.
-- [ ] **Deep Search**: Search across _all_ connected MCP resources directly from VS Code.
-- [ ] **Remote Tunnels**: Secure tunneling to remote k8s MCP servers (replacing `kubectl port-forward`).
+- [ ] **Deep search**: Search across all MCP resources from VS Code
+- [ ] **Remote tunnels**: Secure tunneling to remote K8s MCP servers
+- [ ] **Config templates**: Quick-start templates for common setups
+- [ ] **Bulk operations**: Select multiple platforms for sync
+
+### Phase 3: Intelligence (v0.9.0)
+
+- [ ] **Smart suggestions**: Recommend skills based on current file
+- [ ] **Context insights**: AI-powered context summaries
+- [ ] **Conflict resolution**: Detect and resolve config conflicts
+- [ ] **Usage analytics**: Track tool usage patterns
+
+### Phase 4: Ecosystem (v1.0.0)
+
+- [ ] **Marketplace publishing**: VS Code Marketplace release
+- [ ] **Antigravity store**: Publish to Antigravity extension store
+- [ ] **Plugin system**: Allow custom providers and views
+- [ ] **Theme support**: Light/dark theme awareness
+
+## Non-Goals
+
+These are intentionally out of scope:
+
+- **MCP server implementation**: Handled by loom-core
+- **Registry editing**: Use `registry.yaml` directly
+- **IDE-agnostic UI**: Extension is VS Code-specific
+
+## Architecture
+
+```
+Loom Extension (TypeScript)
+├── UI Layer
+│   ├── Tree Views (platforms, servers, skills, etc.)
+│   ├── Webviews (dashboard, knowledge graph)
+│   └── Status Bar
+├── Client Layer
+│   ├── Platform Config Client
+│   ├── Hub Client (WebSocket)
+│   ├── Daemon Client (HTTP)
+│   └── Skills Client
+└── Manager Layer
+    ├── Profile Manager
+    ├── Config Sync Manager
+    └── Health Monitor
+
+loom CLI (Go) - loom-core
+├── sync command (platform configs)
+├── proxy command (MCP aggregation)
+├── daemon command (background service)
+└── generate command (config generation)
+```
 
 ## References
 
-| Document               | Purpose                         |
-| ---------------------- | ------------------------------- |
-| [README.md](README.md) | Extension features and commands |
-| [AGENTS.md](AGENTS.md) | Agent guidance                  |
+| Document | Purpose |
+|----------|---------|
+| [README.md](README.md) | Installation and usage |
+| [AGENTS.md](AGENTS.md) | Agent working notes |
+| [CHANGELOG.md](CHANGELOG.md) | Version history |
