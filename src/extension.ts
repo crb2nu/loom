@@ -5,11 +5,35 @@ import { promisify } from "util";
 
 import * as vscode from "vscode";
 
-import { DaemonClient } from "./clients/daemon";
-import { registerAllCommands, CommandContext } from "./commands";
+import { DaemonClient, SkillsClient, AgentContextClient, PlatformConfigClient } from "./clients";
+import {
+  registerAllCommands,
+  CommandContext,
+  registerSkillsCommands,
+  registerAgentContextCommands,
+  registerServerHealthCommands,
+} from "./commands";
+import { registerPlatformCommands } from "./commands/platforms";
 import { HUB_REFRESH_INTERVAL_MS } from "./constants";
-import { ConfigSyncManager, HubStatusManager } from "./managers";
-import { RegistryProvider, SecretsProvider, ServerProvider, ToolProvider } from "./providers";
+import {
+  ConfigSyncManager,
+  HubStatusManager,
+  AgentSessionManager,
+  AnnotationDecorationManager,
+  ServerMetricsManager,
+  ProfileManager,
+} from "./managers";
+import { DeepSearchManager, SearchResult } from "./managers/deepSearch";
+import {
+  RegistryProvider,
+  SecretsProvider,
+  ServerProvider,
+  ToolProvider,
+  SkillsProvider,
+  AgentContextProvider,
+  TasksProvider,
+  PlatformsProvider,
+} from "./providers";
 import {
   deriveHubSettings,
   findRegistryPath,
@@ -17,6 +41,11 @@ import {
   writeDaemonConfig,
 } from "./utils/config";
 import { getPythonExecutable } from "./utils/helpers";
+import { detectPlatform, getPlatformStatusText } from "./utils/platform";
+import { ContextGraphPanel } from "./webviews/ContextGraphPanel";
+import { KnowledgeGraphPanel } from "./webviews/KnowledgeGraphPanel";
+import { MemoryDashboardPanel } from "./webviews/MemoryDashboardPanel";
+import { SyncDashboardPanel } from "./webviews/SyncDashboardPanel";
 
 const execFileAsync = promisify(execFile);
 
@@ -158,9 +187,51 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.window.registerTreeDataProvider("loomSecrets", secretsProvider)
   );
 
+  // ============================================================================
+  // Platform Configuration Integration
+  // ============================================================================
+  const detectedPlatform = detectPlatform();
+  loomChannel.appendLine(
+    `[${new Date().toISOString()}] Detected platform: ${getPlatformStatusText()} (${detectedPlatform})`
+  );
+
+  const platformConfigClient = new PlatformConfigClient(workspaceRoot, loomChannel);
+  context.subscriptions.push(platformConfigClient);
+
+  const platformsProvider = new PlatformsProvider(platformConfigClient);
+  const platformsTree = vscode.window.createTreeView("loomPlatforms", {
+    treeDataProvider: platformsProvider,
+  });
+  context.subscriptions.push(platformsTree);
+
+  // Check sync status on startup if configured
+  const syncOnStartup =
+    vscode.workspace.getConfiguration("loom").get<boolean>("syncOnStartup") ?? false;
+  if (syncOnStartup) {
+    void platformConfigClient.checkAllSyncStatus().then(() => {
+      loomChannel.appendLine(
+        `[${new Date().toISOString()}] Platform sync status checked on startup`
+      );
+    });
+  }
+
+  // Register platform commands
+  const platformCommandDisposables = registerPlatformCommands({
+    workspaceRoot,
+    loomChannel,
+    platformConfigClient,
+    platformsProvider,
+  });
+  context.subscriptions.push(...platformCommandDisposables);
+
+  // Sync dashboard command
+  context.subscriptions.push(
+    vscode.commands.registerCommand("loom.showSyncDashboard", () => {
+      SyncDashboardPanel.render(context.extensionUri, platformConfigClient);
+    })
+  );
+
   // Deep Search
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { DeepSearchManager } = require("./managers/deepSearch");
   const deepSearchManager = new DeepSearchManager(daemonClient, loomChannel);
 
   context.subscriptions.push(
@@ -179,13 +250,13 @@ export async function activate(context: vscode.ExtensionContext) {
           cancellable: false,
         },
         async (_progress) => {
-          const results: any[] = await deepSearchManager.search(query);
+          const results: SearchResult[] = await deepSearchManager.search(query);
 
           // Simple output for now - create a new untitled document with JSON results
           // Long term: Use a Webview or QuickPick
           const content = results
             .map(
-              (r: { source: string; tool: string; error?: string; data: any }) =>
+              (r: SearchResult) =>
                 `## ${r.source.toUpperCase()} (${r.tool})\n${r.error ? `⚠️ Error: ${r.error}` : JSON.stringify(r.data, null, 2)}\n`
             )
             .join("\n---\n\n");
@@ -221,7 +292,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("loom.showContextGraph", () => {
-      const { ContextGraphPanel } = require("./webviews/ContextGraphPanel");
       ContextGraphPanel.render(context.extensionUri);
 
       // Initial update
@@ -232,6 +302,125 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     })
   );
+
+  // ============================================================================
+  // Skills Integration
+  // ============================================================================
+  const skillsClient = new SkillsClient(loomChannel);
+  skillsClient.initialize(workspaceRoot);
+  context.subscriptions.push({ dispose: () => skillsClient.dispose() });
+
+  const skillsProvider = new SkillsProvider(skillsClient);
+  const skillsTree = vscode.window.createTreeView("loomSkills", {
+    treeDataProvider: skillsProvider,
+  });
+  context.subscriptions.push(skillsTree);
+
+  const skillsCommandDisposables = registerSkillsCommands({
+    workspaceRoot,
+    loomChannel,
+    skillsClient,
+    skillsProvider,
+  });
+  context.subscriptions.push(...skillsCommandDisposables);
+
+  // ============================================================================
+  // Agent Context Integration
+  // ============================================================================
+  const agentId = vscode.workspace.getConfiguration("loom").get<string>("agentId") ?? "vscode-loom";
+  const agentContextClient = new AgentContextClient(workspaceRoot, loomChannel, agentId);
+
+  const agentSessionManager = new AgentSessionManager(
+    agentContextClient,
+    loomChannel,
+    context.workspaceState
+  );
+  context.subscriptions.push(agentSessionManager);
+
+  const agentContextProvider = new AgentContextProvider(agentContextClient, agentSessionManager);
+  const agentContextTree = vscode.window.createTreeView("loomAgentContext", {
+    treeDataProvider: agentContextProvider,
+  });
+  context.subscriptions.push(agentContextTree);
+
+  const tasksProvider = new TasksProvider(agentContextClient, agentSessionManager);
+  const tasksTree = vscode.window.createTreeView("loomTasks", {
+    treeDataProvider: tasksProvider,
+  });
+  context.subscriptions.push(tasksTree);
+
+  const annotationDecorationManager = new AnnotationDecorationManager(agentContextClient);
+  context.subscriptions.push(annotationDecorationManager);
+
+  // Set initial annotation decoration state from config
+  const showAnnotations =
+    vscode.workspace.getConfiguration("loom").get<boolean>("showAnnotationDecorations") ?? true;
+  annotationDecorationManager.setEnabled(showAnnotations);
+
+  const agentContextCommandDisposables = registerAgentContextCommands({
+    workspaceRoot,
+    loomChannel,
+    agentContextClient,
+    agentSessionManager,
+    agentContextProvider,
+    tasksProvider,
+    extensionContext: context,
+  });
+  context.subscriptions.push(...agentContextCommandDisposables);
+
+  // Knowledge Graph and Memory Dashboard commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand("loom.showKnowledgeGraph", async () => {
+      const panel = KnowledgeGraphPanel.render(context.extensionUri);
+      const graphData = await agentContextClient.getKnowledgeGraph();
+      panel.updateGraph(graphData);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("loom.showMemoryDashboard", async () => {
+      const sessionId = agentSessionManager.getSessionId();
+      const panel = MemoryDashboardPanel.render(context.extensionUri);
+      const tiers = await agentContextClient.getMemoryTiers(sessionId);
+      panel.updateTiers(tiers);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("loom.toggleAnnotations", () => {
+      const enabled = annotationDecorationManager.toggle();
+      vscode.window.showInformationMessage(`Code annotations ${enabled ? "enabled" : "disabled"}`);
+    })
+  );
+
+  // ============================================================================
+  // Server Health Integration
+  // ============================================================================
+  const serverMetricsManager = new ServerMetricsManager(
+    daemonClient,
+    hubStatusManager,
+    loomChannel
+  );
+  context.subscriptions.push(serverMetricsManager);
+
+  const profileManager = new ProfileManager(hubStatusManager, daemonClient, loomChannel);
+  context.subscriptions.push(profileManager);
+
+  const serverHealthCommandDisposables = registerServerHealthCommands({
+    loomChannel,
+    serverMetricsManager,
+    profileManager,
+    extensionContext: context,
+  });
+  context.subscriptions.push(...serverHealthCommandDisposables);
+
+  // Auto-start session if configured
+  const autoStartSession =
+    vscode.workspace.getConfiguration("loom").get<boolean>("autoStartSession") ?? false;
+  if (autoStartSession && workspaceFolder) {
+    const namespace = `workspace/${workspaceFolder.name}`;
+    void agentSessionManager.startSession(namespace, "Auto-started session");
+  }
 }
 
 export function deactivate() {

@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 
 import { DaemonClient } from "../clients/daemon";
-import { Tool } from "../types";
+import { DaemonToolInfo } from "../types";
 
 export interface SearchResult {
   tool: string;
@@ -18,17 +18,19 @@ export class DeepSearchManager {
 
   /**
    * Executes a search query across all available search-capable tools.
+   * Note: Currently returns search-capable tools but cannot execute them
+   * because the daemon client doesn't support tool execution yet.
    */
   public async search(query: string): Promise<SearchResult[]> {
     this.channel.appendLine(`[DeepSearch] Starting search for: "${query}"`);
 
     // 1. Get all available tools
-    let tools: Tool[] = [];
+    let tools: DaemonToolInfo[] = [];
     try {
-      const result = await this.daemonClient.getTools();
-      tools = result.tools;
+      tools = await this.daemonClient.getTools();
     } catch (error) {
-      this.channel.appendLine(`[DeepSearch] Failed to fetch tools: ${error}`);
+      const message = error instanceof Error ? error.message : String(error);
+      this.channel.appendLine(`[DeepSearch] Failed to fetch tools: ${message}`);
       throw new Error("Could not fetch tools from daemon");
     }
 
@@ -50,41 +52,19 @@ export class DeepSearchManager {
       `[DeepSearch] Identified ${searchTools.length} search tools: ${searchTools.map((t) => t.name).join(", ")}`
     );
 
-    // 3. Execute in parallel
-    const promises = searchTools.map(async (tool) => {
-      try {
-        // Determine the "query" parameter name. Most schemas uses "query", "q", "search", "term".
-        // We'll inspect the schema to find the best fit.
-        const paramName = this.guessQueryParam(tool.inputSchema);
-        if (!paramName) {
-          return {
-            tool: tool.name,
-            source: this.getSource(tool.name),
-            error: "Could not identify query parameter",
-            data: null,
-          };
-        }
+    // 3. Return identified tools - actual execution would require tool call support in daemon
+    // For now, we just identify which tools could be used for search
+    const results: SearchResult[] = searchTools.map((tool) => ({
+      tool: tool.name,
+      source: this.getSource(tool.name),
+      data: {
+        description: tool.description ?? "No description",
+        message: `Search tool identified: ${tool.name}`,
+        query,
+      },
+      error: undefined,
+    }));
 
-        const args = { [paramName]: query };
-        const result = await this.daemonClient.callTool(tool.name, args);
-
-        return {
-          tool: tool.name,
-          source: this.getSource(tool.name),
-          data: result,
-          error: undefined,
-        };
-      } catch (error) {
-        return {
-          tool: tool.name,
-          source: this.getSource(tool.name),
-          error: error instanceof Error ? error.message : String(error),
-          data: null,
-        };
-      }
-    });
-
-    const results = await Promise.all(promises);
     return results;
   }
 
@@ -94,30 +74,5 @@ export class DeepSearchManager {
       return toolName.split("__")[0];
     }
     return "system";
-  }
-
-  private guessQueryParam(schema: any): string | null {
-    if (!schema?.properties) return null;
-
-    const props = Object.keys(schema.properties);
-
-    // Preferred matches
-    const candidates = ["query", "q", "search", "term", "text", "filter", "jql"]; // jql for jira
-
-    for (const candidate of candidates) {
-      if (props.includes(candidate)) return candidate;
-    }
-
-    // Fallback: Use the first string property if only one required
-    if (schema.required && schema.required.length === 1) {
-      return schema.required[0];
-    }
-
-    // Fallback: Use the first property
-    if (props.length > 0) {
-      return props[0];
-    }
-
-    return null;
   }
 }

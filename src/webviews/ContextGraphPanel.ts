@@ -1,6 +1,8 @@
-import { Disposable, Webview, WebviewPanel, window, Uri, ViewColumn } from "vscode";
 import * as fs from "fs";
-import { RegistryDocument, HubStatusSnapshot } from "../../types";
+
+import { Disposable, Webview, WebviewPanel, window, Uri, ViewColumn } from "vscode";
+
+import { RegistryDocument, HubStatusSnapshot, RegistryServer } from "../types";
 
 export class ContextGraphPanel {
   public static currentPanel: ContextGraphPanel | undefined;
@@ -21,7 +23,7 @@ export class ContextGraphPanel {
 
     // Handle messages from the webview
     this._panel.webview.onDidReceiveMessage(
-      (message) => {
+      (message: { type: string }) => {
         switch (message.type) {
           case "ready":
             // Can send initial data here if needed
@@ -66,7 +68,7 @@ export class ContextGraphPanel {
 
     // Transform registry servers into nodes and edges
     if (registry?.servers) {
-      registry.servers.forEach((server) => {
+      registry.servers.forEach((server: RegistryServer) => {
         nodes.push({
           id: server.name,
           label: server.name,

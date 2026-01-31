@@ -4,3 +4,4 @@ export * from "./http";
 export * from "./config";
 export * from "./helpers";
 export * from "./secrets";
+export * from "./platform";

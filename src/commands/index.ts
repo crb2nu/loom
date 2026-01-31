@@ -10,6 +10,9 @@ import { registerToolsCommands } from "./tools";
 import { CommandContext } from "./types";
 
 export { CommandContext, ExecError } from "./types";
+export { registerSkillsCommands, SkillsCommandContext } from "./skills";
+export { registerAgentContextCommands, AgentContextCommandContext } from "./agentContext";
+export { registerServerHealthCommands, ServerHealthCommandContext } from "./serverHealth";
 
 /**
  * Register all Loom commands.

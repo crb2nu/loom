@@ -2,7 +2,7 @@
     "name": "loom",
     "displayName": "Loom",
     "description": "Weaving context for AI - Unified MCP hub management for VS Code, Codex, Kilocode, and Claude Code.",
-    "version": "0.5.0",
+    "version": "0.7.0",
     "publisher": "cblevins",
     "repository": {
         "type": "git",
@@ -99,6 +99,142 @@
             {
                 "command": "loom.refreshSecrets",
                 "title": "Loom: Refresh Secrets Cache"
+            },
+            {
+                "command": "loom.refreshSkills",
+                "title": "Loom: Refresh Skills"
+            },
+            {
+                "command": "loom.searchSkills",
+                "title": "Loom: Search Skills"
+            },
+            {
+                "command": "loom.showSkillDetails",
+                "title": "Loom: Show Skill Details"
+            },
+            {
+                "command": "loom.runSkillScript",
+                "title": "Loom: Run Skill Script"
+            },
+            {
+                "command": "loom.openSkillResource",
+                "title": "Loom: Open Skill Resource"
+            },
+            {
+                "command": "loom.listSkillCategories",
+                "title": "Loom: List Skill Categories"
+            },
+            {
+                "command": "loom.startAgentSession",
+                "title": "Loom: Start Agent Session"
+            },
+            {
+                "command": "loom.endAgentSession",
+                "title": "Loom: End Agent Session"
+            },
+            {
+                "command": "loom.showAgentSessionMenu",
+                "title": "Loom: Agent Session Menu"
+            },
+            {
+                "command": "loom.addContextEntry",
+                "title": "Loom: Add Context Entry"
+            },
+            {
+                "command": "loom.showContextEntry",
+                "title": "Loom: Show Context Entry"
+            },
+            {
+                "command": "loom.recallContext",
+                "title": "Loom: Recall Context"
+            },
+            {
+                "command": "loom.addTask",
+                "title": "Loom: Add Task"
+            },
+            {
+                "command": "loom.refreshTasks",
+                "title": "Loom: Refresh Tasks"
+            },
+            {
+                "command": "loom.refreshAgentContext",
+                "title": "Loom: Refresh Agent Context"
+            },
+            {
+                "command": "loom.showKnowledgeGraph",
+                "title": "Loom: Show Knowledge Graph"
+            },
+            {
+                "command": "loom.showMemoryDashboard",
+                "title": "Loom: Show Memory Dashboard"
+            },
+            {
+                "command": "loom.toggleAnnotations",
+                "title": "Loom: Toggle Code Annotations"
+            },
+            {
+                "command": "loom.showServerHealth",
+                "title": "Loom: Show Server Health Dashboard"
+            },
+            {
+                "command": "loom.pingServer",
+                "title": "Loom: Ping Server"
+            },
+            {
+                "command": "loom.switchProfile",
+                "title": "Loom: Switch Server Profile"
+            },
+            {
+                "command": "loom.showRoutingStatus",
+                "title": "Loom: Show Routing Status"
+            },
+            {
+                "command": "loom.refreshServerMetrics",
+                "title": "Loom: Refresh Server Metrics"
+            },
+            {
+                "command": "loom.showPlatformConfigs",
+                "title": "Loom: Show Platform Configs"
+            },
+            {
+                "command": "loom.syncPlatformConfig",
+                "title": "Loom: Sync Platform Config"
+            },
+            {
+                "command": "loom.syncAllPlatforms",
+                "title": "Loom: Sync All Platforms"
+            },
+            {
+                "command": "loom.diffPlatformConfig",
+                "title": "Loom: Diff Platform Config"
+            },
+            {
+                "command": "loom.openPlatformConfig",
+                "title": "Loom: Open Platform Config"
+            },
+            {
+                "command": "loom.regeneratePlatformConfig",
+                "title": "Loom: Regenerate Platform Config"
+            },
+            {
+                "command": "loom.filterSkillsByPlatform",
+                "title": "Loom: Filter Skills by Platform"
+            },
+            {
+                "command": "loom.showSyncDashboard",
+                "title": "Loom: Show Sync Dashboard"
+            },
+            {
+                "command": "loom.pullFromHome",
+                "title": "Loom: Pull Config from Home"
+            },
+            {
+                "command": "loom.backupConfigs",
+                "title": "Loom: Backup All Configs"
+            },
+            {
+                "command": "loom.refreshPlatforms",
+                "title": "Loom: Refresh Platforms"
             }
         ],
         "views": {
@@ -118,6 +254,22 @@
                 {
                     "id": "loomSecrets",
                     "name": "Loom Secrets"
+                },
+                {
+                    "id": "loomSkills",
+                    "name": "Loom Skills"
+                },
+                {
+                    "id": "loomAgentContext",
+                    "name": "Loom Agent Context"
+                },
+                {
+                    "id": "loomTasks",
+                    "name": "Loom Tasks"
+                },
+                {
+                    "id": "loomPlatforms",
+                    "name": "Loom Platforms"
                 }
             ]
         },
@@ -143,6 +295,84 @@
                     ],
                     "default": "prompt",
                     "description": "Action when config drift is detected. 'off' = ignore, 'prompt' = ask user, 'auto' = sync automatically."
+                },
+                "loom.skillsRegistryPath": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to skills-registry.yaml. If empty, searches standard locations."
+                },
+                "loom.agentId": {
+                    "type": "string",
+                    "default": "vscode-loom",
+                    "description": "Unique identifier for this VS Code instance as an agent."
+                },
+                "loom.autoStartSession": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Automatically start an agent session when opening a workspace."
+                },
+                "loom.showAnnotationDecorations": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show gutter decorations for agent code annotations."
+                },
+                "loom.serverMetricsInterval": {
+                    "type": "number",
+                    "default": 30000,
+                    "minimum": 5000,
+                    "description": "Interval (ms) for collecting server health metrics."
+                },
+                "loom.activeProfile": {
+                    "type": "string",
+                    "default": "full",
+                    "description": "Active server profile name."
+                },
+                "loom.profiles": {
+                    "type": "object",
+                    "default": {},
+                    "description": "Server profiles for quick switching. Each profile has 'servers' (array or '*'), 'hubEnabled' (boolean), and optional 'platforms' (array)."
+                },
+                "loom.platform": {
+                    "type": "string",
+                    "enum": [
+                        "auto",
+                        "vscode",
+                        "antigravity"
+                    ],
+                    "default": "auto",
+                    "description": "Platform mode. 'auto' detects automatically between VS Code and Antigravity."
+                },
+                "loom.enabledPlatforms": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "vscode",
+                            "antigravity",
+                            "gemini",
+                            "codex",
+                            "kilocode",
+                            "claude"
+                        ]
+                    },
+                    "default": [
+                        "vscode",
+                        "antigravity",
+                        "gemini",
+                        "claude"
+                    ],
+                    "description": "Platforms to manage for MCP configuration sync."
+                },
+                "loom.syncOnStartup": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Automatically sync platform configs on extension startup."
+                },
+                "loom.syncStatusPollingInterval": {
+                    "type": "number",
+                    "default": 60000,
+                    "minimum": 0,
+                    "description": "Interval (ms) for polling platform sync status. Set to 0 to disable."
                 }
             }
         }
