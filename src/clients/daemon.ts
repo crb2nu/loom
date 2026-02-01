@@ -144,4 +144,102 @@ export class DaemonClient {
       return [];
     }
   }
+
+  /**
+   * Execute a tool via the loom CLI.
+   * @param toolName Full tool name (e.g., "tavily__search")
+   * @param args Tool arguments as a JSON object
+   * @returns Tool execution result
+   */
+  async executeTool(
+    toolName: string,
+    args: Record<string, unknown>
+  ): Promise<{ success: boolean; result?: unknown; error?: string }> {
+    try {
+      const loomBinary = resolveLoomBinary(this.workspaceRoot);
+      const argsJson = JSON.stringify(args);
+
+      const { stdout, stderr } = await execFileAsync(
+        loomBinary,
+        ["tools", "call", toolName, "--json", "--args", argsJson],
+        {
+          cwd: this.workspaceRoot || os.homedir(),
+          timeout: 120000, // 2 minutes for tool execution
+        }
+      );
+
+      if (stderr && stderr.trim()) {
+        this.channel.appendLine(`[DaemonClient] Tool ${toolName} stderr: ${stderr}`);
+      }
+
+      try {
+        const result = JSON.parse(stdout);
+        return { success: true, result };
+      } catch {
+        // Output might not be JSON
+        return { success: true, result: stdout };
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.channel.appendLine(`[DaemonClient] Tool execution failed: ${message}`);
+      return { success: false, error: message };
+    }
+  }
+
+  /**
+   * Start a specific MCP server.
+   */
+  async startServer(serverName: string): Promise<boolean> {
+    try {
+      const loomBinary = resolveLoomBinary(this.workspaceRoot);
+      await execFileAsync(loomBinary, ["servers", "start", serverName], {
+        cwd: this.workspaceRoot || os.homedir(),
+        timeout: 30000,
+      });
+      this.invalidateCache();
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.channel.appendLine(`[DaemonClient] Failed to start server ${serverName}: ${message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Stop a specific MCP server.
+   */
+  async stopServer(serverName: string): Promise<boolean> {
+    try {
+      const loomBinary = resolveLoomBinary(this.workspaceRoot);
+      await execFileAsync(loomBinary, ["servers", "stop", serverName], {
+        cwd: this.workspaceRoot || os.homedir(),
+        timeout: 10000,
+      });
+      this.invalidateCache();
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.channel.appendLine(`[DaemonClient] Failed to stop server ${serverName}: ${message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Restart a specific MCP server.
+   */
+  async restartServer(serverName: string): Promise<boolean> {
+    try {
+      const loomBinary = resolveLoomBinary(this.workspaceRoot);
+      await execFileAsync(loomBinary, ["servers", "restart", serverName], {
+        cwd: this.workspaceRoot || os.homedir(),
+        timeout: 30000,
+      });
+      this.invalidateCache();
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.channel.appendLine(`[DaemonClient] Failed to restart server ${serverName}: ${message}`);
+      return false;
+    }
+  }
 }

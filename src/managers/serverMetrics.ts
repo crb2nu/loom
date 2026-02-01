@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 
 import { DaemonClient } from "../clients/daemon";
-import { ServerHealthMetrics, ServerHealthHistory } from "../types";
+import { ServerHealthMetrics, ServerHealthHistory, DaemonToolInfo } from "../types";
 
 import { HubStatusManager } from "./hubStatus";
 
@@ -16,10 +16,14 @@ export class ServerMetricsManager implements vscode.Disposable {
   private readonly channel: vscode.OutputChannel;
   private readonly metrics: Map<string, ServerHealthMetrics>;
   private readonly history: Map<string, ServerHealthHistory>;
+  private readonly errorCounts: Map<string, number>;
+  private readonly toolCounts: Map<string, number>;
   private readonly emitter = new vscode.EventEmitter<Map<string, ServerHealthMetrics>>();
   readonly onDidChangeMetrics = this.emitter.event;
   private intervalId?: NodeJS.Timeout;
   private intervalMs: number = 30000;
+  private cachedTools: DaemonToolInfo[] = [];
+  private lastToolFetch: Date | null = null;
 
   constructor(
     daemonClient: DaemonClient,
@@ -31,6 +35,8 @@ export class ServerMetricsManager implements vscode.Disposable {
     this.channel = channel;
     this.metrics = new Map();
     this.history = new Map();
+    this.errorCounts = new Map();
+    this.toolCounts = new Map();
 
     // Load interval from config
     this.intervalMs =
@@ -77,17 +83,33 @@ export class ServerMetricsManager implements vscode.Disposable {
       const hubStatus = this.hubStatusManager.getStatus();
       const hubServers = new Set(hubStatus.servers.map((s) => s.name));
 
+      // Refresh tool counts periodically (every 5 minutes)
+      await this.refreshToolCounts();
+
       for (const server of servers) {
         const latencyMs = Date.now() - startTime;
         const status = server.running ? "online" : "offline";
+
+        // Track errors when server goes offline
+        if (!server.running) {
+          const currentErrors = this.errorCounts.get(server.name) ?? 0;
+          this.errorCounts.set(server.name, currentErrors + 1);
+        } else {
+          // Reset error count when server comes back online
+          const currentErrors = this.errorCounts.get(server.name) ?? 0;
+          if (currentErrors > 0) {
+            // Decay errors gradually when healthy
+            this.errorCounts.set(server.name, Math.max(0, currentErrors - 1));
+          }
+        }
 
         const metrics: ServerHealthMetrics = {
           serverName: server.name,
           status,
           latencyMs,
-          errorCount: 0, // TODO: Track errors
+          errorCount: this.errorCounts.get(server.name) ?? 0,
           lastCheck: new Date(),
-          toolCount: 0, // TODO: Count tools per server
+          toolCount: this.toolCounts.get(server.name) ?? 0,
           isHubRouted: hubServers.has(server.name),
         };
 
@@ -102,9 +124,9 @@ export class ServerMetricsManager implements vscode.Disposable {
             serverName: hubServer.name,
             status: "online",
             latencyMs: 0,
-            errorCount: 0,
+            errorCount: this.errorCounts.get(hubServer.name) ?? 0,
             lastCheck: new Date(),
-            toolCount: 0,
+            toolCount: this.toolCounts.get(hubServer.name) ?? 0,
             isHubRouted: true,
           };
           this.metrics.set(hubServer.name, metrics);
@@ -119,6 +141,60 @@ export class ServerMetricsManager implements vscode.Disposable {
         `[${new Date().toISOString()}] Server metrics collection error: ${message}`
       );
     }
+  }
+
+  /**
+   * Refresh tool counts for all servers.
+   * Cached for 5 minutes to reduce daemon calls.
+   */
+  private async refreshToolCounts(): Promise<void> {
+    const now = new Date();
+    const cacheTimeoutMs = 5 * 60 * 1000; // 5 minutes
+
+    if (
+      this.lastToolFetch &&
+      now.getTime() - this.lastToolFetch.getTime() < cacheTimeoutMs
+    ) {
+      return;
+    }
+
+    try {
+      const tools = await this.daemonClient.getTools();
+      this.cachedTools = tools;
+      this.lastToolFetch = now;
+
+      // Count tools per server
+      this.toolCounts.clear();
+      for (const tool of tools) {
+        const serverName = tool.server;
+        const currentCount = this.toolCounts.get(serverName) ?? 0;
+        this.toolCounts.set(serverName, currentCount + 1);
+      }
+    } catch {
+      // Silently fail - we'll use cached counts
+    }
+  }
+
+  /**
+   * Record an error for a server.
+   */
+  recordError(serverName: string): void {
+    const currentErrors = this.errorCounts.get(serverName) ?? 0;
+    this.errorCounts.set(serverName, currentErrors + 1);
+  }
+
+  /**
+   * Get tool count for a server.
+   */
+  getToolCount(serverName: string): number {
+    return this.toolCounts.get(serverName) ?? 0;
+  }
+
+  /**
+   * Get error count for a server.
+   */
+  getErrorCount(serverName: string): number {
+    return this.errorCounts.get(serverName) ?? 0;
   }
 
   /**
@@ -194,9 +270,9 @@ export class ServerMetricsManager implements vscode.Disposable {
           serverName,
           status: "online",
           latencyMs: Date.now() - startTime,
-          errorCount: 0,
+          errorCount: this.errorCounts.get(serverName) ?? 0,
           lastCheck: new Date(),
-          toolCount: 0,
+          toolCount: this.toolCounts.get(serverName) ?? 0,
           isHubRouted: true,
         };
         this.metrics.set(serverName, metrics);
@@ -208,9 +284,9 @@ export class ServerMetricsManager implements vscode.Disposable {
         serverName,
         status: server.running ? "online" : "offline",
         latencyMs: Date.now() - startTime,
-        errorCount: 0,
+        errorCount: this.errorCounts.get(serverName) ?? 0,
         lastCheck: new Date(),
-        toolCount: 0,
+        toolCount: this.toolCounts.get(serverName) ?? 0,
         isHubRouted: false,
       };
 
@@ -220,6 +296,7 @@ export class ServerMetricsManager implements vscode.Disposable {
 
       return metrics;
     } catch {
+      this.recordError(serverName);
       return undefined;
     }
   }

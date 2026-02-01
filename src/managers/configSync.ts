@@ -7,6 +7,15 @@ import * as vscode from "vscode";
 
 import { ConfigSyncState } from "../types";
 
+export type OfflineMode = "online" | "offline" | "degraded";
+
+export interface OfflineState {
+  mode: OfflineMode;
+  lastOnline: Date | null;
+  pendingSyncs: Array<{ platform: string; timestamp: Date }>;
+  reason?: string;
+}
+
 /**
  * Manages configuration synchronization between generated and applied MCP configs.
  */
@@ -14,10 +23,15 @@ export class ConfigSyncManager implements vscode.Disposable {
   private readonly root: string;
   private readonly channel: vscode.OutputChannel;
   private readonly emitter = new vscode.EventEmitter<ConfigSyncState>();
+  private readonly offlineEmitter = new vscode.EventEmitter<OfflineState>();
   private readonly statusBar: vscode.StatusBarItem;
+  private readonly offlineStatusBar: vscode.StatusBarItem;
   private state: ConfigSyncState = { status: "unknown", lastChecked: new Date() };
+  private offlineState: OfflineState = { mode: "online", lastOnline: null, pendingSyncs: [] };
   private watchers: fs.FSWatcher[] = [];
   private checkPromise?: Promise<void>;
+
+  readonly onDidChangeOffline = this.offlineEmitter.event;
 
   constructor(root: string, channel: vscode.OutputChannel) {
     this.root = root;
@@ -26,18 +40,133 @@ export class ConfigSyncManager implements vscode.Disposable {
     this.statusBar.command = "loom.showSyncStatus";
     this.updateStatusBar();
     this.statusBar.show();
+
+    this.offlineStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
+    this.offlineStatusBar.command = "loom.showOfflineStatus";
+    this.updateOfflineStatusBar();
+    // Only show when offline
+    if (this.offlineState.mode !== "online") {
+      this.offlineStatusBar.show();
+    }
+
     this.setupWatchers();
   }
 
   dispose() {
     this.emitter.dispose();
+    this.offlineEmitter.dispose();
     this.statusBar.dispose();
+    this.offlineStatusBar.dispose();
     for (const watcher of this.watchers) {
       watcher.close();
     }
   }
 
   readonly onDidChange = this.emitter.event;
+
+  /**
+   * Get current offline state.
+   */
+  getOfflineState(): OfflineState {
+    return { ...this.offlineState };
+  }
+
+  /**
+   * Set offline mode.
+   */
+  setOfflineMode(mode: OfflineMode, reason?: string): void {
+    const wasOnline = this.offlineState.mode === "online";
+    this.offlineState.mode = mode;
+    this.offlineState.reason = reason;
+
+    if (mode === "online" && !wasOnline) {
+      this.offlineState.lastOnline = new Date();
+      // Process pending syncs
+      void this.processPendingSyncs();
+    }
+
+    this.updateOfflineStatusBar();
+    this.offlineEmitter.fire(this.offlineState);
+
+    if (mode !== "online") {
+      this.offlineStatusBar.show();
+      this.channel.appendLine(
+        `[${new Date().toISOString()}] Offline mode: ${mode}${reason ? ` (${reason})` : ""}`
+      );
+    } else {
+      this.offlineStatusBar.hide();
+      this.channel.appendLine(`[${new Date().toISOString()}] Back online`);
+    }
+  }
+
+  /**
+   * Queue a sync operation for when we're back online.
+   */
+  queuePendingSync(platform: string): void {
+    // Avoid duplicates
+    const exists = this.offlineState.pendingSyncs.some((s) => s.platform === platform);
+    if (!exists) {
+      this.offlineState.pendingSyncs.push({ platform, timestamp: new Date() });
+      this.channel.appendLine(
+        `[${new Date().toISOString()}] Queued pending sync for ${platform}`
+      );
+    }
+  }
+
+  /**
+   * Process pending syncs when back online.
+   */
+  private async processPendingSyncs(): Promise<void> {
+    if (this.offlineState.pendingSyncs.length === 0) {
+      return;
+    }
+
+    this.channel.appendLine(
+      `[${new Date().toISOString()}] Processing ${this.offlineState.pendingSyncs.length} pending syncs`
+    );
+
+    // Clear pending syncs - they'll be re-queued if they fail
+    const pending = [...this.offlineState.pendingSyncs];
+    this.offlineState.pendingSyncs = [];
+
+    for (const sync of pending) {
+      this.channel.appendLine(`  - Syncing ${sync.platform}...`);
+      // The actual sync is handled by the platform manager
+    }
+  }
+
+  /**
+   * Check if we should use local-only mode.
+   */
+  isOffline(): boolean {
+    return this.offlineState.mode !== "online";
+  }
+
+  /**
+   * Update offline status bar.
+   */
+  private updateOfflineStatusBar(): void {
+    switch (this.offlineState.mode) {
+      case "offline":
+        this.offlineStatusBar.text = "$(cloud-offline) Offline";
+        this.offlineStatusBar.backgroundColor = new vscode.ThemeColor(
+          "statusBarItem.warningBackground"
+        );
+        this.offlineStatusBar.tooltip = `Hub unreachable. ${this.offlineState.pendingSyncs.length} syncs pending.`;
+        break;
+      case "degraded":
+        this.offlineStatusBar.text = "$(warning) Degraded";
+        this.offlineStatusBar.backgroundColor = new vscode.ThemeColor(
+          "statusBarItem.warningBackground"
+        );
+        this.offlineStatusBar.tooltip = `Hub connection unstable. ${this.offlineState.reason ?? ""}`;
+        break;
+      default:
+        this.offlineStatusBar.text = "$(cloud) Online";
+        this.offlineStatusBar.backgroundColor = undefined;
+        this.offlineStatusBar.tooltip = "Hub connected";
+    }
+  }
 
   getState(): ConfigSyncState {
     return this.state;

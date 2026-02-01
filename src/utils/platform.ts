@@ -11,6 +11,7 @@ export type PlatformType = "vscode" | "antigravity" | "gemini" | "codex" | "kilo
 export interface PlatformInfo {
   type: PlatformType;
   displayName: string;
+  label: string; // Short label for UI
   configFormat: "json" | "toml";
   repoConfigPath: string; // Relative to workspace root
   homeConfigPath: string; // Relative to home directory
@@ -25,6 +26,7 @@ export const PLATFORMS: Record<PlatformType, PlatformInfo> = {
   vscode: {
     type: "vscode",
     displayName: "VS Code",
+    label: "VS Code",
     configFormat: "json",
     repoConfigPath: ".vscode/mcp.json",
     homeConfigPath: ".vscode/mcp.json",
@@ -34,15 +36,17 @@ export const PLATFORMS: Record<PlatformType, PlatformInfo> = {
   antigravity: {
     type: "antigravity",
     displayName: "Antigravity",
+    label: "Antigravity",
     configFormat: "json",
     repoConfigPath: ".antigravity/mcp.json",
     homeConfigPath: ".antigravity/mcp.json",
     icon: "rocket",
-    description: "Antigravity (Google's VS Code fork with Gemini/Claude)",
+    description: "Google's VS Code fork with Gemini/Claude",
   },
   gemini: {
     type: "gemini",
     displayName: "Gemini",
+    label: "Gemini CLI",
     configFormat: "toml",
     repoConfigPath: ".gemini/settings.json",
     homeConfigPath: ".gemini/settings.json",
@@ -52,6 +56,7 @@ export const PLATFORMS: Record<PlatformType, PlatformInfo> = {
   codex: {
     type: "codex",
     displayName: "Codex",
+    label: "OpenAI Codex",
     configFormat: "json",
     repoConfigPath: ".codex/mcp.json",
     homeConfigPath: ".codex/mcp.json",
@@ -61,6 +66,7 @@ export const PLATFORMS: Record<PlatformType, PlatformInfo> = {
   kilocode: {
     type: "kilocode",
     displayName: "Kilocode",
+    label: "Kilocode",
     configFormat: "json",
     repoConfigPath: ".kilocode/mcp.json",
     homeConfigPath: ".kilocode/mcp.json",
@@ -70,6 +76,7 @@ export const PLATFORMS: Record<PlatformType, PlatformInfo> = {
   claude: {
     type: "claude",
     displayName: "Claude",
+    label: "Claude Code",
     configFormat: "json",
     repoConfigPath: ".claude/mcp.json",
     homeConfigPath: ".claude/mcp.json",
