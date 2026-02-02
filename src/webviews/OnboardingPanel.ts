@@ -1,37 +1,67 @@
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+
 import * as vscode from "vscode";
 
+import { DaemonClient } from "../clients/daemon";
 import { PlatformConfigClient } from "../clients/platformConfig";
 import { PlatformType } from "../types";
 import { PLATFORMS } from "../utils/platform";
+
+export type ProfileType = "full" | "minimal" | "custom";
+
+export interface DetectedPlatform {
+  type: PlatformType;
+  detected: boolean;
+  enabled: boolean;
+}
+
+export interface VerificationResult {
+  check: string;
+  status: "pass" | "fail" | "pending";
+  message: string;
+}
 
 export interface OnboardingState {
   step: number;
   hubUrl: string;
   hubEnabled: boolean;
   selectedPlatforms: PlatformType[];
+  detectedPlatforms: DetectedPlatform[];
+  profile: ProfileType;
+  verificationResults: VerificationResult[];
   completed: boolean;
 }
 
 /**
  * Webview panel for the onboarding wizard.
+ * 5 steps: Welcome → Hub Config → Platforms → Profile → Verify
  */
 export class OnboardingPanel {
   public static currentPanel: OnboardingPanel | undefined;
   private readonly panel: vscode.WebviewPanel;
   private readonly extensionUri: vscode.Uri;
   private readonly platformConfigClient: PlatformConfigClient;
+  private readonly daemonClient: DaemonClient;
+  private readonly workspaceRoot: string;
   private disposables: vscode.Disposable[] = [];
   private state: OnboardingState = {
     step: 1,
     hubUrl: "",
     hubEnabled: false,
     selectedPlatforms: ["vscode"],
+    detectedPlatforms: [],
+    profile: "full",
+    verificationResults: [],
     completed: false,
   };
 
   public static render(
     extensionUri: vscode.Uri,
-    platformConfigClient: PlatformConfigClient
+    platformConfigClient: PlatformConfigClient,
+    daemonClient: DaemonClient,
+    workspaceRoot: string
   ): OnboardingPanel {
     if (OnboardingPanel.currentPanel) {
       OnboardingPanel.currentPanel.panel.reveal(vscode.ViewColumn.One);
@@ -51,7 +81,9 @@ export class OnboardingPanel {
     OnboardingPanel.currentPanel = new OnboardingPanel(
       panel,
       extensionUri,
-      platformConfigClient
+      platformConfigClient,
+      daemonClient,
+      workspaceRoot
     );
 
     return OnboardingPanel.currentPanel;
@@ -60,16 +92,26 @@ export class OnboardingPanel {
   private constructor(
     panel: vscode.WebviewPanel,
     extensionUri: vscode.Uri,
-    platformConfigClient: PlatformConfigClient
+    platformConfigClient: PlatformConfigClient,
+    daemonClient: DaemonClient,
+    workspaceRoot: string
   ) {
     this.panel = panel;
     this.extensionUri = extensionUri;
     this.platformConfigClient = platformConfigClient;
+    this.daemonClient = daemonClient;
+    this.workspaceRoot = workspaceRoot;
 
     // Load saved hub URL from settings
     const config = vscode.workspace.getConfiguration("loom");
     this.state.hubUrl = config.get<string>("hubUrl") ?? "";
     this.state.hubEnabled = config.get<boolean>("hubEnabled") ?? false;
+
+    // Auto-detect installed platforms
+    this.state.detectedPlatforms = this.detectInstalledPlatforms();
+    this.state.selectedPlatforms = this.state.detectedPlatforms
+      .filter((p) => p.detected)
+      .map((p) => p.type);
 
     // Set initial content
     this.updateContent();
@@ -82,10 +124,15 @@ export class OnboardingPanel {
         hubUrl?: string;
         hubEnabled?: boolean;
         platforms?: PlatformType[];
+        profile?: ProfileType;
       }) => {
         switch (message.command) {
           case "next":
-            this.state.step = Math.min(4, this.state.step + 1);
+            this.state.step = Math.min(5, this.state.step + 1);
+            // Run verification when entering step 5
+            if (this.state.step === 5) {
+              await this.runVerification();
+            }
             this.updateContent();
             break;
           case "back":
@@ -105,6 +152,15 @@ export class OnboardingPanel {
               this.state.selectedPlatforms = message.platforms;
             }
             break;
+          case "updateProfile":
+            if (message.profile) {
+              this.state.profile = message.profile;
+            }
+            break;
+          case "runVerification":
+            await this.runVerification();
+            this.updateContent();
+            break;
           case "finish":
             await this.finishOnboarding();
             break;
@@ -121,16 +177,112 @@ export class OnboardingPanel {
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
   }
 
+  /**
+   * Detect which platforms are installed by checking for their config directories.
+   */
+  private detectInstalledPlatforms(): DetectedPlatform[] {
+    const homeDir = os.homedir();
+    const platforms: DetectedPlatform[] = [];
+
+    for (const [key, info] of Object.entries(PLATFORMS)) {
+      const platformType = key as PlatformType;
+      const configDir = path.join(homeDir, path.dirname(info.homeConfigPath));
+      const detected = fs.existsSync(configDir);
+
+      platforms.push({
+        type: platformType,
+        detected,
+        enabled: detected || platformType === "vscode", // VS Code always enabled
+      });
+    }
+
+    return platforms;
+  }
+
+  /**
+   * Run verification checks for the current configuration.
+   */
+  private async runVerification(): Promise<void> {
+    const results: VerificationResult[] = [];
+
+    // Check 1: Daemon status
+    try {
+      const isRunning = await this.daemonClient.isDaemonRunning();
+      results.push({
+        check: "Daemon Status",
+        status: isRunning ? "pass" : "fail",
+        message: isRunning ? "Daemon is running" : "Daemon not responding",
+      });
+    } catch {
+      results.push({
+        check: "Daemon Status",
+        status: "fail",
+        message: "Cannot connect to daemon - ensure loom-core is running",
+      });
+    }
+
+    // Check 2: MCP servers available
+    try {
+      const tools = await this.daemonClient.getTools();
+      const toolCount = tools.length;
+      results.push({
+        check: "MCP Tools",
+        status: toolCount > 0 ? "pass" : "fail",
+        message: toolCount > 0 ? `${toolCount} tools available` : "No tools loaded",
+      });
+    } catch {
+      results.push({
+        check: "MCP Tools",
+        status: "fail",
+        message: "Failed to query tools",
+      });
+    }
+
+    // Check 3: Platform configs
+    for (const platform of this.state.selectedPlatforms) {
+      try {
+        const config = await this.platformConfigClient.checkPlatformSyncStatus(platform);
+        const inSync = config.syncStatus === "synced";
+        results.push({
+          check: `${PLATFORMS[platform].displayName} Config`,
+          status: inSync ? "pass" : "fail",
+          message: inSync ? "Configuration synced" : `Config ${config.syncStatus}`,
+        });
+      } catch {
+        results.push({
+          check: `${PLATFORMS[platform].displayName} Config`,
+          status: "fail",
+          message: "Failed to check sync status",
+        });
+      }
+    }
+
+    // Check 4: Registry file
+    const registryPath = path.join(os.homedir(), ".config/loom/registry.yaml");
+    const registryExists = fs.existsSync(registryPath);
+    results.push({
+      check: "Registry File",
+      status: registryExists ? "pass" : "fail",
+      message: registryExists
+        ? "Registry found at ~/.config/loom/registry.yaml"
+        : "Registry not found - run loom sync first",
+    });
+
+    this.state.verificationResults = results;
+  }
+
   private async finishOnboarding(): Promise<void> {
     // Save settings
     const config = vscode.workspace.getConfiguration("loom");
     await config.update("hubUrl", this.state.hubUrl, vscode.ConfigurationTarget.Global);
     await config.update("hubEnabled", this.state.hubEnabled, vscode.ConfigurationTarget.Global);
+    await config.update("serverProfile", this.state.profile, vscode.ConfigurationTarget.Global);
     await config.update(
-      "onboardingComplete",
-      true,
+      "enabledPlatforms",
+      this.state.selectedPlatforms,
       vscode.ConfigurationTarget.Global
     );
+    await config.update("onboardingComplete", true, vscode.ConfigurationTarget.Global);
 
     // Sync selected platforms
     for (const platform of this.state.selectedPlatforms) {
@@ -143,7 +295,11 @@ export class OnboardingPanel {
     }
 
     this.state.completed = true;
-    vscode.window.showInformationMessage("Loom setup complete! Happy coding!");
+    const passCount = this.state.verificationResults.filter((r) => r.status === "pass").length;
+    const totalCount = this.state.verificationResults.length;
+    vscode.window.showInformationMessage(
+      `Loom setup complete! (${passCount}/${totalCount} checks passed)`
+    );
     this.panel.dispose();
   }
 
@@ -305,13 +461,121 @@ export class OnboardingPanel {
       margin: 20px 0;
       font-size: 13px;
     }
+    .tip.warning {
+      border-left-color: var(--vscode-editorWarning-foreground);
+    }
+    .badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: var(--vscode-badge-background);
+      color: var(--vscode-badge-foreground);
+      margin-left: 8px;
+    }
+    .badge.recommended {
+      background: var(--vscode-charts-green);
+      color: white;
+    }
+    .platform-card.detected {
+      border-color: var(--vscode-charts-green);
+    }
+    .profile-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 15px;
+      margin: 20px 0;
+    }
+    .profile-card {
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 8px;
+      padding: 15px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .profile-card:hover {
+      border-color: var(--vscode-button-background);
+    }
+    .profile-card.selected {
+      border-color: var(--vscode-button-background);
+      background: var(--vscode-list-hoverBackground);
+    }
+    .profile-card input[type="radio"] {
+      display: none;
+    }
+    .profile-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .profile-name {
+      font-weight: bold;
+      font-size: 16px;
+    }
+    .profile-desc {
+      font-size: 12px;
+      color: var(--vscode-descriptionForeground);
+      margin: 5px 0;
+    }
+    .profile-features {
+      list-style: none;
+      padding: 0;
+      margin: 10px 0 0;
+      font-size: 12px;
+    }
+    .profile-features li {
+      padding: 3px 0;
+      color: var(--vscode-descriptionForeground);
+    }
+    .profile-features li::before {
+      content: "•";
+      margin-right: 6px;
+      color: var(--vscode-charts-blue);
+    }
+    .verification-results {
+      margin: 20px 0;
+    }
+    .verification-results .result {
+      display: flex;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--vscode-panel-border);
+    }
+    .verification-results .result:last-child {
+      border-bottom: none;
+    }
+    .verification-results .icon {
+      width: 24px;
+      font-size: 16px;
+      font-weight: bold;
+    }
+    .verification-results .check {
+      flex: 1;
+      font-weight: 500;
+    }
+    .verification-results .message {
+      color: var(--vscode-descriptionForeground);
+      font-size: 12px;
+    }
+    .result.pass .icon {
+      color: var(--vscode-charts-green);
+    }
+    .result.fail .icon {
+      color: var(--vscode-charts-red);
+    }
+    .result.pending .icon {
+      color: var(--vscode-charts-yellow);
+    }
+    .pending {
+      color: var(--vscode-descriptionForeground);
+      font-style: italic;
+    }
   </style>
 </head>
 <body>
   <h1>Welcome to Loom</h1>
 
   <div class="step-indicator">
-    ${[1, 2, 3, 4]
+    ${[1, 2, 3, 4, 5]
       .map(
         (s) =>
           `<div class="step-dot ${s === this.state.step ? "active" : ""} ${s < this.state.step ? "completed" : ""}"></div>`
@@ -359,6 +623,17 @@ export class OnboardingPanel {
       const selected = Array.from(document.querySelectorAll('.platform-card.selected'))
         .map(el => el.getAttribute('data-platform'));
       vscode.postMessage({ command: 'updatePlatforms', platforms: selected });
+    }
+
+    function selectProfile(profile) {
+      document.querySelectorAll('.profile-card').forEach(el => el.classList.remove('selected'));
+      const card = document.querySelector('.profile-card input[value="' + profile + '"]')?.closest('.profile-card');
+      card?.classList.add('selected');
+      vscode.postMessage({ command: 'updateProfile', profile: profile });
+    }
+
+    function rerunVerification() {
+      vscode.postMessage({ command: 'runVerification' });
     }
   </script>
 </body>
@@ -409,17 +684,20 @@ export class OnboardingPanel {
       case 3:
         return `
           <h2>Select Platforms</h2>
-          <p>Choose which AI coding assistant platforms to sync with:</p>
+          <p>Choose which AI coding assistant platforms to configure. Detected platforms are pre-selected:</p>
 
           <div class="platform-grid">
-            ${Object.entries(PLATFORMS)
+            ${this.state.detectedPlatforms
               .map(
-                ([key, platform]) => `
-              <div class="platform-card ${this.state.selectedPlatforms.includes(key as PlatformType) ? "selected" : ""}"
-                   data-platform="${key}"
-                   onclick="togglePlatform('${key}')">
-                <div class="platform-name">${platform.displayName}</div>
-                <div class="platform-desc">${platform.description}</div>
+                (dp) => `
+              <div class="platform-card ${this.state.selectedPlatforms.includes(dp.type) ? "selected" : ""} ${dp.detected ? "detected" : ""}"
+                   data-platform="${dp.type}"
+                   onclick="togglePlatform('${dp.type}')">
+                <div class="platform-name">
+                  ${PLATFORMS[dp.type].displayName}
+                  ${dp.detected ? '<span class="badge">Detected</span>' : ""}
+                </div>
+                <div class="platform-desc">${PLATFORMS[dp.type].description}</div>
               </div>
             `
               )
@@ -427,26 +705,98 @@ export class OnboardingPanel {
           </div>
 
           <div class="tip">
-            <strong>Tip:</strong> You can always add more platforms later from the Loom Platforms view.
+            <strong>Tip:</strong> Platforms are auto-detected based on config directories. You can always add more later.
           </div>
         `;
 
       case 4:
         return `
-          <h2>Ready to Go!</h2>
-          <p>Your Loom setup is complete. Here's what happens next:</p>
+          <h2>Choose Server Profile</h2>
+          <p>Select which MCP servers to enable:</p>
 
-          <ul class="checklist">
-            <li>MCP configurations will be synced to selected platforms</li>
-            <li>Server status will be monitored in the sidebar</li>
-            <li>Use the Command Palette (Cmd+Shift+P) and search "Loom" for all commands</li>
-          </ul>
+          <div class="profile-grid">
+            <label class="profile-card ${this.state.profile === "full" ? "selected" : ""}" onclick="selectProfile('full')">
+              <input type="radio" name="profile" value="full" ${this.state.profile === "full" ? "checked" : ""}>
+              <div class="profile-header">
+                <span class="profile-name">Full</span>
+                <span class="badge recommended">Recommended</span>
+              </div>
+              <p class="profile-desc">All available servers (40+)</p>
+              <ul class="profile-features">
+                <li>Git, GitHub, GitLab</li>
+                <li>Kubernetes, Docker, Helm</li>
+                <li>Prometheus, Grafana, Loki</li>
+                <li>Memory, Agent Context</li>
+              </ul>
+            </label>
 
-          <h3>Quick Start Commands</h3>
+            <label class="profile-card ${this.state.profile === "minimal" ? "selected" : ""}" onclick="selectProfile('minimal')">
+              <input type="radio" name="profile" value="minimal" ${this.state.profile === "minimal" ? "checked" : ""}>
+              <div class="profile-header">
+                <span class="profile-name">Minimal</span>
+              </div>
+              <p class="profile-desc">Essential servers only (10)</p>
+              <ul class="profile-features">
+                <li>Git, GitHub</li>
+                <li>Memory</li>
+                <li>Time, Tavily</li>
+              </ul>
+            </label>
+
+            <label class="profile-card ${this.state.profile === "custom" ? "selected" : ""}" onclick="selectProfile('custom')">
+              <input type="radio" name="profile" value="custom" ${this.state.profile === "custom" ? "checked" : ""}>
+              <div class="profile-header">
+                <span class="profile-name">Custom</span>
+              </div>
+              <p class="profile-desc">Choose specific servers</p>
+              <ul class="profile-features">
+                <li>Configure via Loom sidebar</li>
+                <li>Enable/disable individually</li>
+              </ul>
+            </label>
+          </div>
+
+          <div class="tip">
+            <strong>Note:</strong> You can change the profile anytime from Loom settings.
+          </div>
+        `;
+
+      case 5:
+        return `
+          <h2>Setup Verification</h2>
+          <p>Checking your Loom configuration:</p>
+
+          <div class="verification-results">
+            ${this.state.verificationResults.length === 0 ? '<p class="pending">Running checks...</p>' : ""}
+            ${this.state.verificationResults
+              .map(
+                (r) => `
+              <div class="result ${r.status}">
+                <span class="icon">${r.status === "pass" ? "✓" : r.status === "fail" ? "✗" : "○"}</span>
+                <span class="check">${r.check}</span>
+                <span class="message">${r.message}</span>
+              </div>
+            `
+              )
+              .join("")}
+          </div>
+
+          ${
+            this.state.verificationResults.some((r) => r.status === "fail")
+              ? `
+            <div class="tip warning">
+              <strong>Note:</strong> Some checks failed. Setup can still complete - fix issues later from the Loom sidebar.
+            </div>
+            <button class="btn-secondary" onclick="rerunVerification()">Re-run Checks</button>
+          `
+              : ""
+          }
+
+          <h3>Quick Start</h3>
           <ul class="checklist">
-            <li><code>Loom: Show Sync Dashboard</code> - View sync status</li>
-            <li><code>Loom: Refresh Servers</code> - Refresh server list</li>
-            <li><code>Loom: Deep Search</code> - Search across all sources</li>
+            <li>Open the <strong>Loom</strong> sidebar to browse servers and tools</li>
+            <li>Use <code>Cmd+Shift+P</code> → "Loom:" for all commands</li>
+            <li>Try asking your AI assistant: "List my GitHub repos"</li>
           </ul>
         `;
 
@@ -457,7 +807,7 @@ export class OnboardingPanel {
 
   private getButtons(): string {
     const isFirst = this.state.step === 1;
-    const isLast = this.state.step === 4;
+    const isLast = this.state.step === 5;
 
     return `
       <div>

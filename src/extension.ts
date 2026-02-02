@@ -46,6 +46,7 @@ import { detectPlatform, getPlatformStatusText } from "./utils/platform";
 import { ContextGraphPanel } from "./webviews/ContextGraphPanel";
 import { KnowledgeGraphPanel } from "./webviews/KnowledgeGraphPanel";
 import { MemoryDashboardPanel } from "./webviews/MemoryDashboardPanel";
+import { OnboardingPanel } from "./webviews/OnboardingPanel";
 import { SyncDashboardPanel } from "./webviews/SyncDashboardPanel";
 
 const execFileAsync = promisify(execFile);
@@ -231,6 +232,41 @@ export async function activate(context: vscode.ExtensionContext) {
       SyncDashboardPanel.render(context.extensionUri, platformConfigClient);
     })
   );
+
+  // ============================================================================
+  // Onboarding Wizard
+  // ============================================================================
+  context.subscriptions.push(
+    vscode.commands.registerCommand("loom.showOnboarding", () => {
+      OnboardingPanel.render(
+        context.extensionUri,
+        platformConfigClient,
+        daemonClient,
+        workspaceRoot
+      );
+    })
+  );
+
+  // Check if first run - show onboarding prompt
+  const hasCompletedOnboarding =
+    vscode.workspace.getConfiguration("loom").get<boolean>("onboardingComplete") ?? false;
+
+  if (!hasCompletedOnboarding) {
+    // Delay prompt slightly to let extension activate
+    setTimeout(() => {
+      void vscode.window
+        .showInformationMessage(
+          "Welcome to Loom! Would you like to run the setup wizard?",
+          "Yes, Set Up",
+          "Skip for Now"
+        )
+        .then((result) => {
+          if (result === "Yes, Set Up") {
+            void vscode.commands.executeCommand("loom.showOnboarding");
+          }
+        });
+    }, 2000);
+  }
 
   // Deep Search
   const deepSearchManager = new DeepSearchManager(daemonClient, loomChannel);
