@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 
 import { SkillsClient } from "../clients/skills";
+import { SkillRecommendation, SkillRecommendationManager } from "../managers/skillRecommendations";
 import { SkillDefinition, SkillScript, SkillTargetConfig, PlatformType } from "../types";
 
 /**
@@ -16,7 +17,9 @@ type SkillTreeItemType =
   | "assets-group"
   | "asset"
   | "targets-group"
-  | "target";
+  | "target"
+  | "recommended-group"
+  | "recommended-skill";
 
 /**
  * Custom TreeItem for skills that tracks item type and metadata.
@@ -28,7 +31,8 @@ export class SkillTreeItem extends vscode.TreeItem {
     public readonly itemType: SkillTreeItemType,
     public readonly skill?: SkillDefinition,
     public readonly script?: SkillScript,
-    public readonly resourcePath?: string
+    public readonly resourcePath?: string,
+    public readonly recommendation?: SkillRecommendation
   ) {
     super(label, collapsibleState);
   }
@@ -40,18 +44,27 @@ export class SkillTreeItem extends vscode.TreeItem {
  */
 export class SkillsProvider implements vscode.TreeDataProvider<SkillTreeItem> {
   private readonly skillsClient: SkillsClient;
+  private readonly recommendationManager?: SkillRecommendationManager;
   private readonly emitter = new vscode.EventEmitter<SkillTreeItem | undefined | void>();
   readonly onDidChangeTreeData = this.emitter.event;
   private filterQuery: string = "";
   private platformFilter: PlatformType | "all" = "all";
 
-  constructor(skillsClient: SkillsClient) {
+  constructor(skillsClient: SkillsClient, recommendationManager?: SkillRecommendationManager) {
     this.skillsClient = skillsClient;
+    this.recommendationManager = recommendationManager;
 
     // Refresh when registry changes
     skillsClient.onDidChange(() => {
       this.emitter.fire();
     });
+
+    // Refresh when recommendations change
+    if (recommendationManager) {
+      recommendationManager.onDidChangeRecommendations(() => {
+        this.emitter.fire();
+      });
+    }
   }
 
   refresh(): void {
@@ -107,6 +120,10 @@ export class SkillsProvider implements vscode.TreeDataProvider<SkillTreeItem> {
         return this.getSkillsInCategory(element.label);
       case "skill":
         return this.getSkillChildren(element.skill!);
+      case "recommended-group":
+        return this.getRecommendedSkillItems();
+      case "recommended-skill":
+        return element.skill ? this.getSkillChildren(element.skill) : [];
       case "targets-group":
         return this.getTargetItems(element.skill!);
       case "scripts-group":
@@ -122,6 +139,25 @@ export class SkillsProvider implements vscode.TreeDataProvider<SkillTreeItem> {
 
   private getRootItems(): SkillTreeItem[] {
     const skills = this.skillsClient.getSkills();
+    const rootItems: SkillTreeItem[] = [];
+
+    // Add Recommended section at the top if we have recommendations
+    if (this.recommendationManager && !this.filterQuery && this.platformFilter === "all") {
+      const recommendations = this.recommendationManager.getRecommendations(5);
+      if (recommendations.length > 0) {
+        const recommendedItem = new SkillTreeItem(
+          "Recommended",
+          vscode.TreeItemCollapsibleState.Expanded,
+          "recommended-group"
+        );
+        recommendedItem.description = `${recommendations.length} skill${recommendations.length !== 1 ? "s" : ""}`;
+        recommendedItem.iconPath = new vscode.ThemeIcon("sparkle");
+        recommendedItem.tooltip = new vscode.MarkdownString(
+          "Skills recommended based on your current workspace context"
+        );
+        rootItems.push(recommendedItem);
+      }
+    }
 
     if (skills.length === 0) {
       const placeholder = new SkillTreeItem(
@@ -131,7 +167,7 @@ export class SkillsProvider implements vscode.TreeDataProvider<SkillTreeItem> {
       );
       placeholder.iconPath = new vscode.ThemeIcon("info");
       placeholder.description = "Configure loom.skillsRegistryPath";
-      return [placeholder];
+      return rootItems.length > 0 ? rootItems : [placeholder];
     }
 
     // Apply text filter if set
@@ -184,7 +220,7 @@ export class SkillsProvider implements vscode.TreeDataProvider<SkillTreeItem> {
     }
 
     // Create category items
-    return Array.from(categoryMap.entries())
+    const categoryItems = Array.from(categoryMap.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([category, categorySkills]) => {
         const item = new SkillTreeItem(
@@ -196,6 +232,63 @@ export class SkillsProvider implements vscode.TreeDataProvider<SkillTreeItem> {
         item.iconPath = new vscode.ThemeIcon(this.getCategoryIcon(category));
         return item;
       });
+
+    return [...rootItems, ...categoryItems];
+  }
+
+  private getRecommendedSkillItems(): SkillTreeItem[] {
+    if (!this.recommendationManager) {
+      return [];
+    }
+
+    const recommendations = this.recommendationManager.getRecommendations(5);
+
+    return recommendations.map((rec) => {
+      const skill = this.skillsClient.getSkill(rec.skillId);
+      const item = new SkillTreeItem(
+        rec.name,
+        skill ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
+        "recommended-skill",
+        skill,
+        undefined,
+        undefined,
+        rec
+      );
+      item.iconPath = new vscode.ThemeIcon("lightbulb-sparkle");
+      item.description = `${Math.round(rec.confidence * 100)}%`;
+      item.tooltip = this.buildRecommendationTooltip(rec);
+      if (skill) {
+        item.command = {
+          command: "loom.showSkillDetails",
+          title: "Show Skill Details",
+          arguments: [skill.name],
+        };
+      }
+      return item;
+    });
+  }
+
+  private buildRecommendationTooltip(rec: SkillRecommendation): vscode.MarkdownString {
+    const lines: string[] = [
+      `**${rec.name}**`,
+      "",
+      rec.description || "No description",
+      "",
+      `**Confidence:** ${Math.round(rec.confidence * 100)}%`,
+      "",
+      `**Reason:** ${rec.reason}`,
+    ];
+
+    if (rec.triggers.length > 1) {
+      lines.push("", "**Triggers:**");
+      for (const trigger of rec.triggers) {
+        lines.push(`- ${trigger}`);
+      }
+    }
+
+    const tooltip = new vscode.MarkdownString(lines.join("\n"));
+    tooltip.isTrusted = true;
+    return tooltip;
   }
 
   private getSkillsInCategory(category: string): SkillTreeItem[] {

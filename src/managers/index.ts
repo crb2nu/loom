@@ -4,3 +4,4 @@ export * from "./agentSession";
 export * from "./annotationDecoration";
 export * from "./serverMetrics";
 export * from "./profileManager";
+export * from "./skillRecommendations";

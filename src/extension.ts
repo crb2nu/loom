@@ -22,6 +22,7 @@ import {
   AnnotationDecorationManager,
   ServerMetricsManager,
   ProfileManager,
+  SkillRecommendationManager,
 } from "./managers";
 import { DeepSearchManager, SearchResult } from "./managers/deepSearch";
 import {
@@ -310,7 +311,43 @@ export async function activate(context: vscode.ExtensionContext) {
   skillsClient.initialize(workspaceRoot);
   context.subscriptions.push({ dispose: () => skillsClient.dispose() });
 
-  const skillsProvider = new SkillsProvider(skillsClient);
+  // Skill recommendation manager for context-aware suggestions
+  const skillRecommendationManager = new SkillRecommendationManager(loomChannel, skillsClient);
+  if (workspaceRoot) {
+    skillRecommendationManager.initialize(workspaceRoot);
+  }
+  context.subscriptions.push({ dispose: () => skillRecommendationManager.dispose() });
+
+  // Wire up file change events to update recommendations
+  context.subscriptions.push(
+    vscode.workspace.onDidOpenTextDocument((doc) => {
+      skillRecommendationManager.onFileChange(doc.uri);
+    }),
+    vscode.workspace.onDidSaveTextDocument((doc) => {
+      skillRecommendationManager.onFileChange(doc.uri);
+    }),
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (editor) {
+        skillRecommendationManager.onFileChange(editor.document.uri);
+      }
+    })
+  );
+
+  // Wire up diagnostic events for error-based recommendations
+  context.subscriptions.push(
+    vscode.languages.onDidChangeDiagnostics((e) => {
+      for (const uri of e.uris) {
+        const diagnostics = vscode.languages.getDiagnostics(uri);
+        for (const diag of diagnostics) {
+          if (diag.severity === vscode.DiagnosticSeverity.Error) {
+            skillRecommendationManager.onError(diag.message);
+          }
+        }
+      }
+    })
+  );
+
+  const skillsProvider = new SkillsProvider(skillsClient, skillRecommendationManager);
   const skillsTree = vscode.window.createTreeView("loomSkills", {
     treeDataProvider: skillsProvider,
   });
