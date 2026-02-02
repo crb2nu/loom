@@ -24,6 +24,7 @@ export class PlatformConfigClient implements vscode.Disposable {
   private readonly emitter = new vscode.EventEmitter<PlatformConfig[]>();
   private configs: Map<PlatformType, PlatformConfig> = new Map();
   private checkInterval?: NodeJS.Timeout;
+  private lastConfigsHash = "";
 
   readonly onDidChange = this.emitter.event;
 
@@ -103,6 +104,7 @@ export class PlatformConfigClient implements vscode.Disposable {
 
   /**
    * Check sync status for all enabled platforms.
+   * Only fires change event if configs actually changed.
    */
   async checkAllSyncStatus(): Promise<void> {
     const enabledPlatforms = getEnabledPlatforms();
@@ -111,7 +113,34 @@ export class PlatformConfigClient implements vscode.Disposable {
       await this.checkPlatformSyncStatus(platform);
     }
 
-    this.emitter.fire(this.getConfigs());
+    this.fireIfChanged();
+  }
+
+  /**
+   * Fire change event only if configs have meaningfully changed.
+   */
+  private fireIfChanged(): void {
+    const newHash = this.computeConfigsHash();
+    if (newHash !== this.lastConfigsHash) {
+      this.lastConfigsHash = newHash;
+      this.emitter.fire(this.getConfigs());
+    }
+  }
+
+  /**
+   * Compute a hash of the current configs for change detection.
+   * Excludes lastChecked since it always changes.
+   */
+  private computeConfigsHash(): string {
+    const hashable = Array.from(this.configs.values()).map((c) => ({
+      platform: c.platform,
+      syncStatus: c.syncStatus,
+      serverCount: c.serverCount,
+      repoHash: c.repoHash,
+      homeHash: c.homeHash,
+      error: c.error,
+    }));
+    return JSON.stringify(hashable);
   }
 
   /**
@@ -257,7 +286,9 @@ export class PlatformConfigClient implements vscode.Disposable {
       results.push(result);
     }
 
-    this.emitter.fire(this.getConfigs());
+    // Force fire after sync since user initiated action
+    this.lastConfigsHash = "";
+    this.fireIfChanged();
     return results;
   }
 

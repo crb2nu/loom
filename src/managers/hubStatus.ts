@@ -12,6 +12,7 @@ export class HubStatusManager implements vscode.Disposable {
   private readonly emitter = new vscode.EventEmitter<void>();
   private status: HubStatusSnapshot = { servers: [] };
   private refreshPromise?: Promise<void>;
+  private lastStatusHash = "";
 
   constructor(settings: HubSettings, channel: vscode.OutputChannel) {
     this.settings = settings;
@@ -53,8 +54,8 @@ export class HubStatusManager implements vscode.Disposable {
     if (!this.settings.httpBaseUrl) {
       const message = "Invalid MCP hub URL";
       this.channel.appendLine(`[${now.toISOString()}] ${message}`);
-      this.status = { ...this.status, error: message, servers: [], lastUpdated: now };
-      this.emitter.fire();
+      const newStatus = { ...this.status, error: message, servers: [], lastUpdated: now };
+      this.updateStatusIfChanged(newStatus);
       return;
     }
 
@@ -66,23 +67,52 @@ export class HubStatusManager implements vscode.Disposable {
         client.fetchReady(),
         client.fetchServers(),
       ]);
-      this.status = {
+      const newStatus: HubStatusSnapshot = {
         health,
         readiness,
         servers,
         error: undefined,
         lastUpdated: new Date(),
       };
+      this.updateStatusIfChanged(newStatus);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.channel.appendLine(`[${now.toISOString()}] Hub status refresh failed: ${message}`);
-      this.status = {
+      const newStatus: HubStatusSnapshot = {
         ...this.status,
         error: message,
         lastUpdated: new Date(),
       };
+      this.updateStatusIfChanged(newStatus);
     }
+  }
 
-    this.emitter.fire();
+  /**
+   * Update status and only fire event if the meaningful content has changed.
+   * Excludes lastUpdated from comparison since it always changes.
+   */
+  private updateStatusIfChanged(newStatus: HubStatusSnapshot): void {
+    const newHash = this.computeStatusHash(newStatus);
+    if (newHash !== this.lastStatusHash) {
+      this.lastStatusHash = newHash;
+      this.status = newStatus;
+      this.emitter.fire();
+    } else {
+      // Update timestamp but don't fire event
+      this.status = newStatus;
+    }
+  }
+
+  /**
+   * Compute a hash of the meaningful status fields (excluding lastUpdated).
+   */
+  private computeStatusHash(status: HubStatusSnapshot): string {
+    const hashable = {
+      health: status.health,
+      readiness: status.readiness,
+      servers: status.servers?.map((s) => ({ name: s.name, categories: s.categories })),
+      error: status.error,
+    };
+    return JSON.stringify(hashable);
   }
 }

@@ -43,8 +43,9 @@ export class PlatformsProvider implements vscode.TreeDataProvider<PlatformTreeIt
   }
 
   refresh(): void {
+    // checkAllSyncStatus fires its own change event if configs changed,
+    // so we don't need to fire the emitter here (avoids double refresh)
     void this.platformConfigClient.checkAllSyncStatus();
-    this.emitter.fire();
   }
 
   getTreeItem(element: PlatformTreeItem): vscode.TreeItem {
