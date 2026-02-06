@@ -387,13 +387,16 @@ export class SkillsProvider implements vscode.TreeDataProvider<SkillTreeItem> {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([targetName, config]) => {
         const isEnabled = config?.enabled !== false;
+        const outputType = this.skillsClient.getSkillOutputType(skill.name, targetName);
+        const generatedPath = this.skillsClient.getGeneratedFilePath(skill.name, targetName);
         const item = new SkillTreeItem(
           targetName,
           vscode.TreeItemCollapsibleState.None,
           "target",
           skill
         );
-        item.description = isEnabled ? "enabled" : "disabled";
+        const typeLabel = isEnabled ? `${outputType}` : "disabled";
+        item.description = generatedPath ? `${typeLabel} → ${generatedPath}` : typeLabel;
         item.iconPath = new vscode.ThemeIcon(
           isEnabled ? "check" : "circle-slash",
           isEnabled ? new vscode.ThemeColor("charts.green") : new vscode.ThemeColor("charts.gray")
@@ -539,6 +542,10 @@ export class SkillsProvider implements vscode.TreeDataProvider<SkillTreeItem> {
       "",
       `Enabled: ${config?.enabled !== false ? "Yes" : "No"}`,
     ];
+
+    if (config?.type) {
+      lines.push(`Type: ${config.type}`);
+    }
 
     if (config?.output_format) {
       lines.push(`Output Format: ${config.output_format}`);

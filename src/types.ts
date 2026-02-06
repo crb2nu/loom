@@ -130,9 +130,12 @@ export interface SkillScript {
   description?: string;
 }
 
+export type SkillOutputType = "command" | "skill" | "rule" | "instruction" | "workflow";
+
 export interface SkillTargetConfig {
   enabled: boolean;
   output_format?: string;
+  type?: SkillOutputType;
 }
 
 export interface SkillDefinition {

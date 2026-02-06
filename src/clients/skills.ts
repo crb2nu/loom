@@ -4,7 +4,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { parse as parseYaml } from "yaml";
 
-import { SkillDefinition, SkillsRegistry } from "../types";
+import { SkillDefinition, SkillOutputType, SkillsRegistry } from "../types";
 
 /**
  * Client for loading and watching skills-registry.yaml.
@@ -204,6 +204,78 @@ export class SkillsClient {
     const registryDir = path.dirname(this.registryPath);
     const skillDir = path.join(registryDir, "..", "skills", skillName);
     return path.join(skillDir, script.path);
+  }
+
+  /**
+   * Get skills enabled for a specific platform.
+   */
+  getSkillsForPlatform(platform: string): SkillDefinition[] {
+    return (
+      this.cachedRegistry?.skills?.filter((skill) => {
+        const targets = skill.targets ?? {};
+        if (Object.keys(targets).length === 0) return true;
+        const config = targets[platform];
+        return config !== undefined && config.enabled !== false;
+      }) ?? []
+    );
+  }
+
+  /**
+   * Get the output type for a skill on a specific platform.
+   * Returns the platform default if not explicitly set.
+   */
+  getSkillOutputType(skillName: string, platform: string): SkillOutputType {
+    const skill = this.getSkill(skillName);
+    if (skill?.targets?.[platform]?.type) {
+      return skill.targets[platform].type!;
+    }
+
+    // Platform defaults
+    const defaults: Record<string, SkillOutputType> = {
+      claude: "command",
+      codex: "skill",
+      kilocode: "rule",
+      gemini: "instruction",
+    };
+    return defaults[platform] ?? "skill";
+  }
+
+  /**
+   * Get the expected generated file path for a skill on a platform.
+   */
+  getGeneratedFilePath(skillName: string, platform: string): string | undefined {
+    const outputType = this.getSkillOutputType(skillName, platform);
+
+    switch (platform) {
+      case "claude":
+        switch (outputType) {
+          case "command":
+            return `.claude/commands/${skillName}.md`;
+          case "rule":
+            return `.claude/rules/${skillName}.md`;
+          case "instruction":
+            return `.claude/instructions.md`;
+          default:
+            return `.agents/skills/${skillName}.md`;
+        }
+      case "codex":
+        return `.codex/skills/${skillName}/SKILL.md`;
+      case "kilocode":
+        switch (outputType) {
+          case "workflow":
+            return `.kilocode/workflows/${skillName}.yaml`;
+          case "rule":
+            return `.kilocode/rules/${skillName}.md`;
+          case "instruction":
+            return `.kilocode/instructions.md`;
+          default:
+            return `.kilocode/rules/${skillName}.md`;
+        }
+      case "gemini":
+        return `.gemini/instructions.md`;
+      default:
+        return undefined;
+    }
   }
 
   /**
