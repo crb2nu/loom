@@ -47,6 +47,7 @@ import { ContextGraphPanel } from "./webviews/ContextGraphPanel";
 import { KnowledgeGraphPanel } from "./webviews/KnowledgeGraphPanel";
 import { MemoryDashboardPanel } from "./webviews/MemoryDashboardPanel";
 import { OnboardingPanel } from "./webviews/OnboardingPanel";
+import { ServerHealthPanel } from "./webviews/ServerHealthPanel";
 import { SyncDashboardPanel } from "./webviews/SyncDashboardPanel";
 
 const execFileAsync = promisify(execFile);
@@ -497,7 +498,14 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
-  // no-op for now
+  // Dispose any open webview panels
+  // These panels maintain static currentPanel references that need explicit cleanup
+  ContextGraphPanel.currentPanel?.dispose();
+  KnowledgeGraphPanel.currentPanel?.dispose();
+  MemoryDashboardPanel.currentPanel?.dispose();
+  OnboardingPanel.currentPanel?.dispose();
+  ServerHealthPanel.currentPanel?.dispose();
+  SyncDashboardPanel.currentPanel?.dispose();
 }
 
 async function ensureServersOnStartup(

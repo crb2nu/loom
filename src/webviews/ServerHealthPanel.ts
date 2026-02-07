@@ -1,6 +1,8 @@
-import { Disposable, Webview, WebviewPanel, window, Uri, ViewColumn } from "vscode";
+import { Webview, WebviewPanel, window, Uri, ViewColumn } from "vscode";
 
 import { ServerHealthMetrics, ServerHealthHistory, RoutingStatus } from "../types";
+
+import { BaseWebviewPanel } from "./BaseWebviewPanel";
 
 export interface ServerHealthData {
   metrics: ServerHealthMetrics[];
@@ -8,44 +10,24 @@ export interface ServerHealthData {
   routing: RoutingStatus;
 }
 
+interface ServerHealthMessage {
+  type: string;
+  serverName?: string;
+}
+
 /**
  * Webview panel for server health dashboard.
  */
-export class ServerHealthPanel {
+export class ServerHealthPanel extends BaseWebviewPanel {
   public static currentPanel: ServerHealthPanel | undefined;
-  private readonly _panel: WebviewPanel;
-  private readonly _extensionUri: Uri;
-  private _disposables: Disposable[] = [];
 
   private constructor(panel: WebviewPanel, extensionUri: Uri) {
-    this._panel = panel;
-    this._extensionUri = extensionUri;
-
-    this._panel.webview.html = this._getHtmlForWebview(this._panel.webview);
-
-    this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
-
-    this._panel.webview.onDidReceiveMessage(
-      (message: { type: string; serverName?: string }) => {
-        switch (message.type) {
-          case "ready":
-            return;
-          case "pingServer":
-            // Handle ping request
-            return;
-          case "refreshMetrics":
-            // Handle refresh request
-            return;
-        }
-      },
-      null,
-      this._disposables
-    );
+    super(panel, extensionUri);
   }
 
   public static render(extensionUri: Uri): ServerHealthPanel {
     if (ServerHealthPanel.currentPanel) {
-      ServerHealthPanel.currentPanel._panel.reveal(ViewColumn.One);
+      ServerHealthPanel.currentPanel.reveal(ViewColumn.One);
       return ServerHealthPanel.currentPanel;
     }
 
@@ -71,7 +53,7 @@ export class ServerHealthPanel {
       }));
     });
 
-    this._panel.webview.postMessage({
+    this.postMessage({
       type: "updateData",
       data: {
         metrics: data.metrics,
@@ -81,17 +63,26 @@ export class ServerHealthPanel {
     });
   }
 
-  public dispose(): void {
+  protected onDispose(): void {
     ServerHealthPanel.currentPanel = undefined;
-    this._panel.dispose();
-    while (this._disposables.length) {
-      const x = this._disposables.pop();
-      if (x) x.dispose();
+  }
+
+  protected handleMessage(message: unknown): void {
+    const msg = message as ServerHealthMessage;
+    switch (msg.type) {
+      case "ready":
+        return;
+      case "pingServer":
+        // Handle ping request
+        return;
+      case "refreshMetrics":
+        // Handle refresh request
+        return;
     }
   }
 
-  private _getHtmlForWebview(_webview: Webview): string {
-    const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${_webview.cspSource} https://cdn.jsdelivr.net 'unsafe-inline'; style-src ${_webview.cspSource} 'unsafe-inline';">`;
+  protected getHtmlForWebview(webview: Webview): string {
+    const csp = this.generateCsp(webview, ["https://cdn.jsdelivr.net"]);
 
     return `<!doctype html>
 <html lang="en">

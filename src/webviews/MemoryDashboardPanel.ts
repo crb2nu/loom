@@ -1,42 +1,27 @@
-import { Disposable, Webview, WebviewPanel, window, Uri, ViewColumn } from "vscode";
+import { Webview, WebviewPanel, window, Uri, ViewColumn } from "vscode";
 
 import { MemoryTier } from "../types";
+
+import { BaseWebviewPanel } from "./BaseWebviewPanel";
+
+interface MemoryDashboardMessage {
+  type: string;
+  entryId?: string;
+}
 
 /**
  * Webview panel for visualizing agent memory tiers.
  */
-export class MemoryDashboardPanel {
+export class MemoryDashboardPanel extends BaseWebviewPanel {
   public static currentPanel: MemoryDashboardPanel | undefined;
-  private readonly _panel: WebviewPanel;
-  private readonly _extensionUri: Uri;
-  private _disposables: Disposable[] = [];
 
   private constructor(panel: WebviewPanel, extensionUri: Uri) {
-    this._panel = panel;
-    this._extensionUri = extensionUri;
-
-    this._panel.webview.html = this._getHtmlForWebview(this._panel.webview);
-
-    this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
-
-    this._panel.webview.onDidReceiveMessage(
-      (message: { type: string; entryId?: string }) => {
-        switch (message.type) {
-          case "ready":
-            return;
-          case "promoteEntry":
-            // Handle entry promotion request
-            return;
-        }
-      },
-      null,
-      this._disposables
-    );
+    super(panel, extensionUri);
   }
 
   public static render(extensionUri: Uri): MemoryDashboardPanel {
     if (MemoryDashboardPanel.currentPanel) {
-      MemoryDashboardPanel.currentPanel._panel.reveal(ViewColumn.One);
+      MemoryDashboardPanel.currentPanel.reveal(ViewColumn.One);
       return MemoryDashboardPanel.currentPanel;
     }
 
@@ -55,23 +40,29 @@ export class MemoryDashboardPanel {
   }
 
   public updateTiers(tiers: MemoryTier[]): void {
-    this._panel.webview.postMessage({
+    this.postMessage({
       type: "updateTiers",
       data: { tiers },
     });
   }
 
-  public dispose(): void {
+  protected onDispose(): void {
     MemoryDashboardPanel.currentPanel = undefined;
-    this._panel.dispose();
-    while (this._disposables.length) {
-      const x = this._disposables.pop();
-      if (x) x.dispose();
+  }
+
+  protected handleMessage(message: unknown): void {
+    const msg = message as MemoryDashboardMessage;
+    switch (msg.type) {
+      case "ready":
+        return;
+      case "promoteEntry":
+        // Handle entry promotion request
+        return;
     }
   }
 
-  private _getHtmlForWebview(_webview: Webview): string {
-    const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${_webview.cspSource} https://cdn.jsdelivr.net 'unsafe-inline'; style-src ${_webview.cspSource} 'unsafe-inline';">`;
+  protected getHtmlForWebview(webview: Webview): string {
+    const csp = this.generateCsp(webview, ["https://cdn.jsdelivr.net"]);
 
     return `<!doctype html>
 <html lang="en">
@@ -81,21 +72,7 @@ export class MemoryDashboardPanel {
     ${csp}
     <title>Memory Dashboard</title>
     <style>
-        * {
-            box-sizing: border-box;
-        }
-        body {
-            margin: 0;
-            padding: 20px;
-            background-color: var(--vscode-editor-background);
-            color: var(--vscode-editor-foreground);
-            font-family: var(--vscode-font-family);
-        }
-        h1 {
-            margin: 0 0 20px 0;
-            font-size: 24px;
-            font-weight: 600;
-        }
+        ${this.getBaseStyles()}
         .dashboard {
             display: grid;
             grid-template-columns: repeat(3, 1fr);

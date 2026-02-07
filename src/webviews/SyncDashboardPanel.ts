@@ -141,6 +141,11 @@ export class SyncDashboardPanel {
     this.panel.webview.html = this.getHtml(state);
   }
 
+  public dispose(): void {
+    // Dispose triggers onDidDispose handler which cleans up interval and disposables
+    this.panel.dispose();
+  }
+
   private getLoadingHtml(): string {
     return `<!DOCTYPE html>
 <html lang="en">
