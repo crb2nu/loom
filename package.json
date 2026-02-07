@@ -1,17 +1,39 @@
 {
     "name": "loom",
-    "displayName": "Loom",
-    "description": "Weaving context for AI - Unified MCP hub management for VS Code, Codex, Kilocode, and Claude Code.",
-    "version": "0.7.0",
+    "displayName": "Loom - MCP Context Manager",
+    "description": "Unified MCP hub management for AI coding assistants. Sync configs across VS Code, Antigravity, Codex, Claude, Kilocode, and Gemini.",
+    "version": "0.9.0",
     "publisher": "cblevins",
+    "license": "MIT",
+    "icon": "images/loom-icon.png",
+    "galleryBanner": {
+        "color": "#1a1a2e",
+        "theme": "dark"
+    },
     "repository": {
         "type": "git",
-        "url": "https://gitlab.flexinfer.ai/root/gitops.git"
+        "url": "https://gitlab.flexinfer.ai/services/loom.git"
     },
+    "homepage": "https://gitlab.flexinfer.ai/services/loom",
+    "bugs": {
+        "url": "https://gitlab.flexinfer.ai/services/loom/-/issues"
+    },
+    "keywords": [
+        "mcp",
+        "model-context-protocol",
+        "ai",
+        "coding-assistant",
+        "claude",
+        "codex",
+        "gemini",
+        "context-management",
+        "sync"
+    ],
     "engines": {
         "vscode": "^1.80.0"
     },
     "categories": [
+        "Machine Learning",
         "Other"
     ],
     "activationEvents": [
@@ -382,6 +404,9 @@
         "compile": "tsc -p ./",
         "watch": "tsc -watch -p ./",
         "package": "vsce package",
+        "package:prerelease": "vsce package --pre-release",
+        "publish": "vsce publish",
+        "publish:prerelease": "vsce publish --pre-release",
         "lint": "eslint src --ext .ts",
         "lint:fix": "eslint src --ext .ts --fix",
         "format": "prettier --write \"src/**/*.ts\"",
@@ -389,7 +414,8 @@
         "test": "vitest run",
         "test:watch": "vitest",
         "test:coverage": "vitest run --coverage",
-        "check": "npm run lint && npm run format:check && tsc --noEmit"
+        "check": "npm run lint && npm run format:check && tsc --noEmit",
+        "prepublishOnly": "npm run check && npm test"
     },
     "lint-staged": {
         "*.{ts,tsx,js,json,md}": [
