@@ -1,8 +1,10 @@
-import * as vscode from "vscode";
-import * as path from "path";
 import * as fs from "fs";
-import { SkillDefinition } from "../types";
+import * as path from "path";
+
+import * as vscode from "vscode";
+
 import { SkillsClient } from "../clients/skills";
+import { SkillDefinition } from "../types";
 
 /**
  * A skill recommendation with confidence score and reason.
@@ -67,7 +69,7 @@ const FILE_EXTENSION_SKILLS: Record<string, string[]> = {
   ".md": ["markdown-lint", "docs"],
 
   // Docker
-  "Dockerfile": ["docker-build", "docker-lint", "hadolint"],
+  Dockerfile: ["docker-build", "docker-lint", "hadolint"],
 };
 
 // Project file to skill mappings
@@ -80,12 +82,12 @@ const PROJECT_FILE_SKILLS: Record<string, string[]> = {
   "Cargo.toml": ["cargo-test", "cargo-build", "clippy"],
   "pyproject.toml": ["pytest", "poetry", "uv"],
   "requirements.txt": ["pip-install", "python-venv"],
-  "Dockerfile": ["docker-build", "docker-lint"],
+  Dockerfile: ["docker-build", "docker-lint"],
   "docker-compose.yml": ["docker-compose"],
   "docker-compose.yaml": ["docker-compose"],
   ".gitlab-ci.yml": ["gitlab-ci", "gitlab-pipelines"],
   ".github": ["github-actions"],
-  "Makefile": ["make-targets"],
+  Makefile: ["make-targets"],
   "kustomization.yaml": ["kustomize", "flux", "k8s-validate"],
   "Chart.yaml": ["helm", "helm-lint"],
   "helmfile.yaml": ["helmfile"],
@@ -101,7 +103,7 @@ const PROJECT_FILE_SKILLS: Record<string, string[]> = {
   "flake.nix": ["nix"],
   "shell.nix": ["nix"],
   ".envrc": ["direnv"],
-  "Procfile": ["heroku"],
+  Procfile: ["heroku"],
   "fly.toml": ["fly-deploy"],
   "vercel.json": ["vercel"],
   "netlify.toml": ["netlify"],

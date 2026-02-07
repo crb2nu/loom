@@ -237,9 +237,8 @@ async function buildSnapshotEnv(workspaceRoot: string): Promise<SnapshotEnvResul
         }
       }
     } catch (error) {
-      console.warn(
-        `Snapshot env: failed to load registry at ${registryPath}: ${(error as Error).message}`
-      );
+      // Silently ignore registry load failures - the file may not exist
+      void error;
     }
   }
 

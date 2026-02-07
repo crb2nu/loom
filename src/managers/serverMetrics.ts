@@ -151,10 +151,7 @@ export class ServerMetricsManager implements vscode.Disposable {
     const now = new Date();
     const cacheTimeoutMs = 5 * 60 * 1000; // 5 minutes
 
-    if (
-      this.lastToolFetch &&
-      now.getTime() - this.lastToolFetch.getTime() < cacheTimeoutMs
-    ) {
+    if (this.lastToolFetch && now.getTime() - this.lastToolFetch.getTime() < cacheTimeoutMs) {
       return;
     }
 

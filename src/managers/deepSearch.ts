@@ -20,7 +20,10 @@ export interface SearchOptions {
 }
 
 // Known search tool configurations
-const SEARCH_TOOL_CONFIGS: Record<string, { queryParam: string; extraParams?: Record<string, unknown> }> = {
+const SEARCH_TOOL_CONFIGS: Record<
+  string,
+  { queryParam: string; extraParams?: Record<string, unknown> }
+> = {
   tavily__search: { queryParam: "query", extraParams: { max_results: 10 } },
   tavily__search_context: { queryParam: "query", extraParams: { max_results: 5 } },
   github__search_repos: { queryParam: "query", extraParams: { per_page: 10 } },
@@ -99,11 +102,12 @@ export class DeepSearchManager {
         if (result.status === "fulfilled") {
           results.push(result.value);
         } else {
+          const reason = result.reason as Error | undefined;
           results.push({
             tool: tool.name,
             source: this.getSource(tool.name),
             data: null,
-            error: result.reason?.message ?? "Unknown error",
+            error: reason?.message ?? "Unknown error",
           });
         }
       }
@@ -171,9 +175,7 @@ export class DeepSearchManager {
     try {
       const response = await Promise.race([
         this.daemonClient.executeTool(tool.name, args),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Timeout")), timeout)
-        ),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout")), timeout)),
       ]);
 
       const durationMs = Date.now() - startTime;
