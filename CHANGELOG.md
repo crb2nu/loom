@@ -5,6 +5,42 @@ All notable changes to the Loom extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] - 2026-02-01
+
+### Added
+
+- **Onboarding wizard**: Welcome walkthrough with first-run detection
+- **Workspace snapshot**: Capture environment settings during onboarding
+- **Deep search framework**: Search across MCP resources (Tavily, GitHub, GitLab, codebase)
+- **Skill recommendations**: Context-aware suggestions based on:
+  - Current file types (Go, TypeScript, Python, etc.)
+  - Git branch names (fix/*, feature/*, test/*)
+  - Recent tool usage
+  - Error patterns
+- **Server metrics**: Performance monitoring with request timing and error rates
+- **Annotation decorations**: Visual indicators in gutter for agent context
+
+### Changed
+
+- Skills provider now shows confidence scores for recommendations
+- Improved debouncing for file change events
+
+## [0.8.0] - 2026-01-31
+
+### Added
+
+- **Daemon error recovery**: Notifications when daemon unavailable
+- **Offline mode**: Pending sync queue for hub disconnection
+- **Config templates**: Quick-start configurations for common setups
+- **Bulk operations**: Multi-platform selection for sync operations
+- **Config drift detection**: Alert when local configs differ from source
+
+### Changed
+
+- Improved error messages throughout
+- Better handling of daemon communication failures
+- Hub client now detects disconnection and retries
+
 ## [0.7.0] - 2026-01-31
 
 ### Added
@@ -110,6 +146,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Basic commands and project structure
 - Documentation and metadata
 
+[0.9.0]: https://gitlab.flexinfer.ai/services/loom/-/compare/v0.8.0...v0.9.0
+[0.8.0]: https://gitlab.flexinfer.ai/services/loom/-/compare/v0.7.0...v0.8.0
 [0.7.0]: https://gitlab.flexinfer.ai/services/loom/-/compare/v0.6.0...v0.7.0
 [0.6.0]: https://gitlab.flexinfer.ai/services/loom/-/compare/v0.5.0...v0.6.0
 [0.5.0]: https://gitlab.flexinfer.ai/services/loom/-/compare/v0.4.0...v0.5.0

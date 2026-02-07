@@ -1,10 +1,24 @@
 # Project Roadmap
 
-> Last Updated: January 2026
+> Last Updated: February 2026
 
-## Current Status: v0.7.0
+## Current Status: v0.9.0
 
 Loom is a VS Code extension for MCP (Model Context Protocol) context management. It provides unified configuration sync across multiple AI coding assistant platforms.
+
+### v0.9.0 Highlights
+
+- **Onboarding wizard**: Welcome walkthrough for new users
+- **Deep search framework**: Search across MCP resources
+- **Skill recommendations**: Context-aware skill suggestions
+- **Server metrics**: Performance monitoring and health tracking
+
+### v0.8.0 Highlights
+
+- **Error recovery**: Better handling of daemon/CLI failures
+- **Offline mode**: Graceful degradation when hub unreachable
+- **Config templates**: Quick-start templates for common setups
+- **Bulk operations**: Select multiple platforms for sync
 
 ### v0.7.0 Highlights
 
@@ -14,6 +28,21 @@ Loom is a VS Code extension for MCP (Model Context Protocol) context management.
 - **Skills filtering**: Filter by target platform
 
 ## Implemented Features
+
+### Onboarding & Discovery (v0.9.0)
+- [x] Welcome wizard with first-run detection
+- [x] Workspace environment snapshot
+- [x] Guided setup for registry and daemon
+- [x] Deep search framework for MCP resources
+- [x] Context-aware skill recommendations
+- [x] Server metrics and performance tracking
+
+### Error Handling & Resilience (v0.8.0)
+- [x] Daemon error recovery with notifications
+- [x] Offline mode with pending sync queue
+- [x] Config templates for quick setup
+- [x] Bulk platform operations
+- [x] Config drift detection
 
 ### Platform Management (v0.7.0)
 - [x] Platform detection (VS Code vs Antigravity)
@@ -55,33 +84,21 @@ Loom is a VS Code extension for MCP (Model Context Protocol) context management.
 
 ## Upcoming Work
 
-### Phase 1: Polish & Stability (v0.7.x)
+### v1.0.0 Release
 
-- [ ] **Onboarding flow**: Welcome walkthrough for new users
-- [ ] **Error recovery**: Better handling of daemon/CLI failures
-- [ ] **Offline mode**: Graceful degradation when hub unreachable
-- [ ] **Unit tests**: Increase test coverage to 80%
-
-### Phase 2: Advanced Features (v0.8.0)
-
-- [ ] **Deep search**: Search across all MCP resources from VS Code
-- [ ] **Remote tunnels**: Secure tunneling to remote K8s MCP servers
-- [ ] **Config templates**: Quick-start templates for common setups
-- [ ] **Bulk operations**: Select multiple platforms for sync
-
-### Phase 3: Intelligence (v0.9.0)
-
-- [ ] **Smart suggestions**: Recommend skills based on current file
-- [ ] **Context insights**: AI-powered context summaries
-- [ ] **Conflict resolution**: Detect and resolve config conflicts
-- [ ] **Usage analytics**: Track tool usage patterns
-
-### Phase 4: Ecosystem (v1.0.0)
-
+- [ ] **Test coverage**: Increase to 40%+ coverage
 - [ ] **Marketplace publishing**: VS Code Marketplace release
+- [ ] **API stability**: Document stable vs internal APIs
+- [ ] **Daemon failure recovery**: Retry logic with user notification
+- [ ] **Offline mode completion**: Full pending sync processing
+
+### Post-1.0 Features
+
 - [ ] **Antigravity store**: Publish to Antigravity extension store
 - [ ] **Plugin system**: Allow custom providers and views
 - [ ] **Theme support**: Light/dark theme awareness
+- [ ] **Remote tunnels**: Secure tunneling to remote K8s MCP servers
+- [ ] **Usage analytics**: Track tool usage patterns
 
 ## Non-Goals
 
@@ -107,6 +124,8 @@ Loom Extension (TypeScript)
 └── Manager Layer
     ├── Profile Manager
     ├── Config Sync Manager
+    ├── Deep Search Manager
+    ├── Skill Recommendation Manager
     └── Health Monitor
 
 loom CLI (Go) - loom-core
