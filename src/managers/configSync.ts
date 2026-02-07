@@ -1,11 +1,13 @@
 import * as crypto from "crypto";
 import * as fs from "fs";
 import { promises as fsp } from "fs";
+import * as os from "os";
 import * as path from "path";
 
 import * as vscode from "vscode";
 
 import { ConfigSyncState } from "../types";
+import { resolveLoomBinary } from "../utils/binary";
 
 export type OfflineMode = "online" | "offline" | "degraded";
 
@@ -13,7 +15,14 @@ export interface OfflineState {
   mode: OfflineMode;
   lastOnline: Date | null;
   pendingSyncs: Array<{ platform: string; timestamp: Date }>;
+  cachedServers: string[];
   reason?: string;
+}
+
+export interface PendingSyncResult {
+  platform: string;
+  success: boolean;
+  error?: string;
 }
 
 /**
@@ -27,7 +36,14 @@ export class ConfigSyncManager implements vscode.Disposable {
   private readonly statusBar: vscode.StatusBarItem;
   private readonly offlineStatusBar: vscode.StatusBarItem;
   private state: ConfigSyncState = { status: "unknown", lastChecked: new Date() };
-  private offlineState: OfflineState = { mode: "online", lastOnline: null, pendingSyncs: [] };
+  private offlineState: OfflineState = {
+    mode: "online",
+    lastOnline: null,
+    pendingSyncs: [],
+    cachedServers: [],
+  };
+  private readonly _onPendingSyncsProcessed = new vscode.EventEmitter<PendingSyncResult[]>();
+  readonly onPendingSyncsProcessed = this._onPendingSyncsProcessed.event;
   private watchers: fs.FSWatcher[] = [];
   private checkPromise?: Promise<void>;
 
@@ -55,6 +71,7 @@ export class ConfigSyncManager implements vscode.Disposable {
   dispose() {
     this.emitter.dispose();
     this.offlineEmitter.dispose();
+    this._onPendingSyncsProcessed.dispose();
     this.statusBar.dispose();
     this.offlineStatusBar.dispose();
     for (const watcher of this.watchers) {
@@ -107,31 +124,94 @@ export class ConfigSyncManager implements vscode.Disposable {
     const exists = this.offlineState.pendingSyncs.some((s) => s.platform === platform);
     if (!exists) {
       this.offlineState.pendingSyncs.push({ platform, timestamp: new Date() });
-      this.channel.appendLine(
-        `[${new Date().toISOString()}] Queued pending sync for ${platform}`
-      );
+      this.channel.appendLine(`[${new Date().toISOString()}] Queued pending sync for ${platform}`);
     }
   }
 
   /**
+   * Update cached server list for offline mode.
+   */
+  updateCachedServers(servers: string[]): void {
+    this.offlineState.cachedServers = [...servers];
+    this.channel.appendLine(
+      `[${new Date().toISOString()}] Cached ${servers.length} servers for offline mode`
+    );
+  }
+
+  /**
+   * Get cached servers for offline mode.
+   */
+  getCachedServers(): string[] {
+    return [...this.offlineState.cachedServers];
+  }
+
+  /**
+   * Get pending syncs count.
+   */
+  getPendingSyncsCount(): number {
+    return this.offlineState.pendingSyncs.length;
+  }
+
+  /**
    * Process pending syncs when back online.
+   * Executes `loom sync <platform>` for each queued platform.
    */
   private async processPendingSyncs(): Promise<void> {
     if (this.offlineState.pendingSyncs.length === 0) {
       return;
     }
 
-    this.channel.appendLine(
-      `[${new Date().toISOString()}] Processing ${this.offlineState.pendingSyncs.length} pending syncs`
-    );
-
-    // Clear pending syncs - they'll be re-queued if they fail
     const pending = [...this.offlineState.pendingSyncs];
     this.offlineState.pendingSyncs = [];
 
+    this.channel.appendLine(
+      `[${new Date().toISOString()}] Processing ${pending.length} pending syncs`
+    );
+
+    const results: PendingSyncResult[] = [];
+    const { execFile } = await import("child_process");
+    const { promisify } = await import("util");
+    const execFileAsync = promisify(execFile);
+
     for (const sync of pending) {
       this.channel.appendLine(`  - Syncing ${sync.platform}...`);
-      // The actual sync is handled by the platform manager
+
+      try {
+        const loomBinary = resolveLoomBinary(this.root);
+        await execFileAsync(loomBinary, ["sync", sync.platform], {
+          cwd: this.root || os.homedir(),
+          timeout: 30000,
+        });
+
+        this.channel.appendLine(`    ✓ ${sync.platform} synced successfully`);
+        results.push({ platform: sync.platform, success: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.channel.appendLine(`    ✗ ${sync.platform} failed: ${message}`);
+
+        // Re-queue failed syncs
+        this.offlineState.pendingSyncs.push({
+          platform: sync.platform,
+          timestamp: new Date(),
+        });
+
+        results.push({ platform: sync.platform, success: false, error: message });
+      }
+    }
+
+    // Notify listeners of results
+    this._onPendingSyncsProcessed.fire(results);
+
+    // Show summary notification
+    const successful = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success).length;
+
+    if (failed > 0) {
+      vscode.window.showWarningMessage(
+        `Processed pending syncs: ${successful} succeeded, ${failed} failed. Failed syncs will be retried.`
+      );
+    } else if (successful > 0) {
+      vscode.window.showInformationMessage(`Processed ${successful} pending sync(s) successfully.`);
     }
   }
 
