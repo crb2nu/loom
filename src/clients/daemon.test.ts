@@ -107,13 +107,17 @@ describe("DaemonClient", () => {
     });
 
     it("should fallback to text parsing when JSON fails", async () => {
-      // Set up sequential responses: first fails, second succeeds with text
+      // Set up sequential responses: retries fail, then text parsing succeeds
       const textOutput = `NAME      STATUS    DESCRIPTION
 ----      ------    -----------
 github    running   GitHub API
 git       idle      Git operations`;
 
+      // With retry logic: 4 failed JSON attempts (initial + 3 retries), then text succeeds
       mockExecFileAsync
+        .mockRejectedValueOnce(new Error("JSON not supported"))
+        .mockRejectedValueOnce(new Error("JSON not supported"))
+        .mockRejectedValueOnce(new Error("JSON not supported"))
         .mockRejectedValueOnce(new Error("JSON not supported"))
         .mockResolvedValueOnce({ stdout: textOutput, stderr: "" });
 
@@ -250,6 +254,7 @@ github__list_repos   List repos`;
 
       await client.executeTool("test_tool", {});
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(mockChannel.appendLine).toHaveBeenCalledWith(
         expect.stringContaining("warning: deprecated API")
       );
@@ -276,6 +281,7 @@ github__list_repos   List repos`;
       const result = await client.startServer("github");
 
       expect(result).toBe(false);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(mockChannel.appendLine).toHaveBeenCalledWith(
         expect.stringContaining("Failed to start server")
       );

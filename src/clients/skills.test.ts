@@ -1,10 +1,9 @@
 import * as fs from "fs";
-import * as path from "path";
+
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as vscode from "vscode";
 
 import { SkillsClient } from "./skills";
-import { SkillDefinition } from "../types";
 
 // Mock fs module
 vi.mock("fs", () => ({
@@ -117,6 +116,7 @@ describe("SkillsClient", () => {
       client.initialize("/workspace");
 
       expect(client.getRegistry()).toBeNull();
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(mockChannel.appendLine).toHaveBeenCalledWith(
         expect.stringContaining("Error loading skills registry")
       );

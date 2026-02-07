@@ -1,10 +1,12 @@
 import * as fs from "fs";
+
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as vscode from "vscode";
 
 import { SkillsClient } from "../clients/skills";
 import { SkillDefinition } from "../types";
-import { SkillRecommendationManager, ContextSignals } from "./skillRecommendations";
+
+import { SkillRecommendationManager } from "./skillRecommendations";
 
 // Mock fs module
 vi.mock("fs", () => ({
@@ -14,64 +16,30 @@ vi.mock("fs", () => ({
   watch: vi.fn(() => ({ close: vi.fn() })),
 }));
 
+// Helper to create a minimal SkillDefinition
+const makeSkill = (name: string, categories: string[], description: string): SkillDefinition => ({
+  name,
+  categories,
+  common: {
+    description,
+    instructions: "",
+    scripts: [],
+    references: [],
+    assets: [],
+    always_allow: [],
+  },
+});
+
 // Sample skills for testing
 const sampleSkills: SkillDefinition[] = [
-  {
-    name: "go-test",
-    categories: ["testing", "go"],
-    common: {
-      description: "Run Go tests",
-    },
-  },
-  {
-    name: "go-build",
-    categories: ["development", "go"],
-    common: {
-      description: "Build Go applications",
-    },
-  },
-  {
-    name: "typescript-check",
-    categories: ["testing", "typescript"],
-    common: {
-      description: "Run TypeScript type checking",
-    },
-  },
-  {
-    name: "npm-install",
-    categories: ["development", "nodejs"],
-    common: {
-      description: "Install npm packages",
-    },
-  },
-  {
-    name: "docker-build",
-    categories: ["devops", "docker"],
-    common: {
-      description: "Build Docker images",
-    },
-  },
-  {
-    name: "k8s-debug",
-    categories: ["debugging", "kubernetes"],
-    common: {
-      description: "Debug Kubernetes pods",
-    },
-  },
-  {
-    name: "pytest",
-    categories: ["testing", "python"],
-    common: {
-      description: "Run Python tests",
-    },
-  },
-  {
-    name: "go-mod-tidy",
-    categories: ["development", "go"],
-    common: {
-      description: "Clean up Go modules",
-    },
-  },
+  makeSkill("go-test", ["testing", "go"], "Run Go tests"),
+  makeSkill("go-build", ["development", "go"], "Build Go applications"),
+  makeSkill("typescript-check", ["testing", "typescript"], "Run TypeScript type checking"),
+  makeSkill("npm-install", ["development", "nodejs"], "Install npm packages"),
+  makeSkill("docker-build", ["devops", "docker"], "Build Docker images"),
+  makeSkill("k8s-debug", ["debugging", "kubernetes"], "Debug Kubernetes pods"),
+  makeSkill("pytest", ["testing", "python"], "Run Python tests"),
+  makeSkill("go-mod-tidy", ["development", "go"], "Clean up Go modules"),
 ];
 
 describe("SkillRecommendationManager", () => {
@@ -108,12 +76,13 @@ describe("SkillRecommendationManager", () => {
 
   describe("initialize", () => {
     it("should scan workspace for project files", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
       vi.mocked(fs.readdirSync).mockReturnValue([
         "go.mod",
         "package.json",
         "Dockerfile",
         "main.go",
-      ] as unknown as fs.Dirent[]);
+      ] as any);
 
       manager.initialize("/workspace");
 
@@ -225,13 +194,10 @@ describe("SkillRecommendationManager", () => {
 
     it("should boost debugging skills on fix branches", async () => {
       // Add a debugging skill
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       vi.mocked(mockSkillsClient.getSkills).mockReturnValue([
         ...sampleSkills,
-        {
-          name: "debug-tool",
-          categories: ["debugging"],
-          common: { description: "Debug tool" },
-        },
+        makeSkill("debug-tool", ["debugging"], "Debug tool"),
       ]);
 
       manager.setGitBranch("fix/memory-leak");
@@ -277,7 +243,8 @@ describe("SkillRecommendationManager", () => {
 
   describe("getRecommendations", () => {
     beforeEach(() => {
-      vi.mocked(fs.readdirSync).mockReturnValue(["go.mod", "package.json"] as unknown as fs.Dirent[]);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
+      vi.mocked(fs.readdirSync).mockReturnValue(["go.mod", "package.json"] as any);
       manager.initialize("/workspace");
     });
 
@@ -336,7 +303,7 @@ describe("SkillRecommendationManager", () => {
       manager.onFileChange(vscode.Uri.file("/workspace/main.go"));
       await new Promise((resolve) => setTimeout(resolve, 350));
 
-      const beforeClear = manager.getRecommendations();
+      const _beforeClear = manager.getRecommendations();
 
       manager.clearSignals();
 

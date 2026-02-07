@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as vscode from "vscode";
 
 import { SkillsClient } from "../clients/skills";
 import { SkillRecommendation, SkillRecommendationManager } from "../managers/skillRecommendations";
 import { SkillDefinition } from "../types";
+
 import { SkillsProvider, SkillTreeItem } from "./skills";
 
 // Sample skills for testing
@@ -13,9 +14,8 @@ const sampleSkills: SkillDefinition[] = [
     categories: ["testing", "go"],
     common: {
       description: "Run Go tests",
-      scripts: [
-        { name: "run", path: "scripts/run.sh", description: "Run all tests" },
-      ],
+      instructions: "Use this skill to run Go tests",
+      scripts: [{ name: "run", path: "scripts/run.sh", description: "Run all tests" }],
       references: ["docs/testing.md"],
       assets: ["templates/test.go.tmpl"],
       always_allow: ["run"],
@@ -30,7 +30,11 @@ const sampleSkills: SkillDefinition[] = [
     categories: ["docker", "devops"],
     common: {
       description: "Build Docker images",
-      scripts: [{ name: "build", path: "scripts/build.sh" }],
+      instructions: "",
+      scripts: [{ name: "build", path: "scripts/build.sh", description: "" }],
+      references: [],
+      assets: [],
+      always_allow: [],
     },
     targets: {
       claude: { enabled: true },
@@ -42,6 +46,11 @@ const sampleSkills: SkillDefinition[] = [
     categories: ["testing", "typescript"],
     common: {
       description: "Run TypeScript type checking",
+      instructions: "",
+      scripts: [],
+      references: [],
+      assets: [],
+      always_allow: [],
     },
     targets: {},
   },
@@ -107,11 +116,7 @@ describe("SkillsProvider", () => {
 
   describe("getTreeItem", () => {
     it("should return the tree item unchanged", () => {
-      const item = new SkillTreeItem(
-        "test",
-        vscode.TreeItemCollapsibleState.None,
-        "category"
-      );
+      const item = new SkillTreeItem("test", vscode.TreeItemCollapsibleState.None, "category");
 
       const result = provider.getTreeItem(item);
 
@@ -142,7 +147,9 @@ describe("SkillsProvider", () => {
     });
 
     it("should show placeholder when no skills", () => {
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       vi.mocked(mockSkillsClient.getSkills).mockReturnValue([]);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       vi.mocked(mockRecommendationManager.getRecommendations).mockReturnValue([]);
 
       const children = provider.getChildren();
@@ -346,10 +353,12 @@ describe("SkillsProvider", () => {
       provider.getChildren();
 
       // When filter is set, searchSkills is used when getChildren is called
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(mockSkillsClient.searchSkills).toHaveBeenCalledWith("docker");
     });
 
     it("should show no match message when nothing matches", () => {
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       vi.mocked(mockSkillsClient.searchSkills).mockReturnValue([]);
 
       provider.setFilter("nonexistent");
@@ -386,10 +395,19 @@ describe("SkillsProvider", () => {
     });
 
     it("should show message when no skills for platform", () => {
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       vi.mocked(mockSkillsClient.getSkills).mockReturnValue([
         {
           name: "claude-only",
           categories: ["test"],
+          common: {
+            description: "Claude only skill",
+            instructions: "",
+            scripts: [],
+            references: [],
+            assets: [],
+            always_allow: [],
+          },
           targets: { claude: { enabled: true }, vscode: { enabled: false } },
         },
       ]);
@@ -414,6 +432,7 @@ describe("SkillsProvider", () => {
     it("should refresh skills client", () => {
       provider.refresh();
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(mockSkillsClient.refresh).toHaveBeenCalled();
     });
   });
@@ -428,21 +447,22 @@ describe("SkillsProvider", () => {
       provider.onDidChangeTreeData(listener);
 
       // Simulate skills change
-      callback();
+      callback(null);
 
       expect(listener).toHaveBeenCalled();
     });
 
     it("should emit event when recommendations change", () => {
       // Get the callback passed to onDidChangeRecommendations
-      const onChangeCall = vi.mocked(mockRecommendationManager.onDidChangeRecommendations).mock.calls[0];
+      const onChangeCall = vi.mocked(mockRecommendationManager.onDidChangeRecommendations).mock
+        .calls[0];
       const callback = onChangeCall[0];
 
       const listener = vi.fn();
       provider.onDidChangeTreeData(listener);
 
       // Simulate recommendation change
-      callback();
+      callback(sampleRecommendations);
 
       expect(listener).toHaveBeenCalled();
     });
@@ -454,6 +474,14 @@ describe("SkillTreeItem", () => {
     const skill: SkillDefinition = {
       name: "test-skill",
       categories: ["test"],
+      common: {
+        description: "Test skill",
+        instructions: "",
+        scripts: [],
+        references: [],
+        assets: [],
+        always_allow: [],
+      },
     };
     const recommendation: SkillRecommendation = {
       skillId: "test-skill",
