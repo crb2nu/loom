@@ -6,6 +6,7 @@ import * as vscode from "vscode";
 
 import { resolveLoomBinary } from "../utils/binary";
 import { showActionableError } from "../utils/errors";
+import { Logger } from "../utils/logger";
 
 import { CommandContext, ExecError } from "./types";
 
@@ -27,7 +28,8 @@ async function startDaemon(ctx: CommandContext): Promise<void> {
   const { workspaceRoot, loomChannel, hubStatusManager, serverProvider } = ctx;
   const loomBinary = resolveLoomBinary(workspaceRoot);
 
-  loomChannel.appendLine(`[${new Date().toISOString()}] Starting loom daemon...`);
+  const logger = new Logger(loomChannel, "Daemon");
+  logger.info("Starting loom daemon...");
   loomChannel.appendLine(`→ ${loomBinary} daemon start`);
 
   await vscode.window.withProgress(
@@ -73,7 +75,8 @@ async function stopDaemon(ctx: CommandContext): Promise<void> {
   const { workspaceRoot, loomChannel, serverProvider } = ctx;
   const loomBinary = resolveLoomBinary(workspaceRoot);
 
-  loomChannel.appendLine(`[${new Date().toISOString()}] Stopping loom daemon...`);
+  const logger = new Logger(loomChannel, "Daemon");
+  logger.info("Stopping loom daemon...");
   loomChannel.appendLine(`→ ${loomBinary} daemon stop`);
 
   try {
@@ -110,7 +113,8 @@ async function restartDaemon(ctx: CommandContext): Promise<void> {
   const { workspaceRoot, loomChannel, hubStatusManager, serverProvider } = ctx;
   const loomBinary = resolveLoomBinary(workspaceRoot);
 
-  loomChannel.appendLine(`[${new Date().toISOString()}] Restarting loom daemon...`);
+  const logger = new Logger(loomChannel, "Daemon");
+  logger.info("Restarting loom daemon...");
 
   await vscode.window.withProgress(
     {
@@ -172,7 +176,8 @@ async function daemonStatus(ctx: CommandContext): Promise<void> {
   const { workspaceRoot, loomChannel } = ctx;
   const loomBinary = resolveLoomBinary(workspaceRoot);
 
-  loomChannel.appendLine(`[${new Date().toISOString()}] Checking daemon status...`);
+  const logger = new Logger(loomChannel, "Daemon");
+  logger.info("Checking daemon status...");
   loomChannel.appendLine(`→ ${loomBinary} daemon status`);
 
   try {
@@ -182,7 +187,7 @@ async function daemonStatus(ctx: CommandContext): Promise<void> {
     });
 
     loomChannel.clear();
-    loomChannel.appendLine(`[${new Date().toISOString()}] Daemon Status`);
+    logger.info("Daemon Status");
     loomChannel.appendLine("─".repeat(40));
     if (stdout) {
       loomChannel.append(stdout);
@@ -202,7 +207,7 @@ async function daemonStatus(ctx: CommandContext): Promise<void> {
   } catch (error) {
     const execError = error as ExecError & { code?: number };
     loomChannel.clear();
-    loomChannel.appendLine(`[${new Date().toISOString()}] Daemon Status`);
+    logger.info("Daemon Status");
     loomChannel.appendLine("─".repeat(40));
     if (execError.stdout) {
       loomChannel.append(execError.stdout);

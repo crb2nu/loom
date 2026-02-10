@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 
 import { loadVscodeConfigSnapshot } from "../utils/config";
 import { formatNameList } from "../utils/helpers";
+import { Logger } from "../utils/logger";
 
 import { CommandContext } from "./types";
 
@@ -32,8 +33,9 @@ async function showMeshReport(ctx: CommandContext): Promise<void> {
     return;
   }
 
+  const logger = new Logger(loomChannel, "Status");
   loomChannel.clear();
-  loomChannel.appendLine(`[${new Date().toISOString()}] MCP mesh diagnostics`);
+  logger.info("MCP mesh diagnostics");
 
   const registry = await registryProvider.getRegistrySnapshot();
   const hubSnapshot = hubStatusManager.getStatus();

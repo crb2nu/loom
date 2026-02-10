@@ -5,6 +5,7 @@ import { promisify } from "util";
 import * as vscode from "vscode";
 
 import { resolveLoomBinary } from "../utils/binary";
+import { Logger } from "../utils/logger";
 
 import { CommandContext, ExecError } from "./types";
 
@@ -51,8 +52,9 @@ async function listSecrets(ctx: CommandContext): Promise<void> {
   const { workspaceRoot, loomChannel, secretsProvider } = ctx;
   const loomBinary = resolveLoomBinary(workspaceRoot);
 
+  const logger = new Logger(loomChannel, "Secrets");
   loomChannel.clear();
-  loomChannel.appendLine(`[${new Date().toISOString()}] Listing secrets`);
+  logger.info("Listing secrets");
   loomChannel.appendLine(`→ ${loomBinary} secrets list --backends`);
 
   await vscode.window.withProgress(
@@ -119,7 +121,8 @@ async function setSecret(ctx: CommandContext): Promise<void> {
   }
 
   const loomBinary = resolveLoomBinary(workspaceRoot);
-  loomChannel.appendLine(`[${new Date().toISOString()}] Setting secret: ${key}`);
+  const logger = new Logger(loomChannel, "Secrets");
+  logger.info(`Setting secret: ${key}`);
   loomChannel.appendLine(`→ ${loomBinary} secrets set ${key} [REDACTED]`);
 
   try {
@@ -168,8 +171,9 @@ async function importSecrets(ctx: CommandContext): Promise<void> {
   const filePath = fileUri[0].fsPath;
   const loomBinary = resolveLoomBinary(workspaceRoot);
 
+  const logger = new Logger(loomChannel, "Secrets");
   loomChannel.clear();
-  loomChannel.appendLine(`[${new Date().toISOString()}] Importing secrets from: ${filePath}`);
+  logger.info(`Importing secrets from: ${filePath}`);
   loomChannel.appendLine(`→ ${loomBinary} secrets import "${filePath}"`);
   loomChannel.show(true);
 
@@ -221,8 +225,9 @@ async function validateSecrets(ctx: CommandContext): Promise<void> {
   const { workspaceRoot, loomChannel } = ctx;
   const loomBinary = resolveLoomBinary(workspaceRoot);
 
+  const logger = new Logger(loomChannel, "Secrets");
   loomChannel.clear();
-  loomChannel.appendLine(`[${new Date().toISOString()}] Validating config secrets`);
+  logger.info("Validating config secrets");
   loomChannel.appendLine(`→ ${loomBinary} validate configs --all`);
   loomChannel.show(true);
 

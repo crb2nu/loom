@@ -6,6 +6,7 @@ import * as vscode from "vscode";
 
 import { DaemonServerInfo, DaemonToolInfo } from "../types";
 import { resolveLoomBinary } from "../utils/binary";
+import { Logger } from "../utils/logger";
 
 const execFileAsync = promisify(execFile);
 
@@ -34,6 +35,7 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
 export class DaemonClient {
   private readonly workspaceRoot: string;
   private readonly channel: vscode.OutputChannel;
+  private readonly logger: Logger;
   private cachedServers: DaemonServerInfo[] = [];
   private lastFetch: Date | null = null;
   private readonly cacheTimeoutMs = 5000;
@@ -55,6 +57,7 @@ export class DaemonClient {
   constructor(workspaceRoot: string, channel: vscode.OutputChannel) {
     this.workspaceRoot = workspaceRoot;
     this.channel = channel;
+    this.logger = new Logger(channel, "Daemon");
   }
 
   /**
@@ -103,11 +106,9 @@ export class DaemonClient {
       this._onConnectionStateChange.fire(newState);
 
       if (newState === "disconnected") {
-        this.channel.appendLine(
-          `[DaemonClient] Daemon disconnected at ${new Date().toISOString()}`
-        );
+        this.logger.info("Daemon disconnected");
       } else {
-        this.channel.appendLine(`[DaemonClient] Daemon connected at ${new Date().toISOString()}`);
+        this.logger.info("Daemon connected");
       }
     }
   }

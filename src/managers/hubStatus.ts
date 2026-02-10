@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 
 import { HubClient } from "../clients/hub";
 import { HubSettings, HubStatusSnapshot } from "../types";
+import { Logger } from "../utils/logger";
 
 /**
  * Manages the hub connection status, periodically refreshing health and server info.
@@ -9,6 +10,7 @@ import { HubSettings, HubStatusSnapshot } from "../types";
 export class HubStatusManager implements vscode.Disposable {
   private settings: HubSettings;
   private readonly channel: vscode.OutputChannel;
+  private readonly logger: Logger;
   private readonly emitter = new vscode.EventEmitter<void>();
   private status: HubStatusSnapshot = { servers: [] };
   private refreshPromise?: Promise<void>;
@@ -17,6 +19,7 @@ export class HubStatusManager implements vscode.Disposable {
   constructor(settings: HubSettings, channel: vscode.OutputChannel) {
     this.settings = settings;
     this.channel = channel;
+    this.logger = new Logger(channel, "HubStatus");
   }
 
   dispose() {
@@ -53,7 +56,7 @@ export class HubStatusManager implements vscode.Disposable {
     const now = new Date();
     if (!this.settings.httpBaseUrl) {
       const message = "Invalid MCP hub URL";
-      this.channel.appendLine(`[${now.toISOString()}] ${message}`);
+      this.logger.warn(message);
       const newStatus = { ...this.status, error: message, servers: [], lastUpdated: now };
       this.updateStatusIfChanged(newStatus);
       return;
@@ -77,7 +80,7 @@ export class HubStatusManager implements vscode.Disposable {
       this.updateStatusIfChanged(newStatus);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.channel.appendLine(`[${now.toISOString()}] Hub status refresh failed: ${message}`);
+      this.logger.error(`Hub status refresh failed: ${message}`);
       const newStatus: HubStatusSnapshot = {
         ...this.status,
         error: message,

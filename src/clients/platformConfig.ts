@@ -10,6 +10,8 @@ import * as vscode from "vscode";
 
 import { PlatformConfig, PlatformSyncResult, PlatformType, SyncDashboardState } from "../types";
 import { resolveLoomBinary } from "../utils/binary";
+import { ConfigManager } from "../utils/configManager";
+import { Logger } from "../utils/logger";
 import { PLATFORMS, getEnabledPlatforms } from "../utils/platform";
 
 const execFileAsync = promisify(execFile);
@@ -21,6 +23,8 @@ export class PlatformConfigClient implements vscode.Disposable {
   private readonly workspaceRoot: string;
   private readonly homeDir: string;
   private readonly channel: vscode.OutputChannel;
+  private readonly logger: Logger;
+  private readonly configManager?: ConfigManager;
   private readonly emitter = new vscode.EventEmitter<PlatformConfig[]>();
   private configs: Map<PlatformType, PlatformConfig> = new Map();
   private checkInterval?: NodeJS.Timeout;
@@ -28,15 +32,17 @@ export class PlatformConfigClient implements vscode.Disposable {
 
   readonly onDidChange = this.emitter.event;
 
-  constructor(workspaceRoot: string, channel: vscode.OutputChannel) {
+  constructor(workspaceRoot: string, channel: vscode.OutputChannel, configManager?: ConfigManager) {
     this.workspaceRoot = workspaceRoot;
     this.homeDir = os.homedir();
     this.channel = channel;
+    this.logger = new Logger(channel, "PlatformConfig");
+    this.configManager = configManager;
 
     // Start periodic sync status checks if configured
-    const pollInterval = vscode.workspace
-      .getConfiguration("loom")
-      .get<number>("syncStatusPollingInterval");
+    const pollInterval = this.configManager
+      ? this.configManager.get("syncStatusPollingInterval")
+      : vscode.workspace.getConfiguration("loom").get<number>("syncStatusPollingInterval");
 
     if (pollInterval && pollInterval > 0) {
       this.checkInterval = setInterval(() => {
@@ -107,7 +113,9 @@ export class PlatformConfigClient implements vscode.Disposable {
    * Only fires change event if configs actually changed.
    */
   async checkAllSyncStatus(): Promise<void> {
-    const enabledPlatforms = getEnabledPlatforms();
+    const enabledPlatforms = this.configManager
+      ? getEnabledPlatforms(this.configManager.get("enabledPlatforms"))
+      : getEnabledPlatforms();
 
     for (const platform of enabledPlatforms) {
       await this.checkPlatformSyncStatus(platform);
@@ -222,7 +230,7 @@ export class PlatformConfigClient implements vscode.Disposable {
     const repoPath = path.join(this.workspaceRoot, info.repoConfigPath);
     const homePath = path.join(this.homeDir, info.homeConfigPath);
 
-    this.channel.appendLine(`[${new Date().toISOString()}] Syncing ${info.displayName} config...`);
+    this.logger.info(`Syncing ${info.displayName} config...`);
 
     try {
       // Check if repo config exists
@@ -246,9 +254,7 @@ export class PlatformConfigClient implements vscode.Disposable {
       // Re-check sync status
       await this.checkPlatformSyncStatus(platform);
 
-      this.channel.appendLine(
-        `[${new Date().toISOString()}] ${info.displayName} synced successfully`
-      );
+      this.logger.info(`${info.displayName} synced successfully`);
 
       return {
         platform,
@@ -260,9 +266,7 @@ export class PlatformConfigClient implements vscode.Disposable {
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.channel.appendLine(
-        `[${new Date().toISOString()}] Error syncing ${info.displayName}: ${message}`
-      );
+      this.logger.error(`Error syncing ${info.displayName}: ${message}`);
 
       return {
         platform,
@@ -300,9 +304,7 @@ export class PlatformConfigClient implements vscode.Disposable {
     const repoPath = path.join(this.workspaceRoot, info.repoConfigPath);
     const homePath = path.join(this.homeDir, info.homeConfigPath);
 
-    this.channel.appendLine(
-      `[${new Date().toISOString()}] Pulling ${info.displayName} config from home...`
-    );
+    this.logger.info(`Pulling ${info.displayName} config from home...`);
 
     try {
       // Check if home config exists
@@ -326,9 +328,7 @@ export class PlatformConfigClient implements vscode.Disposable {
       // Re-check sync status
       await this.checkPlatformSyncStatus(platform);
 
-      this.channel.appendLine(
-        `[${new Date().toISOString()}] ${info.displayName} pulled successfully`
-      );
+      this.logger.info(`${info.displayName} pulled successfully`);
 
       return {
         platform,
@@ -356,9 +356,7 @@ export class PlatformConfigClient implements vscode.Disposable {
   async regenerateConfig(platform: PlatformType): Promise<PlatformSyncResult> {
     const info = PLATFORMS[platform];
 
-    this.channel.appendLine(
-      `[${new Date().toISOString()}] Regenerating ${info.displayName} config...`
-    );
+    this.logger.info(`Regenerating ${info.displayName} config...`);
 
     try {
       const loomBinary = resolveLoomBinary(this.workspaceRoot);
@@ -386,9 +384,7 @@ export class PlatformConfigClient implements vscode.Disposable {
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.channel.appendLine(
-        `[${new Date().toISOString()}] Error regenerating ${info.displayName}: ${message}`
-      );
+      this.logger.error(`Error regenerating ${info.displayName}: ${message}`);
 
       return {
         platform,
@@ -496,9 +492,7 @@ export class PlatformConfigClient implements vscode.Disposable {
       }
     }
 
-    this.channel.appendLine(
-      `[${new Date().toISOString()}] Backed up ${backedUp.length} configs to ${backupDir}`
-    );
+    this.logger.info(`Backed up ${backedUp.length} configs to ${backupDir}`);
 
     return backupDir;
   }

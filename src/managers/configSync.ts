@@ -8,6 +8,7 @@ import * as vscode from "vscode";
 
 import { ConfigSyncState } from "../types";
 import { resolveLoomBinary } from "../utils/binary";
+import { Logger } from "../utils/logger";
 
 export type OfflineMode = "online" | "offline" | "degraded";
 
@@ -31,6 +32,7 @@ export interface PendingSyncResult {
 export class ConfigSyncManager implements vscode.Disposable {
   private readonly root: string;
   private readonly channel: vscode.OutputChannel;
+  private readonly logger: Logger;
   private readonly emitter = new vscode.EventEmitter<ConfigSyncState>();
   private readonly offlineEmitter = new vscode.EventEmitter<OfflineState>();
   private readonly statusBar: vscode.StatusBarItem;
@@ -52,6 +54,7 @@ export class ConfigSyncManager implements vscode.Disposable {
   constructor(root: string, channel: vscode.OutputChannel) {
     this.root = root;
     this.channel = channel;
+    this.logger = new Logger(channel, "ConfigSync");
     this.statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     this.statusBar.command = "loom.showSyncStatus";
     this.updateStatusBar();
@@ -107,12 +110,10 @@ export class ConfigSyncManager implements vscode.Disposable {
 
     if (mode !== "online") {
       this.offlineStatusBar.show();
-      this.channel.appendLine(
-        `[${new Date().toISOString()}] Offline mode: ${mode}${reason ? ` (${reason})` : ""}`
-      );
+      this.logger.info(`Offline mode: ${mode}${reason ? ` (${reason})` : ""}`);
     } else {
       this.offlineStatusBar.hide();
-      this.channel.appendLine(`[${new Date().toISOString()}] Back online`);
+      this.logger.info("Back online");
     }
   }
 
@@ -124,7 +125,7 @@ export class ConfigSyncManager implements vscode.Disposable {
     const exists = this.offlineState.pendingSyncs.some((s) => s.platform === platform);
     if (!exists) {
       this.offlineState.pendingSyncs.push({ platform, timestamp: new Date() });
-      this.channel.appendLine(`[${new Date().toISOString()}] Queued pending sync for ${platform}`);
+      this.logger.info(`Queued pending sync for ${platform}`);
     }
   }
 
@@ -133,9 +134,7 @@ export class ConfigSyncManager implements vscode.Disposable {
    */
   updateCachedServers(servers: string[]): void {
     this.offlineState.cachedServers = [...servers];
-    this.channel.appendLine(
-      `[${new Date().toISOString()}] Cached ${servers.length} servers for offline mode`
-    );
+    this.logger.info(`Cached ${servers.length} servers for offline mode`);
   }
 
   /**
@@ -164,9 +163,7 @@ export class ConfigSyncManager implements vscode.Disposable {
     const pending = [...this.offlineState.pendingSyncs];
     this.offlineState.pendingSyncs = [];
 
-    this.channel.appendLine(
-      `[${new Date().toISOString()}] Processing ${pending.length} pending syncs`
-    );
+    this.logger.info(`Processing ${pending.length} pending syncs`);
 
     const results: PendingSyncResult[] = [];
     const { execFile } = await import("child_process");
@@ -350,16 +347,15 @@ export class ConfigSyncManager implements vscode.Disposable {
   }
 
   private logState(): void {
-    const now = new Date().toISOString();
     if (this.state.status === "synced") {
-      this.channel.appendLine(`[${now}] Config sync: OK (hash=${this.state.generatedHash})`);
+      this.logger.info(`Config sync: OK (hash=${this.state.generatedHash})`);
     } else if (this.state.status === "out-of-sync") {
-      this.channel.appendLine(`[${now}] Config drift detected:`);
+      this.logger.warn("Config drift detected:");
       for (const diff of this.state.diffs ?? []) {
         this.channel.appendLine(`  - ${diff}`);
       }
     } else if (this.state.status === "no-generated") {
-      this.channel.appendLine(`[${now}] No generated config found at ${this.state.appliedPath}`);
+      this.logger.info(`No generated config found at ${this.state.appliedPath}`);
     }
   }
 

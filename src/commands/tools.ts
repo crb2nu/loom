@@ -6,6 +6,7 @@ import * as vscode from "vscode";
 
 import { resolveLoomBinary } from "../utils/binary";
 import { showActionableError } from "../utils/errors";
+import { Logger } from "../utils/logger";
 
 import { CommandContext, ExecError } from "./types";
 
@@ -25,7 +26,8 @@ async function refreshTools(ctx: CommandContext): Promise<void> {
   const { workspaceRoot, loomChannel, toolProvider } = ctx;
   const loomBinary = resolveLoomBinary(workspaceRoot);
 
-  loomChannel.appendLine(`[${new Date().toISOString()}] Refreshing tool list...`);
+  const logger = new Logger(loomChannel, "Tools");
+  logger.info("Refreshing tool list...");
   loomChannel.appendLine(`→ ${loomBinary} tools list`);
 
   await vscode.window.withProgress(
@@ -41,7 +43,7 @@ async function refreshTools(ctx: CommandContext): Promise<void> {
         });
 
         loomChannel.clear();
-        loomChannel.appendLine(`[${new Date().toISOString()}] Available Tools`);
+        logger.info("Available Tools");
         loomChannel.appendLine("─".repeat(60));
         if (stdout) {
           loomChannel.append(stdout);
@@ -101,7 +103,8 @@ async function searchTools(ctx: CommandContext): Promise<void> {
 
   // Also run CLI search and show in output channel
   const loomBinary = resolveLoomBinary(workspaceRoot);
-  loomChannel.appendLine(`[${new Date().toISOString()}] Searching tools for: ${query}`);
+  const logger = new Logger(loomChannel, "Tools");
+  logger.info(`Searching tools for: ${query}`);
   loomChannel.appendLine(`→ ${loomBinary} tools search ${query}`);
 
   await vscode.window.withProgress(
@@ -117,7 +120,7 @@ async function searchTools(ctx: CommandContext): Promise<void> {
         });
 
         loomChannel.clear();
-        loomChannel.appendLine(`[${new Date().toISOString()}] Search Results: "${query}"`);
+        logger.info(`Search Results: "${query}"`);
         loomChannel.appendLine("─".repeat(60));
         if (stdout) {
           loomChannel.append(stdout);

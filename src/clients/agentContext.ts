@@ -14,6 +14,7 @@ import {
   MemoryTier,
 } from "../types";
 import { resolveLoomBinary } from "../utils/binary";
+import { Logger } from "../utils/logger";
 
 const execFileAsync = promisify(execFile);
 
@@ -23,7 +24,7 @@ const execFileAsync = promisify(execFile);
  */
 export class AgentContextClient {
   private readonly workspaceRoot: string;
-  private readonly channel: vscode.OutputChannel;
+  private readonly logger: Logger;
   private agentId: string;
 
   constructor(
@@ -32,7 +33,7 @@ export class AgentContextClient {
     agentId: string = "vscode-loom"
   ) {
     this.workspaceRoot = workspaceRoot;
-    this.channel = channel;
+    this.logger = new Logger(channel, "AgentContext");
     this.agentId = agentId;
   }
 
@@ -44,7 +45,7 @@ export class AgentContextClient {
       const loomBinary = resolveLoomBinary(this.workspaceRoot);
       const argsJson = JSON.stringify(args);
 
-      this.channel.appendLine(`[${new Date().toISOString()}] MCP tool: ${toolName} ${argsJson}`);
+      this.logger.info(`MCP tool: ${toolName} ${argsJson}`);
 
       const { stdout } = await execFileAsync(
         loomBinary,
@@ -58,9 +59,7 @@ export class AgentContextClient {
       return JSON.parse(stdout) as T;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.channel.appendLine(
-        `[${new Date().toISOString()}] MCP tool error (${toolName}): ${message}`
-      );
+      this.logger.error(`MCP tool error (${toolName}): ${message}`);
       return null;
     }
   }

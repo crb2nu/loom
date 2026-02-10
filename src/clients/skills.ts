@@ -5,6 +5,7 @@ import * as vscode from "vscode";
 import { parse as parseYaml } from "yaml";
 
 import { SkillDefinition, SkillOutputType, SkillsRegistry } from "../types";
+import { Logger } from "../utils/logger";
 
 /**
  * Client for loading and watching skills-registry.yaml.
@@ -12,6 +13,7 @@ import { SkillDefinition, SkillOutputType, SkillsRegistry } from "../types";
  */
 export class SkillsClient {
   private readonly channel: vscode.OutputChannel;
+  private readonly logger: Logger;
   private registryPath: string | undefined;
   private cachedRegistry: SkillsRegistry | null = null;
   private watcher: fs.FSWatcher | null = null;
@@ -20,35 +22,41 @@ export class SkillsClient {
 
   constructor(channel: vscode.OutputChannel) {
     this.channel = channel;
+    this.logger = new Logger(channel, "Skills");
   }
 
   /**
    * Initialize the client with a registry path.
    * If not provided, searches default locations.
+   *
+   * @param workspaceRoot - The workspace root path.
+   * @param customPath - Optional explicit path to skills-registry.yaml.
+   * @param configuredPath - Optional value from "loom.skillsRegistryPath" setting.
+   *   When provided, skips reading vscode config directly.
    */
-  initialize(workspaceRoot: string, customPath?: string): void {
-    this.registryPath = customPath ?? this.findRegistryPath(workspaceRoot);
+  initialize(workspaceRoot: string, customPath?: string, configuredPath?: string | null): void {
+    this.registryPath = customPath ?? this.findRegistryPath(workspaceRoot, configuredPath);
 
     if (this.registryPath) {
-      this.channel.appendLine(
-        `[${new Date().toISOString()}] Skills registry found: ${this.registryPath}`
-      );
+      this.logger.info(`Skills registry found: ${this.registryPath}`);
       this.loadRegistry();
       this.startWatcher();
     } else {
-      this.channel.appendLine(
-        `[${new Date().toISOString()}] Skills registry not found in workspace`
-      );
+      this.logger.info("Skills registry not found in workspace");
     }
   }
 
   /**
    * Find skills-registry.yaml in standard locations.
+   *
+   * @param workspaceRoot - The workspace root path.
+   * @param configuredPath - Optional value from "loom.skillsRegistryPath" setting.
+   *   When provided, skips reading vscode config directly.
    */
-  private findRegistryPath(workspaceRoot: string): string | undefined {
+  private findRegistryPath(workspaceRoot: string, configuredPath?: string | null): string | undefined {
     const candidates = [
       // Configured path from settings
-      vscode.workspace.getConfiguration("loom").get<string>("skillsRegistryPath"),
+      configuredPath ?? vscode.workspace.getConfiguration("loom").get<string>("skillsRegistryPath"),
       // Workspace relative paths
       path.join(workspaceRoot, "platform/gitops/mcp/context/skills-registry.yaml"),
       path.join(workspaceRoot, "mcp/context/skills-registry.yaml"),
@@ -80,15 +88,11 @@ export class SkillsClient {
       const content = fs.readFileSync(this.registryPath, "utf-8");
       const parsed = parseYaml(content) as SkillsRegistry;
       this.cachedRegistry = parsed;
-      this.channel.appendLine(
-        `[${new Date().toISOString()}] Loaded ${parsed.skills?.length ?? 0} skills from registry`
-      );
+      this.logger.info(`Loaded ${parsed.skills?.length ?? 0} skills from registry`);
       this.emitter.fire(parsed);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.channel.appendLine(
-        `[${new Date().toISOString()}] Error loading skills registry: ${message}`
-      );
+      this.logger.error(`Error loading skills registry: ${message}`);
       this.cachedRegistry = null;
       this.emitter.fire(null);
     }
@@ -110,17 +114,13 @@ export class SkillsClient {
           clearTimeout(debounceTimer);
         }
         debounceTimer = setTimeout(() => {
-          this.channel.appendLine(
-            `[${new Date().toISOString()}] Skills registry changed, reloading...`
-          );
+          this.logger.info("Skills registry changed, reloading...");
           this.loadRegistry();
         }, 500);
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.channel.appendLine(
-        `[${new Date().toISOString()}] Error watching skills registry: ${message}`
-      );
+      this.logger.error(`Error watching skills registry: ${message}`);
     }
   }
 

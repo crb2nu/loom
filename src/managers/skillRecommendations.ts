@@ -5,6 +5,7 @@ import * as vscode from "vscode";
 
 import { SkillsClient } from "../clients/skills";
 import { SkillDefinition } from "../types";
+import { Logger } from "../utils/logger";
 
 /**
  * A skill recommendation with confidence score and reason.
@@ -136,6 +137,7 @@ const ERROR_PATTERN_SKILLS: Array<{ pattern: RegExp; skills: string[] }> = [
  */
 export class SkillRecommendationManager {
   private readonly channel: vscode.OutputChannel;
+  private readonly logger: Logger;
   private readonly skillsClient: SkillsClient;
   private contextSignals: ContextSignals;
   private usageHistory: Map<string, number> = new Map();
@@ -147,6 +149,7 @@ export class SkillRecommendationManager {
 
   constructor(channel: vscode.OutputChannel, skillsClient: SkillsClient) {
     this.channel = channel;
+    this.logger = new Logger(channel, "SkillRec");
     this.skillsClient = skillsClient;
     this.contextSignals = {
       fileExtensions: new Set(),
@@ -182,9 +185,7 @@ export class SkillRecommendationManager {
         }
       }
 
-      this.channel.appendLine(
-        `[${new Date().toISOString()}] Scanned workspace, found project files: ${Array.from(this.contextSignals.projectFiles).join(", ")}`
-      );
+      this.logger.info(`Scanned workspace, found project files: ${Array.from(this.contextSignals.projectFiles).join(", ")}`);
     } catch {
       // Ignore errors scanning workspace
     }
@@ -316,9 +317,7 @@ export class SkillRecommendationManager {
       triggers: reasons,
     }));
 
-    this.channel.appendLine(
-      `[${new Date().toISOString()}] Updated recommendations: ${this.recommendations.map((r) => `${r.name}(${Math.round(r.confidence * 100)}%)`).join(", ")}`
-    );
+    this.logger.info(`Updated recommendations: ${this.recommendations.map((r) => `${r.name}(${Math.round(r.confidence * 100)}%)`).join(", ")}`);
 
     this.emitter.fire(this.recommendations);
   }

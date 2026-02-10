@@ -102,7 +102,7 @@ export class OnboardingPanel {
     this.daemonClient = daemonClient;
     this.workspaceRoot = workspaceRoot;
 
-    // Load saved hub URL from settings
+    // TODO: Use ConfigManager when OnboardingPanel is refactored to receive injected dependencies
     const config = vscode.workspace.getConfiguration("loom");
     this.state.hubUrl = config.get<string>("hubUrl") ?? "";
     this.state.hubEnabled = config.get<boolean>("hubEnabled") ?? false;
@@ -272,7 +272,7 @@ export class OnboardingPanel {
   }
 
   private async finishOnboarding(): Promise<void> {
-    // Save settings
+    // TODO: Use ConfigManager when OnboardingPanel is refactored to receive injected dependencies
     const config = vscode.workspace.getConfiguration("loom");
     await config.update("hubUrl", this.state.hubUrl, vscode.ConfigurationTarget.Global);
     await config.update("hubEnabled", this.state.hubEnabled, vscode.ConfigurationTarget.Global);

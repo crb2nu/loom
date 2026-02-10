@@ -41,7 +41,9 @@ import {
   watchRegistry,
   writeDaemonConfig,
 } from "./utils/config";
+import { ConfigManager } from "./utils/configManager";
 import { getPythonExecutable } from "./utils/helpers";
+import { Logger } from "./utils/logger";
 import { detectPlatform, getPlatformStatusText } from "./utils/platform";
 import { ContextGraphPanel } from "./webviews/ContextGraphPanel";
 import { KnowledgeGraphPanel } from "./webviews/KnowledgeGraphPanel";
@@ -61,6 +63,8 @@ interface ActivationEnvironment {
   workspaceFolder: vscode.WorkspaceFolder | undefined;
   pythonExecutable: string;
   loomChannel: vscode.OutputChannel;
+  logger: Logger;
+  configManager: ConfigManager;
   hubStatusManager: HubStatusManager;
   daemonClient: DaemonClient;
   registryProvider: RegistryProvider;
@@ -81,7 +85,7 @@ interface ActivationEnvironment {
 
 function initializeEnvironment(context: vscode.ExtensionContext): Pick<
   ActivationEnvironment,
-  "workspaceRoot" | "workspaceFolder" | "pythonExecutable" | "loomChannel"
+  "workspaceRoot" | "workspaceFolder" | "pythonExecutable" | "loomChannel" | "logger" | "configManager"
 > {
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
   const workspaceRoot = workspaceFolder?.uri.fsPath ?? "";
@@ -91,13 +95,22 @@ function initializeEnvironment(context: vscode.ExtensionContext): Pick<
   const loomChannel = vscode.window.createOutputChannel("Loom");
   context.subscriptions.push(loomChannel);
 
-  return { workspaceRoot, workspaceFolder, pythonExecutable, loomChannel };
+  // Root logger for all Loom operations
+  const logger = new Logger(loomChannel, "Loom");
+
+  // Centralized configuration manager for all loom.* settings
+  const configManager = new ConfigManager();
+  context.subscriptions.push(configManager);
+
+  return { workspaceRoot, workspaceFolder, pythonExecutable, loomChannel, logger, configManager };
 }
 
 function registerHubIntegration(
   loomChannel: vscode.OutputChannel,
+  logger: Logger,
   context: vscode.ExtensionContext
 ): HubStatusManager {
+  const hubLogger = logger.child("Hub");
   const initialHubSettings = deriveHubSettings();
   const hubStatusManager = new HubStatusManager(initialHubSettings, loomChannel);
   context.subscriptions.push(hubStatusManager);
@@ -119,14 +132,10 @@ function registerHubIntegration(
       ) {
         const next = deriveHubSettings();
         hubStatusManager.updateSettings(next);
-        loomChannel.appendLine(
-          `[${new Date().toISOString()}] Hub settings updated (url=${next.hubUrl}, profile=${next.profile})`
-        );
+        hubLogger.info(`Hub settings updated (url=${next.hubUrl}, profile=${next.profile})`);
         // Write daemon config file so daemon can pick up changes on restart
         void writeDaemonConfig(next).then(() => {
-          loomChannel.appendLine(
-            `[${new Date().toISOString()}] Daemon config written to ~/.config/loom/config.yaml`
-          );
+          hubLogger.info("Daemon config written to ~/.config/loom/config.yaml");
         });
       }
     })
@@ -211,7 +220,7 @@ function registerRegistryAndServers(
 }
 
 function registerConfigSync(
-  env: Pick<ActivationEnvironment, "workspaceRoot" | "loomChannel">,
+  env: Pick<ActivationEnvironment, "workspaceRoot" | "loomChannel" | "configManager">,
   context: vscode.ExtensionContext
 ): { configSyncManager: ConfigSyncManager; secretsProvider: SecretsProvider } {
   // Config sync drift detection
@@ -223,7 +232,7 @@ function registerConfigSync(
   context.subscriptions.push(
     configSyncManager.onDidChange((state) => {
       if (state.status === "out-of-sync") {
-        const autoSync = vscode.workspace.getConfiguration("loom").get<string>("autoSyncOnDrift");
+        const autoSync = env.configManager.get("autoSyncOnDrift");
         if (autoSync === "auto") {
           void vscode.commands.executeCommand("loom.syncConfigs");
         } else if (autoSync === "prompt") {
@@ -252,15 +261,14 @@ function registerConfigSync(
 // Platform Configuration Integration
 // ============================================================================
 function registerPlatforms(
-  env: Pick<ActivationEnvironment, "workspaceRoot" | "loomChannel">,
+  env: Pick<ActivationEnvironment, "workspaceRoot" | "loomChannel" | "configManager">,
   context: vscode.ExtensionContext
 ): PlatformConfigClient {
+  const platformLogger = new Logger(env.loomChannel, "Platform");
   const detectedPlatform = detectPlatform();
-  env.loomChannel.appendLine(
-    `[${new Date().toISOString()}] Detected platform: ${getPlatformStatusText()} (${detectedPlatform})`
-  );
+  platformLogger.info(`Detected platform: ${getPlatformStatusText()} (${detectedPlatform})`);
 
-  const platformConfigClient = new PlatformConfigClient(env.workspaceRoot, env.loomChannel);
+  const platformConfigClient = new PlatformConfigClient(env.workspaceRoot, env.loomChannel, env.configManager);
   context.subscriptions.push(platformConfigClient);
 
   const platformsProvider = new PlatformsProvider(platformConfigClient);
@@ -270,13 +278,10 @@ function registerPlatforms(
   context.subscriptions.push(platformsTree);
 
   // Check sync status on startup if configured
-  const syncOnStartup =
-    vscode.workspace.getConfiguration("loom").get<boolean>("syncOnStartup") ?? false;
+  const syncOnStartup = env.configManager.get("syncOnStartup");
   if (syncOnStartup) {
     void platformConfigClient.checkAllSyncStatus().then(() => {
-      env.loomChannel.appendLine(
-        `[${new Date().toISOString()}] Platform sync status checked on startup`
-      );
+      platformLogger.info("Platform sync status checked on startup");
     });
   }
 
@@ -303,7 +308,7 @@ function registerPlatforms(
 // Onboarding Wizard
 // ============================================================================
 function registerOnboarding(
-  env: Pick<ActivationEnvironment, "workspaceRoot" | "daemonClient" | "platformConfigClient">,
+  env: Pick<ActivationEnvironment, "workspaceRoot" | "configManager" | "daemonClient" | "platformConfigClient">,
   context: vscode.ExtensionContext
 ): void {
   context.subscriptions.push(
@@ -318,8 +323,7 @@ function registerOnboarding(
   );
 
   // Check if first run - show onboarding prompt
-  const hasCompletedOnboarding =
-    vscode.workspace.getConfiguration("loom").get<boolean>("onboardingComplete") ?? false;
+  const hasCompletedOnboarding = env.configManager.get("onboardingComplete");
 
   if (!hasCompletedOnboarding) {
     // Delay prompt slightly to let extension activate
@@ -437,11 +441,11 @@ function registerCoreCommands(
 // Skills Integration
 // ============================================================================
 function registerSkillsIntegration(
-  env: Pick<ActivationEnvironment, "workspaceRoot" | "loomChannel">,
+  env: Pick<ActivationEnvironment, "workspaceRoot" | "loomChannel" | "configManager">,
   context: vscode.ExtensionContext
 ): SkillsClient {
   const skillsClient = new SkillsClient(env.loomChannel);
-  skillsClient.initialize(env.workspaceRoot);
+  skillsClient.initialize(env.workspaceRoot, undefined, env.configManager.get("skillsRegistryPath"));
   context.subscriptions.push({ dispose: () => skillsClient.dispose() });
 
   // Skill recommendation manager for context-aware suggestions
@@ -491,6 +495,7 @@ function registerSkillsIntegration(
     loomChannel: env.loomChannel,
     skillsClient,
     skillsProvider,
+    configManager: env.configManager,
   });
   context.subscriptions.push(...skillsCommandDisposables);
 
@@ -501,14 +506,14 @@ function registerSkillsIntegration(
 // Agent Context Integration
 // ============================================================================
 function registerAgentContext(
-  env: Pick<ActivationEnvironment, "workspaceRoot" | "loomChannel">,
+  env: Pick<ActivationEnvironment, "workspaceRoot" | "loomChannel" | "configManager">,
   context: vscode.ExtensionContext
 ): {
   agentContextClient: AgentContextClient;
   agentSessionManager: AgentSessionManager;
   annotationDecorationManager: AnnotationDecorationManager;
 } {
-  const agentId = vscode.workspace.getConfiguration("loom").get<string>("agentId") ?? "vscode-loom";
+  const agentId = env.configManager.get("agentId");
   const agentContextClient = new AgentContextClient(env.workspaceRoot, env.loomChannel, agentId);
 
   const agentSessionManager = new AgentSessionManager(
@@ -534,8 +539,7 @@ function registerAgentContext(
   context.subscriptions.push(annotationDecorationManager);
 
   // Set initial annotation decoration state from config
-  const showAnnotations =
-    vscode.workspace.getConfiguration("loom").get<boolean>("showAnnotationDecorations") ?? true;
+  const showAnnotations = env.configManager.get("showAnnotationDecorations");
   annotationDecorationManager.setEnabled(showAnnotations);
 
   const agentContextCommandDisposables = registerAgentContextCommands({
@@ -581,17 +585,18 @@ function registerAgentContext(
 // Server Health Integration
 // ============================================================================
 function registerServerHealth(
-  env: Pick<ActivationEnvironment, "daemonClient" | "hubStatusManager" | "loomChannel">,
+  env: Pick<ActivationEnvironment, "configManager" | "daemonClient" | "hubStatusManager" | "loomChannel">,
   context: vscode.ExtensionContext
 ): void {
   const serverMetricsManager = new ServerMetricsManager(
     env.daemonClient,
     env.hubStatusManager,
-    env.loomChannel
+    env.loomChannel,
+    env.configManager.get("serverMetricsInterval")
   );
   context.subscriptions.push(serverMetricsManager);
 
-  const profileManager = new ProfileManager(env.hubStatusManager, env.daemonClient, env.loomChannel);
+  const profileManager = new ProfileManager(env.hubStatusManager, env.daemonClient, env.loomChannel, env.configManager);
   context.subscriptions.push(profileManager);
 
   const serverHealthCommandDisposables = registerServerHealthCommands({
@@ -604,11 +609,10 @@ function registerServerHealth(
 }
 
 function maybeAutoStartSession(
-  env: Pick<ActivationEnvironment, "workspaceFolder" | "agentSessionManager">
+  env: Pick<ActivationEnvironment, "workspaceFolder" | "configManager" | "agentSessionManager">
 ): void {
   // Auto-start session if configured
-  const autoStartSession =
-    vscode.workspace.getConfiguration("loom").get<boolean>("autoStartSession") ?? false;
+  const autoStartSession = env.configManager.get("autoStartSession");
   if (autoStartSession && env.workspaceFolder) {
     const namespace = `workspace/${env.workspaceFolder.name}`;
     void env.agentSessionManager.startSession(namespace, "Auto-started session");
@@ -623,7 +627,7 @@ function maybeAutoStartSession(
 export async function activate(context: vscode.ExtensionContext) {
   const base = initializeEnvironment(context);
 
-  const hubStatusManager = registerHubIntegration(base.loomChannel, context);
+  const hubStatusManager = registerHubIntegration(base.loomChannel, base.logger, context);
 
   const { registryProvider, serverProvider, toolProvider, daemonClient } =
     registerRegistryAndServers({ ...base, hubStatusManager }, context);
@@ -654,9 +658,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
   const { agentSessionManager } = registerAgentContext(base, context);
 
-  registerServerHealth({ daemonClient, hubStatusManager, loomChannel: base.loomChannel }, context);
+  registerServerHealth({ configManager: base.configManager, daemonClient, hubStatusManager, loomChannel: base.loomChannel }, context);
 
-  maybeAutoStartSession({ workspaceFolder: base.workspaceFolder, agentSessionManager });
+  maybeAutoStartSession({ workspaceFolder: base.workspaceFolder, configManager: base.configManager, agentSessionManager });
 }
 
 export function deactivate() {
@@ -680,8 +684,9 @@ async function ensureServersOnStartup(
     return;
   }
 
+  const startupLogger = new Logger(channel, "Startup");
   channel.clear();
-  channel.appendLine(`[${new Date().toISOString()}] ensure_mcp_servers.py --fix --refresh-zep-map`);
+  startupLogger.info("ensure_mcp_servers.py --fix --refresh-zep-map");
   try {
     const { stdout, stderr } = await execFileAsync(
       pythonExecutable,

@@ -4,6 +4,7 @@ import { promisify } from "util";
 import * as vscode from "vscode";
 
 import { resolveHubWrapperCommand } from "../utils/binary";
+import { Logger } from "../utils/logger";
 
 import { CommandContext } from "./types";
 
@@ -37,9 +38,8 @@ async function verifyHubClient(ctx: CommandContext): Promise<void> {
   const { workspaceRoot, loomChannel } = ctx;
 
   const wrapperPath = resolveHubWrapperCommand(workspaceRoot);
-  loomChannel.appendLine(
-    `[${new Date().toISOString()}] Checking hub client via ${wrapperPath || "mcp-hub-wrapper"}`
-  );
+  const logger = new Logger(loomChannel, "Hub");
+  logger.info(`Checking hub client via ${wrapperPath || "mcp-hub-wrapper"}`);
   try {
     await execFileAsync(wrapperPath, ["--help"]);
     loomChannel.appendLine("✓ mcp-hub-wrapper responded to --help");

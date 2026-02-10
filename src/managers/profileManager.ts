@@ -2,6 +2,8 @@ import * as vscode from "vscode";
 
 import { DaemonClient } from "../clients/daemon";
 import { RoutingStatus, ExtendedServerProfile, PlatformType } from "../types";
+import { ConfigManager } from "../utils/configManager";
+import { Logger } from "../utils/logger";
 import { getEnabledPlatforms } from "../utils/platform";
 
 import { HubStatusManager } from "./hubStatus";
@@ -13,6 +15,8 @@ export class ProfileManager implements vscode.Disposable {
   private readonly hubStatusManager: HubStatusManager;
   private readonly daemonClient: DaemonClient;
   private readonly channel: vscode.OutputChannel;
+  private readonly logger: Logger;
+  private readonly configManager?: ConfigManager;
   private readonly emitter = new vscode.EventEmitter<string>();
   readonly onDidChangeProfile = this.emitter.event;
   private activeProfile: string = "full";
@@ -21,38 +25,48 @@ export class ProfileManager implements vscode.Disposable {
   constructor(
     hubStatusManager: HubStatusManager,
     daemonClient: DaemonClient,
-    channel: vscode.OutputChannel
+    channel: vscode.OutputChannel,
+    configManager?: ConfigManager
   ) {
     this.hubStatusManager = hubStatusManager;
     this.daemonClient = daemonClient;
     this.channel = channel;
+    this.logger = new Logger(channel, "Profile");
+    this.configManager = configManager;
     this.profiles = new Map();
 
     // Load profiles from config
     this.loadProfiles();
 
     // Load active profile
-    this.activeProfile =
-      vscode.workspace.getConfiguration("loom").get<string>("activeProfile") ?? "full";
+    this.activeProfile = this.configManager
+      ? this.configManager.get("activeProfile")
+      : vscode.workspace.getConfiguration("loom").get<string>("activeProfile") ?? "full";
   }
 
   /**
    * Load profiles from VS Code configuration.
    */
   private loadProfiles(): void {
-    const configProfiles =
-      vscode.workspace
-        .getConfiguration("loom")
-        .get<
-          Record<
-            string,
-            { servers: string[] | "*"; hubEnabled: boolean; platforms?: PlatformType[] }
-          >
-        >("profiles") ?? {};
+    const configProfiles = this.configManager
+      ? (this.configManager.get("profiles") as Record<
+          string,
+          { servers: string[] | "*"; hubEnabled: boolean; platforms?: PlatformType[] }
+        >)
+      : vscode.workspace
+          .getConfiguration("loom")
+          .get<
+            Record<
+              string,
+              { servers: string[] | "*"; hubEnabled: boolean; platforms?: PlatformType[] }
+            >
+          >("profiles") ?? {};
 
     this.profiles.clear();
 
-    const allPlatforms = getEnabledPlatforms();
+    const allPlatforms = this.configManager
+      ? getEnabledPlatforms(this.configManager.get("enabledPlatforms"))
+      : getEnabledPlatforms();
 
     // Add default profiles
     this.profiles.set("full", {
@@ -125,18 +139,23 @@ export class ProfileManager implements vscode.Disposable {
       return false;
     }
 
+    const defaultPlatforms = this.configManager
+      ? getEnabledPlatforms(this.configManager.get("enabledPlatforms"))
+      : getEnabledPlatforms();
+
     const newProfile: ExtendedServerProfile = {
       name,
       servers,
       hubEnabled,
-      platforms: platforms ?? getEnabledPlatforms(),
+      platforms: platforms ?? defaultPlatforms,
     };
 
     // Get existing profiles and add the new one
-    const existingProfiles =
-      vscode.workspace
-        .getConfiguration("loom")
-        .get<Record<string, ExtendedServerProfile>>("profiles") ?? {};
+    const existingProfiles = this.configManager
+      ? (this.configManager.get("profiles") as Record<string, ExtendedServerProfile>)
+      : vscode.workspace
+          .getConfiguration("loom")
+          .get<Record<string, ExtendedServerProfile>>("profiles") ?? {};
 
     const updatedProfiles = {
       ...existingProfiles,
@@ -147,12 +166,16 @@ export class ProfileManager implements vscode.Disposable {
       },
     };
 
-    await vscode.workspace
-      .getConfiguration("loom")
-      .update("profiles", updatedProfiles, vscode.ConfigurationTarget.Global);
+    if (this.configManager) {
+      await this.configManager.set("profiles", updatedProfiles);
+    } else {
+      await vscode.workspace
+        .getConfiguration("loom")
+        .update("profiles", updatedProfiles, vscode.ConfigurationTarget.Global);
+    }
 
     this.loadProfiles();
-    this.channel.appendLine(`[${new Date().toISOString()}] Created profile: ${name}`);
+    this.logger.info(`Created profile: ${name}`);
 
     return true;
   }
@@ -176,10 +199,11 @@ export class ProfileManager implements vscode.Disposable {
       return false;
     }
 
-    const existingProfiles =
-      vscode.workspace
-        .getConfiguration("loom")
-        .get<Record<string, ExtendedServerProfile>>("profiles") ?? {};
+    const existingProfiles = this.configManager
+      ? (this.configManager.get("profiles") as Record<string, ExtendedServerProfile>)
+      : vscode.workspace
+          .getConfiguration("loom")
+          .get<Record<string, ExtendedServerProfile>>("profiles") ?? {};
 
     const updatedProfiles = {
       ...existingProfiles,
@@ -189,12 +213,16 @@ export class ProfileManager implements vscode.Disposable {
       },
     };
 
-    await vscode.workspace
-      .getConfiguration("loom")
-      .update("profiles", updatedProfiles, vscode.ConfigurationTarget.Global);
+    if (this.configManager) {
+      await this.configManager.set("profiles", updatedProfiles);
+    } else {
+      await vscode.workspace
+        .getConfiguration("loom")
+        .update("profiles", updatedProfiles, vscode.ConfigurationTarget.Global);
+    }
 
     this.loadProfiles();
-    this.channel.appendLine(`[${new Date().toISOString()}] Updated profile: ${name}`);
+    this.logger.info(`Updated profile: ${name}`);
 
     return true;
   }
@@ -219,11 +247,15 @@ export class ProfileManager implements vscode.Disposable {
     this.activeProfile = profileName;
 
     // Save to config
-    await vscode.workspace
-      .getConfiguration("loom")
-      .update("activeProfile", profileName, vscode.ConfigurationTarget.Global);
+    if (this.configManager) {
+      await this.configManager.set("activeProfile", profileName);
+    } else {
+      await vscode.workspace
+        .getConfiguration("loom")
+        .update("activeProfile", profileName, vscode.ConfigurationTarget.Global);
+    }
 
-    this.channel.appendLine(`[${new Date().toISOString()}] Switched to profile: ${profileName}`);
+    this.logger.info(`Switched to profile: ${profileName}`);
 
     this.emitter.fire(profileName);
     return true;

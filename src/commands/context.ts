@@ -9,6 +9,7 @@ import { parse } from "yaml";
 import { REGISTRY_PATH } from "../constants";
 import { RegistryDocument, SnapshotEnvResult } from "../types";
 import { resolveLoomBinary } from "../utils/binary";
+import { Logger } from "../utils/logger";
 import { isPlaceholder, loadSecretsFromEnvFile, resolvePlaceholder } from "../utils/secrets";
 
 import { applyGeneratedConfigs } from "./sync";
@@ -35,8 +36,9 @@ async function checkMcpHealth(ctx: CommandContext): Promise<void> {
     return;
   }
   const scriptPath = path.join(workspaceRoot, "test_mcp_servers.py");
+  const logger = new Logger(loomChannel, "Context");
   loomChannel.clear();
-  loomChannel.appendLine(`[${new Date().toISOString()}] Running MCP health check...`);
+  logger.info("Running MCP health check...");
 
   await runHealthCheck(pythonExecutable, scriptPath, workspaceRoot, loomChannel);
 }
@@ -68,8 +70,9 @@ async function bootstrapContext(ctx: CommandContext): Promise<void> {
     void vscode.window.showErrorMessage("Loom: workspace folder not detected.");
     return;
   }
+  const logger = new Logger(loomChannel, "Context");
   loomChannel.clear();
-  loomChannel.appendLine(`[${new Date().toISOString()}] Starting bootstrap sequence...`);
+  logger.info("Starting bootstrap sequence...");
 
   await vscode.window.withProgress(
     {
@@ -124,8 +127,9 @@ async function runHealthCheck(
   cwd: string,
   channel: vscode.OutputChannel
 ): Promise<void> {
+  const healthLogger = new Logger(channel, "Health");
   channel.clear();
-  channel.appendLine(`[${new Date().toISOString()}] Running MCP health check...`);
+  healthLogger.info("Running MCP health check...");
   try {
     const { stdout, stderr } = await execFileAsync(pythonExecutable, [scriptPath], { cwd });
     if (stdout) {
@@ -155,8 +159,9 @@ async function runSnapshot(
   channel: vscode.OutputChannel
 ): Promise<boolean> {
   const scriptPath = path.join(workspaceRoot, "scripts", "context", "snapshot_qdrant.py");
+  const snapshotLogger = new Logger(channel, "Snapshot");
   channel.clear();
-  channel.appendLine(`[${new Date().toISOString()}] Capturing repository context...`);
+  snapshotLogger.info("Capturing repository context...");
 
   const snapshotEnv = await buildSnapshotEnv(workspaceRoot);
   if (snapshotEnv.resolved.length > 0) {

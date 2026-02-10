@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 
 import { DaemonClient } from "../clients/daemon";
 import { ServerHealthMetrics, ServerHealthHistory, DaemonToolInfo } from "../types";
+import { Logger } from "../utils/logger";
 
 import { HubStatusManager } from "./hubStatus";
 
@@ -14,6 +15,7 @@ export class ServerMetricsManager implements vscode.Disposable {
   private readonly daemonClient: DaemonClient;
   private readonly hubStatusManager: HubStatusManager;
   private readonly channel: vscode.OutputChannel;
+  private readonly logger: Logger;
   private readonly metrics: Map<string, ServerHealthMetrics>;
   private readonly history: Map<string, ServerHealthHistory>;
   private readonly errorCounts: Map<string, number>;
@@ -25,22 +27,33 @@ export class ServerMetricsManager implements vscode.Disposable {
   private cachedTools: DaemonToolInfo[] = [];
   private lastToolFetch: Date | null = null;
 
+  /**
+   * @param daemonClient - Client for querying daemon server status.
+   * @param hubStatusManager - Manager for hub status information.
+   * @param channel - Output channel for logging.
+   * @param metricsInterval - Optional override for the metrics collection interval (ms).
+   *   When provided, skips reading "loom.serverMetricsInterval" from vscode config.
+   */
   constructor(
     daemonClient: DaemonClient,
     hubStatusManager: HubStatusManager,
-    channel: vscode.OutputChannel
+    channel: vscode.OutputChannel,
+    metricsInterval?: number
   ) {
     this.daemonClient = daemonClient;
     this.hubStatusManager = hubStatusManager;
     this.channel = channel;
+    this.logger = new Logger(channel, "ServerMetrics");
     this.metrics = new Map();
     this.history = new Map();
     this.errorCounts = new Map();
     this.toolCounts = new Map();
 
-    // Load interval from config
+    // Load interval from parameter or config
     this.intervalMs =
-      vscode.workspace.getConfiguration("loom").get<number>("serverMetricsInterval") ?? 30000;
+      metricsInterval ??
+      vscode.workspace.getConfiguration("loom").get<number>("serverMetricsInterval") ??
+      30000;
 
     // Start collection
     this.startCollection();
@@ -137,9 +150,7 @@ export class ServerMetricsManager implements vscode.Disposable {
       this.emitter.fire(this.metrics);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.channel.appendLine(
-        `[${new Date().toISOString()}] Server metrics collection error: ${message}`
-      );
+      this.logger.error(`Server metrics collection error: ${message}`);
     }
   }
 

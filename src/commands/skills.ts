@@ -6,6 +6,8 @@ import * as vscode from "vscode";
 import { SkillsClient } from "../clients/skills";
 import { SkillsProvider } from "../providers/skills";
 import { SkillDefinition, PlatformType } from "../types";
+import { ConfigManager } from "../utils/configManager";
+import { Logger } from "../utils/logger";
 import { PLATFORMS, getSupportedPlatforms } from "../utils/platform";
 
 export interface SkillsCommandContext {
@@ -13,16 +15,18 @@ export interface SkillsCommandContext {
   loomChannel: vscode.OutputChannel;
   skillsClient: SkillsClient;
   skillsProvider: SkillsProvider;
+  configManager?: ConfigManager;
 }
 
 /**
  * Register skills-related commands.
  */
 export function registerSkillsCommands(ctx: SkillsCommandContext): vscode.Disposable[] {
+  const logger = new Logger(ctx.loomChannel, "Skills");
   return [
     vscode.commands.registerCommand("loom.refreshSkills", () => {
       ctx.skillsProvider.refresh();
-      ctx.loomChannel.appendLine(`[${new Date().toISOString()}] Skills registry refreshed`);
+      logger.info("Skills registry refreshed");
     }),
 
     vscode.commands.registerCommand("loom.searchSkills", async () => {
@@ -111,9 +115,7 @@ export function registerSkillsCommands(ctx: SkillsCommandContext): vscode.Dispos
         terminal.show();
         terminal.sendText(command);
 
-        ctx.loomChannel.appendLine(
-          `[${new Date().toISOString()}] Running skill script: ${command}`
-        );
+        logger.info(`Running skill script: ${command}`);
       }
     ),
 
@@ -128,9 +130,9 @@ export function registerSkillsCommands(ctx: SkillsCommandContext): vscode.Dispos
         }
 
         // Get registry directory
-        const registryPath = vscode.workspace
-          .getConfiguration("loom")
-          .get<string>("skillsRegistryPath");
+        const registryPath = ctx.configManager
+          ? ctx.configManager.get("skillsRegistryPath")
+          : vscode.workspace.getConfiguration("loom").get<string>("skillsRegistryPath");
 
         if (!registryPath) {
           vscode.window.showErrorMessage("Skills registry path not configured");
@@ -178,9 +180,7 @@ export function registerSkillsCommands(ctx: SkillsCommandContext): vscode.Dispos
       });
       terminal.show();
       terminal.sendText("loom sync skills all");
-      ctx.loomChannel.appendLine(
-        `[${new Date().toISOString()}] Running: loom sync skills all`
-      );
+      logger.info("Running: loom sync skills all");
     }),
 
     vscode.commands.registerCommand(

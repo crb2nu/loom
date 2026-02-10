@@ -7,6 +7,7 @@ import * as vscode from "vscode";
 
 import { resolveLoomBinary } from "../utils/binary";
 import { formatSyncStatus, getStatusIcon } from "../utils/helpers";
+import { Logger } from "../utils/logger";
 import { isPlaceholder, resolvePlaceholder } from "../utils/secrets";
 
 import { CommandContext } from "./types";
@@ -96,8 +97,9 @@ async function syncConfigs(ctx: CommandContext): Promise<void> {
     return;
   }
 
+  const logger = new Logger(loomChannel, "Sync");
   loomChannel.clear();
-  loomChannel.appendLine(`[${new Date().toISOString()}] Running MCP sync via loom CLI...`);
+  logger.info("Running MCP sync via loom CLI...");
   await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,

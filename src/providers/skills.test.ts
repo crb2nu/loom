@@ -101,6 +101,8 @@ describe("SkillsProvider", () => {
       }),
       onDidChange: vi.fn(() => ({ dispose: vi.fn() })),
       refresh: vi.fn(),
+      getSkillOutputType: vi.fn(() => "skill"),
+      getGeneratedFilePath: vi.fn(() => undefined),
     } as unknown as SkillsClient;
 
     // Create mock RecommendationManager

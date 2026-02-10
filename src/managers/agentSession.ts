@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 
 import { AgentContextClient } from "../clients/agentContext";
 import { AgentSession } from "../types";
+import { Logger } from "../utils/logger";
 
 /**
  * Manager for tracking and managing the active agent session.
@@ -10,6 +11,7 @@ import { AgentSession } from "../types";
 export class AgentSessionManager implements vscode.Disposable {
   private readonly client: AgentContextClient;
   private readonly channel: vscode.OutputChannel;
+  private readonly logger: Logger;
   private readonly workspaceState: vscode.Memento;
   private activeSession: AgentSession | null = null;
   private readonly emitter = new vscode.EventEmitter<AgentSession | null>();
@@ -23,6 +25,7 @@ export class AgentSessionManager implements vscode.Disposable {
   ) {
     this.client = client;
     this.channel = channel;
+    this.logger = new Logger(channel, "AgentSession");
     this.workspaceState = workspaceState;
 
     // Create status bar item
@@ -45,9 +48,7 @@ export class AgentSessionManager implements vscode.Disposable {
       const session = await this.client.getSession(savedSessionId);
       if (session && session.status === "active") {
         this.activeSession = session;
-        this.channel.appendLine(
-          `[${new Date().toISOString()}] Restored active session: ${session.namespace}`
-        );
+        this.logger.info(`Restored active session: ${session.namespace}`);
         this.updateStatusBar();
         this.emitter.fire(session);
       }
@@ -85,9 +86,7 @@ export class AgentSessionManager implements vscode.Disposable {
     if (session) {
       this.activeSession = session;
       await this.workspaceState.update("loom.activeSessionId", session.session_id);
-      this.channel.appendLine(
-        `[${new Date().toISOString()}] Started session: ${namespace} (${session.session_id})`
-      );
+      this.logger.info(`Started session: ${namespace} (${session.session_id})`);
       this.updateStatusBar();
       this.emitter.fire(session);
     }
@@ -104,9 +103,7 @@ export class AgentSessionManager implements vscode.Disposable {
 
     const success = await this.client.endSession(this.activeSession.session_id, summarize);
     if (success) {
-      this.channel.appendLine(
-        `[${new Date().toISOString()}] Ended session: ${this.activeSession.namespace}`
-      );
+      this.logger.info(`Ended session: ${this.activeSession.namespace}`);
       this.activeSession = null;
       await this.workspaceState.update("loom.activeSessionId", undefined);
       this.updateStatusBar();
