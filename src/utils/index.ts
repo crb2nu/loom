@@ -5,3 +5,5 @@ export * from "./config";
 export * from "./helpers";
 export * from "./secrets";
 export * from "./platform";
+export * from "./logger";
+export * from "./configManager";

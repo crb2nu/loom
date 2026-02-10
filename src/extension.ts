@@ -52,8 +52,37 @@ import { SyncDashboardPanel } from "./webviews/SyncDashboardPanel";
 
 const execFileAsync = promisify(execFile);
 
-// eslint-disable-next-line @typescript-eslint/require-await -- uses void for fire-and-forget async operations
-export async function activate(context: vscode.ExtensionContext) {
+// ============================================================================
+// Activation Environment — shared context passed between setup functions
+// ============================================================================
+
+interface ActivationEnvironment {
+  workspaceRoot: string;
+  workspaceFolder: vscode.WorkspaceFolder | undefined;
+  pythonExecutable: string;
+  loomChannel: vscode.OutputChannel;
+  hubStatusManager: HubStatusManager;
+  daemonClient: DaemonClient;
+  registryProvider: RegistryProvider;
+  serverProvider: ServerProvider;
+  toolProvider: ToolProvider;
+  secretsProvider: SecretsProvider;
+  configSyncManager: ConfigSyncManager;
+  platformConfigClient: PlatformConfigClient;
+  skillsClient: SkillsClient;
+  agentContextClient: AgentContextClient;
+  agentSessionManager: AgentSessionManager;
+  annotationDecorationManager: AnnotationDecorationManager;
+}
+
+// ============================================================================
+// Setup Functions
+// ============================================================================
+
+function initializeEnvironment(context: vscode.ExtensionContext): Pick<
+  ActivationEnvironment,
+  "workspaceRoot" | "workspaceFolder" | "pythonExecutable" | "loomChannel"
+> {
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
   const workspaceRoot = workspaceFolder?.uri.fsPath ?? "";
   const pythonExecutable = getPythonExecutable();
@@ -62,6 +91,13 @@ export async function activate(context: vscode.ExtensionContext) {
   const loomChannel = vscode.window.createOutputChannel("Loom");
   context.subscriptions.push(loomChannel);
 
+  return { workspaceRoot, workspaceFolder, pythonExecutable, loomChannel };
+}
+
+function registerHubIntegration(
+  loomChannel: vscode.OutputChannel,
+  context: vscode.ExtensionContext
+): HubStatusManager {
   const initialHubSettings = deriveHubSettings();
   const hubStatusManager = new HubStatusManager(initialHubSettings, loomChannel);
   context.subscriptions.push(hubStatusManager);
@@ -96,14 +132,26 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  return hubStatusManager;
+}
+
+function registerRegistryAndServers(
+  env: Pick<ActivationEnvironment, "workspaceRoot" | "pythonExecutable" | "loomChannel" | "hubStatusManager">,
+  context: vscode.ExtensionContext
+): {
+  registryProvider: RegistryProvider;
+  serverProvider: ServerProvider;
+  toolProvider: ToolProvider;
+  daemonClient: DaemonClient;
+} {
   // Find registry - check home directory first
-  const registryPath = findRegistryPath(workspaceRoot);
+  const registryPath = findRegistryPath(env.workspaceRoot);
 
   const registryProvider = new RegistryProvider(
-    workspaceRoot,
+    env.workspaceRoot,
     registryPath,
     context.workspaceState,
-    hubStatusManager
+    env.hubStatusManager
   );
   const registryTree = vscode.window.createTreeView("loomHubOverview", {
     treeDataProvider: registryProvider,
@@ -111,9 +159,9 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(registryTree);
 
   // Create daemon client for server status queries
-  const daemonClient = new DaemonClient(workspaceRoot, loomChannel);
+  const daemonClient = new DaemonClient(env.workspaceRoot, env.loomChannel);
 
-  const serverProvider = new ServerProvider(registryProvider, hubStatusManager, daemonClient);
+  const serverProvider = new ServerProvider(registryProvider, env.hubStatusManager, daemonClient);
   const serverTree = vscode.window.createTreeView("loomServers", {
     treeDataProvider: serverProvider,
   });
@@ -129,7 +177,7 @@ export async function activate(context: vscode.ExtensionContext) {
   let syncTimeout: NodeJS.Timeout | undefined;
 
   const watcher = registryPath
-    ? watchRegistry(workspaceRoot, registryPath, () => {
+    ? watchRegistry(env.workspaceRoot, registryPath, () => {
         // Refresh UI immediately
         registryProvider.refresh();
         serverProvider.refresh();
@@ -155,12 +203,19 @@ export async function activate(context: vscode.ExtensionContext) {
     });
   }
 
-  if (workspaceRoot) {
-    void ensureServersOnStartup(pythonExecutable, workspaceRoot, loomChannel);
+  if (env.workspaceRoot) {
+    void ensureServersOnStartup(env.pythonExecutable, env.workspaceRoot, env.loomChannel);
   }
 
+  return { registryProvider, serverProvider, toolProvider, daemonClient };
+}
+
+function registerConfigSync(
+  env: Pick<ActivationEnvironment, "workspaceRoot" | "loomChannel">,
+  context: vscode.ExtensionContext
+): { configSyncManager: ConfigSyncManager; secretsProvider: SecretsProvider } {
   // Config sync drift detection
-  const configSyncManager = new ConfigSyncManager(workspaceRoot, loomChannel);
+  const configSyncManager = new ConfigSyncManager(env.workspaceRoot, env.loomChannel);
   context.subscriptions.push(configSyncManager);
   void configSyncManager.checkSync();
 
@@ -185,20 +240,27 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   // Secrets tree view provider
-  const secretsProvider = new SecretsProvider(workspaceRoot, loomChannel);
+  const secretsProvider = new SecretsProvider(env.workspaceRoot, env.loomChannel);
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider("loomSecrets", secretsProvider)
   );
 
-  // ============================================================================
-  // Platform Configuration Integration
-  // ============================================================================
+  return { configSyncManager, secretsProvider };
+}
+
+// ============================================================================
+// Platform Configuration Integration
+// ============================================================================
+function registerPlatforms(
+  env: Pick<ActivationEnvironment, "workspaceRoot" | "loomChannel">,
+  context: vscode.ExtensionContext
+): PlatformConfigClient {
   const detectedPlatform = detectPlatform();
-  loomChannel.appendLine(
+  env.loomChannel.appendLine(
     `[${new Date().toISOString()}] Detected platform: ${getPlatformStatusText()} (${detectedPlatform})`
   );
 
-  const platformConfigClient = new PlatformConfigClient(workspaceRoot, loomChannel);
+  const platformConfigClient = new PlatformConfigClient(env.workspaceRoot, env.loomChannel);
   context.subscriptions.push(platformConfigClient);
 
   const platformsProvider = new PlatformsProvider(platformConfigClient);
@@ -212,7 +274,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.workspace.getConfiguration("loom").get<boolean>("syncOnStartup") ?? false;
   if (syncOnStartup) {
     void platformConfigClient.checkAllSyncStatus().then(() => {
-      loomChannel.appendLine(
+      env.loomChannel.appendLine(
         `[${new Date().toISOString()}] Platform sync status checked on startup`
       );
     });
@@ -220,8 +282,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register platform commands
   const platformCommandDisposables = registerPlatformCommands({
-    workspaceRoot,
-    loomChannel,
+    workspaceRoot: env.workspaceRoot,
+    loomChannel: env.loomChannel,
     platformConfigClient,
     platformsProvider,
   });
@@ -234,16 +296,23 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // ============================================================================
-  // Onboarding Wizard
-  // ============================================================================
+  return platformConfigClient;
+}
+
+// ============================================================================
+// Onboarding Wizard
+// ============================================================================
+function registerOnboarding(
+  env: Pick<ActivationEnvironment, "workspaceRoot" | "daemonClient" | "platformConfigClient">,
+  context: vscode.ExtensionContext
+): void {
   context.subscriptions.push(
     vscode.commands.registerCommand("loom.showOnboarding", () => {
       OnboardingPanel.render(
         context.extensionUri,
-        platformConfigClient,
-        daemonClient,
-        workspaceRoot
+        env.platformConfigClient,
+        env.daemonClient,
+        env.workspaceRoot
       );
     })
   );
@@ -268,9 +337,14 @@ export async function activate(context: vscode.ExtensionContext) {
         });
     }, 2000);
   }
+}
 
-  // Deep Search
-  const deepSearchManager = new DeepSearchManager(daemonClient, loomChannel);
+// Deep Search
+function registerDeepSearch(
+  env: Pick<ActivationEnvironment, "daemonClient" | "loomChannel">,
+  context: vscode.ExtensionContext
+): void {
+  const deepSearchManager = new DeepSearchManager(env.daemonClient, env.loomChannel);
 
   context.subscriptions.push(
     vscode.commands.registerCommand("loom.deepSearch", async () => {
@@ -308,19 +382,36 @@ export async function activate(context: vscode.ExtensionContext) {
       );
     })
   );
+}
 
+function registerCoreCommands(
+  env: Pick<
+    ActivationEnvironment,
+    | "workspaceRoot"
+    | "pythonExecutable"
+    | "loomChannel"
+    | "hubStatusManager"
+    | "configSyncManager"
+    | "daemonClient"
+    | "registryProvider"
+    | "serverProvider"
+    | "toolProvider"
+    | "secretsProvider"
+  >,
+  context: vscode.ExtensionContext
+): void {
   // Create command context with all dependencies
   const commandContext: CommandContext = {
-    workspaceRoot,
-    pythonExecutable,
-    loomChannel,
-    hubStatusManager,
-    configSyncManager,
-    daemonClient,
-    registryProvider,
-    serverProvider,
-    toolProvider,
-    secretsProvider,
+    workspaceRoot: env.workspaceRoot,
+    pythonExecutable: env.pythonExecutable,
+    loomChannel: env.loomChannel,
+    hubStatusManager: env.hubStatusManager,
+    configSyncManager: env.configSyncManager,
+    daemonClient: env.daemonClient,
+    registryProvider: env.registryProvider,
+    serverProvider: env.serverProvider,
+    toolProvider: env.toolProvider,
+    secretsProvider: env.secretsProvider,
     extensionContext: context,
   };
 
@@ -334,24 +425,29 @@ export async function activate(context: vscode.ExtensionContext) {
 
       // Initial update
       if (ContextGraphPanel.currentPanel) {
-        void registryProvider.getRegistrySnapshot().then((registry) => {
-          ContextGraphPanel.currentPanel?.updateGraph(registry, hubStatusManager.getStatus());
+        void env.registryProvider.getRegistrySnapshot().then((registry) => {
+          ContextGraphPanel.currentPanel?.updateGraph(registry, env.hubStatusManager.getStatus());
         });
       }
     })
   );
+}
 
-  // ============================================================================
-  // Skills Integration
-  // ============================================================================
-  const skillsClient = new SkillsClient(loomChannel);
-  skillsClient.initialize(workspaceRoot);
+// ============================================================================
+// Skills Integration
+// ============================================================================
+function registerSkillsIntegration(
+  env: Pick<ActivationEnvironment, "workspaceRoot" | "loomChannel">,
+  context: vscode.ExtensionContext
+): SkillsClient {
+  const skillsClient = new SkillsClient(env.loomChannel);
+  skillsClient.initialize(env.workspaceRoot);
   context.subscriptions.push({ dispose: () => skillsClient.dispose() });
 
   // Skill recommendation manager for context-aware suggestions
-  const skillRecommendationManager = new SkillRecommendationManager(loomChannel, skillsClient);
-  if (workspaceRoot) {
-    skillRecommendationManager.initialize(workspaceRoot);
+  const skillRecommendationManager = new SkillRecommendationManager(env.loomChannel, skillsClient);
+  if (env.workspaceRoot) {
+    skillRecommendationManager.initialize(env.workspaceRoot);
   }
   context.subscriptions.push({ dispose: () => skillRecommendationManager.dispose() });
 
@@ -391,22 +487,33 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(skillsTree);
 
   const skillsCommandDisposables = registerSkillsCommands({
-    workspaceRoot,
-    loomChannel,
+    workspaceRoot: env.workspaceRoot,
+    loomChannel: env.loomChannel,
     skillsClient,
     skillsProvider,
   });
   context.subscriptions.push(...skillsCommandDisposables);
 
-  // ============================================================================
-  // Agent Context Integration
-  // ============================================================================
+  return skillsClient;
+}
+
+// ============================================================================
+// Agent Context Integration
+// ============================================================================
+function registerAgentContext(
+  env: Pick<ActivationEnvironment, "workspaceRoot" | "loomChannel">,
+  context: vscode.ExtensionContext
+): {
+  agentContextClient: AgentContextClient;
+  agentSessionManager: AgentSessionManager;
+  annotationDecorationManager: AnnotationDecorationManager;
+} {
   const agentId = vscode.workspace.getConfiguration("loom").get<string>("agentId") ?? "vscode-loom";
-  const agentContextClient = new AgentContextClient(workspaceRoot, loomChannel, agentId);
+  const agentContextClient = new AgentContextClient(env.workspaceRoot, env.loomChannel, agentId);
 
   const agentSessionManager = new AgentSessionManager(
     agentContextClient,
-    loomChannel,
+    env.loomChannel,
     context.workspaceState
   );
   context.subscriptions.push(agentSessionManager);
@@ -432,8 +539,8 @@ export async function activate(context: vscode.ExtensionContext) {
   annotationDecorationManager.setEnabled(showAnnotations);
 
   const agentContextCommandDisposables = registerAgentContextCommands({
-    workspaceRoot,
-    loomChannel,
+    workspaceRoot: env.workspaceRoot,
+    loomChannel: env.loomChannel,
     agentContextClient,
     agentSessionManager,
     agentContextProvider,
@@ -467,34 +574,89 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // ============================================================================
-  // Server Health Integration
-  // ============================================================================
+  return { agentContextClient, agentSessionManager, annotationDecorationManager };
+}
+
+// ============================================================================
+// Server Health Integration
+// ============================================================================
+function registerServerHealth(
+  env: Pick<ActivationEnvironment, "daemonClient" | "hubStatusManager" | "loomChannel">,
+  context: vscode.ExtensionContext
+): void {
   const serverMetricsManager = new ServerMetricsManager(
-    daemonClient,
-    hubStatusManager,
-    loomChannel
+    env.daemonClient,
+    env.hubStatusManager,
+    env.loomChannel
   );
   context.subscriptions.push(serverMetricsManager);
 
-  const profileManager = new ProfileManager(hubStatusManager, daemonClient, loomChannel);
+  const profileManager = new ProfileManager(env.hubStatusManager, env.daemonClient, env.loomChannel);
   context.subscriptions.push(profileManager);
 
   const serverHealthCommandDisposables = registerServerHealthCommands({
-    loomChannel,
+    loomChannel: env.loomChannel,
     serverMetricsManager,
     profileManager,
     extensionContext: context,
   });
   context.subscriptions.push(...serverHealthCommandDisposables);
+}
 
+function maybeAutoStartSession(
+  env: Pick<ActivationEnvironment, "workspaceFolder" | "agentSessionManager">
+): void {
   // Auto-start session if configured
   const autoStartSession =
     vscode.workspace.getConfiguration("loom").get<boolean>("autoStartSession") ?? false;
-  if (autoStartSession && workspaceFolder) {
-    const namespace = `workspace/${workspaceFolder.name}`;
-    void agentSessionManager.startSession(namespace, "Auto-started session");
+  if (autoStartSession && env.workspaceFolder) {
+    const namespace = `workspace/${env.workspaceFolder.name}`;
+    void env.agentSessionManager.startSession(namespace, "Auto-started session");
   }
+}
+
+// ============================================================================
+// Activation Orchestrator
+// ============================================================================
+
+// eslint-disable-next-line @typescript-eslint/require-await -- uses void for fire-and-forget async operations
+export async function activate(context: vscode.ExtensionContext) {
+  const base = initializeEnvironment(context);
+
+  const hubStatusManager = registerHubIntegration(base.loomChannel, context);
+
+  const { registryProvider, serverProvider, toolProvider, daemonClient } =
+    registerRegistryAndServers({ ...base, hubStatusManager }, context);
+
+  const { configSyncManager, secretsProvider } = registerConfigSync(base, context);
+
+  const platformConfigClient = registerPlatforms(base, context);
+
+  registerOnboarding({ ...base, daemonClient, platformConfigClient }, context);
+
+  registerDeepSearch({ daemonClient, loomChannel: base.loomChannel }, context);
+
+  registerCoreCommands(
+    {
+      ...base,
+      hubStatusManager,
+      configSyncManager,
+      daemonClient,
+      registryProvider,
+      serverProvider,
+      toolProvider,
+      secretsProvider,
+    },
+    context
+  );
+
+  registerSkillsIntegration(base, context);
+
+  const { agentSessionManager } = registerAgentContext(base, context);
+
+  registerServerHealth({ daemonClient, hubStatusManager, loomChannel: base.loomChannel }, context);
+
+  maybeAutoStartSession({ workspaceFolder: base.workspaceFolder, agentSessionManager });
 }
 
 export function deactivate() {

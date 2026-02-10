@@ -8,14 +8,34 @@ This file applies to the `services/loom` VS Code extension repository.
 
 VS Code extension for MCP (Model Context Protocol) context management. Provides UI for:
 - Managing MCP server connections across multiple platforms
-- Platform configuration sync (VS Code, Antigravity, Gemini, Claude, Codex)
-- Skills registry browsing and filtering
-- Agent context and session management
-- Server health monitoring
+- Platform configuration sync (VS Code, Antigravity, Gemini, Claude, Codex, Kilocode)
+- Skills registry browsing, filtering, and context-aware recommendations
+- Agent context, session, and memory management
+- Server health monitoring, metrics, and profiles
+- Onboarding wizard for first-time setup
+- Deep search across connected MCP servers
 
-## Current Version: 0.7.0
+## Current Version: 0.9.0
 
-Key features in v0.7.0:
+### What's New in v0.9.0
+- **Onboarding wizard**: First-run setup flow guiding users through initial configuration
+- **Deep search**: Search across all connected MCP servers from a single query
+- **Skill recommendations**: Context-aware skill suggestions based on active file, diagnostics, and workspace context
+- **Server metrics**: Real-time health metrics, latency tracking, and history per server
+- **Server profiles**: Named groups of servers with hub routing control
+- **Knowledge graph panel**: Visual exploration of agent context entities and relations
+- **Memory dashboard**: Tiered memory view (working / short-term / long-term)
+
+### What's New in v0.8.0
+- **Error recovery**: Actionable error analysis with suggested remediation actions
+- **Offline mode**: Graceful degradation when hub is unreachable
+- **Config templates**: Daemon config auto-generation from extension settings
+- **Bulk operations**: Start/stop/restart all servers at once
+- **Agent sessions**: Automatic session management with namespace support
+- **Code annotations**: In-editor decorations for agent context annotations
+- **Annotation toggle**: Enable/disable annotation decorations from command palette
+
+### v0.7.0 Features
 - **Multi-platform support**: VS Code, Antigravity, Gemini, Claude, Codex, Kilocode
 - **Platform detection**: Auto-detects VS Code vs Antigravity
 - **Sync dashboard**: Visual status across all platforms
@@ -31,20 +51,31 @@ gitlab.flexinfer.ai/
 │   └── mcp/context/registry.yaml  ← Server definitions
 └── services/
     ├── loom           ← YOU ARE HERE (VSCode extension)
+    ├── loom-zed       ← Zed editor extension (Rust)
     └── loom-core      ← Go backend (MCP servers, daemon, CLI)
 ```
 
-## Relationship to loom-core
+## Relationship to Other Projects
 
-| Component | Purpose | Language |
-|-----------|---------|----------|
-| `loom` | VS Code extension UI | TypeScript |
-| `loom-core` | Backend daemon, CLI, MCP servers | Go |
+| Component | Purpose | Language | Min Version |
+|-----------|---------|----------|-------------|
+| `loom` | VS Code extension UI | TypeScript | — |
+| `loom-zed` | Zed editor extension | Rust | v0.1.0 |
+| `loom-core` | Backend daemon, CLI, MCP servers | Go | >= v0.7.0 (for `proxy`) |
 
 The extension uses the `loom` CLI for:
 - Config generation from registry
 - Platform sync operations
 - Server status queries
+- Agent context operations (sessions, tasks, annotations)
+
+### Shared Conventions
+- **Asset naming**: `loom-core_{version}_{os}_{arch}.{tar.gz|zip}` (e.g. `loom-core_v0.9.1_darwin_arm64.tar.gz`)
+- **Registry format**: YAML-based server definitions in `registry.yaml`
+
+See also:
+- [`services/loom-zed/AGENTS.md`](../loom-zed/AGENTS.md) — Zed extension
+- [`services/loom-core/AGENTS.md`](../loom-core/AGENTS.md) — Go backend
 
 ## Key Commands
 
@@ -68,7 +99,7 @@ code --install-extension loom-*.vsix  # Install locally
 ```bash
 npm test              # Run tests
 npm run test:watch    # Watch mode
-npm run test:coverage # With coverage
+npm run test:coverage # With coverage (thresholds: 70/70/60/70)
 ```
 
 ## Architecture
@@ -85,23 +116,38 @@ src/
 ├── commands/          # Command handlers
 │   ├── platforms.ts   # Platform sync commands
 │   ├── skills.ts      # Skills commands
+│   ├── context.ts     # Agent context commands
 │   └── ...
 ├── providers/         # Tree view providers
 │   ├── platforms.ts   # loomPlatforms view
 │   ├── skills.ts      # loomSkills view
 │   └── ...
 ├── managers/          # Background managers
+│   ├── configSync.ts      # Drift detection
+│   ├── hubStatus.ts       # Hub polling
+│   ├── agentSession.ts    # Session lifecycle
+│   ├── serverMetrics.ts   # Health metrics collection
 │   ├── profileManager.ts  # Server profiles
-│   ├── configSync.ts  # Drift detection
-│   └── ...
+│   ├── skillRecommendations.ts # Context-aware suggestions
+│   ├── annotationDecoration.ts # Code annotation overlays
+│   └── deepSearch.ts      # Cross-server search
 ├── webviews/          # Rich UI panels
 │   ├── SyncDashboardPanel.ts
-│   └── ...
+│   ├── OnboardingPanel.ts
+│   ├── ServerHealthPanel.ts
+│   ├── KnowledgeGraphPanel.ts
+│   ├── MemoryDashboardPanel.ts
+│   └── ContextGraphPanel.ts
 ├── utils/
-│   ├── platform.ts    # Platform detection
-│   └── ...
+│   ├── config.ts      # Hub settings, registry, daemon config
+│   ├── errors.ts      # Actionable error analysis
+│   ├── platform.ts    # Platform detection & registry
+│   ├── binary.ts      # Binary resolution (loom, hub-wrapper)
+│   ├── helpers.ts     # Misc utilities
+│   ├── http.ts        # HTTP helpers
+│   └── secrets.ts     # Secret management
 ├── types.ts           # Type definitions
-└── extension.ts       # Entry point
+└── extension.ts       # Entry point (activate/deactivate)
 ```
 
 ### Views Provided
@@ -111,7 +157,7 @@ src/
 | `loomHubOverview` | Loom Hub | Registry servers |
 | `loomServers` | Loom Servers | Running servers |
 | `loomTools` | Loom Tools | Available tools |
-| `loomSkills` | Loom Skills | Skills registry |
+| `loomSkills` | Loom Skills | Skills registry + recommendations |
 | `loomSecrets` | Loom Secrets | Configured secrets |
 | `loomAgentContext` | Loom Agent Context | Session entries |
 | `loomTasks` | Loom Tasks | Agent tasks |
@@ -125,8 +171,8 @@ src/
 | Antigravity | JSON | `.antigravity/mcp.json` | `~/.antigravity/mcp.json` |
 | Gemini | JSON | `.gemini/settings.json` | `~/.gemini/settings.json` |
 | Claude | JSON | `.claude/mcp.json` | `~/.claude/mcp.json` |
-| Codex | TOML | `.codex/config.toml` | `~/.codex/config.toml` |
-| Kilocode | TOML | `.kilocode/config.toml` | `~/.kilocode/config.toml` |
+| Codex | JSON | `.codex/mcp.json` | `~/.codex/mcp.json` |
+| Kilocode | JSON | `.kilocode/mcp.json` | `~/.kilocode/mcp.json` |
 
 ### Sync Commands (via loom CLI)
 ```bash
@@ -146,29 +192,32 @@ loom sync codex --regen             # Regenerate & sync Codex
 | `loom.openPlatformConfig` | Open config in editor |
 | `loom.showSyncDashboard` | Open sync dashboard webview |
 | `loom.filterSkillsByPlatform` | Filter skills by target |
+| `loom.showOnboarding` | Open onboarding wizard |
+| `loom.deepSearch` | Search across all MCP servers |
+| `loom.showKnowledgeGraph` | Open knowledge graph panel |
+| `loom.showMemoryDashboard` | Open memory dashboard |
+| `loom.toggleAnnotations` | Toggle code annotation decorations |
 
 ## Settings
 
-### New in v0.7.0
-```json
-{
-  "loom.platform": "auto",           // auto | vscode | antigravity
-  "loom.enabledPlatforms": [         // Platforms to manage
-    "vscode", "antigravity", "gemini", "claude"
-  ],
-  "loom.syncOnStartup": false,       // Auto-sync on extension start
-  "loom.syncStatusPollingInterval": 60000  // Poll interval (ms)
-}
-```
-
-### Existing Settings
+### All Settings
 ```json
 {
   "loom.hubUrl": "wss://mcp.flexinfer.ai/ws",
   "loom.hubProfile": "codex",
-  "loom.autoSyncOnDrift": "prompt",  // off | prompt | auto
+  "loom.platform": "auto",
+  "loom.enabledPlatforms": ["vscode", "antigravity", "gemini", "claude"],
+  "loom.syncOnStartup": false,
+  "loom.syncStatusPollingInterval": 60000,
+  "loom.autoSyncOnDrift": "prompt",
   "loom.activeProfile": "full",
-  "loom.profiles": {}                // Custom server profiles
+  "loom.profiles": {},
+  "loom.agentId": "vscode-loom",
+  "loom.autoStartSession": false,
+  "loom.showAnnotationDecorations": true,
+  "loom.onboardingComplete": false,
+  "loom.skillsRegistryPath": null,
+  "loom.serverMetricsInterval": 30000
 }
 ```
 

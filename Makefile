@@ -1,7 +1,7 @@
 # Loom VS Code Extension Makefile
 # Wraps npm scripts to match loom-core patterns
 
-.PHONY: all build test lint format check package watch clean setup help
+.PHONY: all build test lint format check ci package watch clean setup help
 
 # Default target
 all: check build
@@ -41,6 +41,9 @@ format-check:
 # Run all checks (lint + format check + typecheck)
 check:
 	npm run check
+
+# CI target: full check + coverage
+ci: check coverage
 
 # Package extension as .vsix
 package:

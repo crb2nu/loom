@@ -254,6 +254,11 @@ services/
     └── cmd/loom/   # CLI tool
 ```
 
+## See Also
+
+- [Loom for Zed](../loom-zed/) — Zed extension providing MCP context server integration
+- [loom-core](../loom-core/) — Backend Go binary powering the MCP ecosystem
+
 ## Related Documentation
 
 - [AGENTS.md](AGENTS.md) - Agent working notes
