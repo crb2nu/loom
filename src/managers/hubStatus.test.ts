@@ -14,8 +14,9 @@ vi.mock("../clients/hub", () => ({
   })),
 }));
 
-import { HubStatusManager } from "./hubStatus";
 import { HubSettings } from "../types";
+
+import { HubStatusManager } from "./hubStatus";
 
 describe("HubStatusManager", () => {
   let manager: HubStatusManager;
@@ -64,9 +65,7 @@ describe("HubStatusManager", () => {
     it("should update status on successful refresh", async () => {
       mockFetchHealth.mockResolvedValueOnce({ status: "ok", sessions: 3 });
       mockFetchReady.mockResolvedValueOnce({ ready: true, servers: 2 });
-      mockFetchServers.mockResolvedValueOnce([
-        { name: "github", description: "GitHub API" },
-      ]);
+      mockFetchServers.mockResolvedValueOnce([{ name: "github", description: "GitHub API" }]);
 
       await manager.refresh();
 
@@ -122,7 +121,7 @@ describe("HubStatusManager", () => {
   });
 
   describe("updateSettings", () => {
-    it("should update settings and trigger refresh", async () => {
+    it("should update settings and trigger refresh", () => {
       mockFetchHealth.mockResolvedValue({ status: "ok" });
       mockFetchReady.mockResolvedValue({ ready: true });
       mockFetchServers.mockResolvedValue([]);

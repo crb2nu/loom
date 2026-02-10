@@ -83,9 +83,16 @@ interface ActivationEnvironment {
 // Setup Functions
 // ============================================================================
 
-function initializeEnvironment(context: vscode.ExtensionContext): Pick<
+function initializeEnvironment(
+  context: vscode.ExtensionContext
+): Pick<
   ActivationEnvironment,
-  "workspaceRoot" | "workspaceFolder" | "pythonExecutable" | "loomChannel" | "logger" | "configManager"
+  | "workspaceRoot"
+  | "workspaceFolder"
+  | "pythonExecutable"
+  | "loomChannel"
+  | "logger"
+  | "configManager"
 > {
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
   const workspaceRoot = workspaceFolder?.uri.fsPath ?? "";
@@ -145,7 +152,10 @@ function registerHubIntegration(
 }
 
 function registerRegistryAndServers(
-  env: Pick<ActivationEnvironment, "workspaceRoot" | "pythonExecutable" | "loomChannel" | "hubStatusManager">,
+  env: Pick<
+    ActivationEnvironment,
+    "workspaceRoot" | "pythonExecutable" | "loomChannel" | "hubStatusManager"
+  >,
   context: vscode.ExtensionContext
 ): {
   registryProvider: RegistryProvider;
@@ -268,7 +278,11 @@ function registerPlatforms(
   const detectedPlatform = detectPlatform();
   platformLogger.info(`Detected platform: ${getPlatformStatusText()} (${detectedPlatform})`);
 
-  const platformConfigClient = new PlatformConfigClient(env.workspaceRoot, env.loomChannel, env.configManager);
+  const platformConfigClient = new PlatformConfigClient(
+    env.workspaceRoot,
+    env.loomChannel,
+    env.configManager
+  );
   context.subscriptions.push(platformConfigClient);
 
   const platformsProvider = new PlatformsProvider(platformConfigClient);
@@ -308,7 +322,10 @@ function registerPlatforms(
 // Onboarding Wizard
 // ============================================================================
 function registerOnboarding(
-  env: Pick<ActivationEnvironment, "workspaceRoot" | "configManager" | "daemonClient" | "platformConfigClient">,
+  env: Pick<
+    ActivationEnvironment,
+    "workspaceRoot" | "configManager" | "daemonClient" | "platformConfigClient"
+  >,
   context: vscode.ExtensionContext
 ): void {
   context.subscriptions.push(
@@ -445,7 +462,11 @@ function registerSkillsIntegration(
   context: vscode.ExtensionContext
 ): SkillsClient {
   const skillsClient = new SkillsClient(env.loomChannel);
-  skillsClient.initialize(env.workspaceRoot, undefined, env.configManager.get("skillsRegistryPath"));
+  skillsClient.initialize(
+    env.workspaceRoot,
+    undefined,
+    env.configManager.get("skillsRegistryPath")
+  );
   context.subscriptions.push({ dispose: () => skillsClient.dispose() });
 
   // Skill recommendation manager for context-aware suggestions
@@ -585,7 +606,10 @@ function registerAgentContext(
 // Server Health Integration
 // ============================================================================
 function registerServerHealth(
-  env: Pick<ActivationEnvironment, "configManager" | "daemonClient" | "hubStatusManager" | "loomChannel">,
+  env: Pick<
+    ActivationEnvironment,
+    "configManager" | "daemonClient" | "hubStatusManager" | "loomChannel"
+  >,
   context: vscode.ExtensionContext
 ): void {
   const serverMetricsManager = new ServerMetricsManager(
@@ -596,7 +620,12 @@ function registerServerHealth(
   );
   context.subscriptions.push(serverMetricsManager);
 
-  const profileManager = new ProfileManager(env.hubStatusManager, env.daemonClient, env.loomChannel, env.configManager);
+  const profileManager = new ProfileManager(
+    env.hubStatusManager,
+    env.daemonClient,
+    env.loomChannel,
+    env.configManager
+  );
   context.subscriptions.push(profileManager);
 
   const serverHealthCommandDisposables = registerServerHealthCommands({
@@ -658,9 +687,21 @@ export async function activate(context: vscode.ExtensionContext) {
 
   const { agentSessionManager } = registerAgentContext(base, context);
 
-  registerServerHealth({ configManager: base.configManager, daemonClient, hubStatusManager, loomChannel: base.loomChannel }, context);
+  registerServerHealth(
+    {
+      configManager: base.configManager,
+      daemonClient,
+      hubStatusManager,
+      loomChannel: base.loomChannel,
+    },
+    context
+  );
 
-  maybeAutoStartSession({ workspaceFolder: base.workspaceFolder, configManager: base.configManager, agentSessionManager });
+  maybeAutoStartSession({
+    workspaceFolder: base.workspaceFolder,
+    configManager: base.configManager,
+    agentSessionManager,
+  });
 }
 
 export function deactivate() {

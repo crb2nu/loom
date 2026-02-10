@@ -99,7 +99,8 @@ export const PLATFORMS: Record<PlatformType, PlatformInfo> = {
  */
 export function detectPlatform(platformOverride?: string): PlatformType {
   // Check configuration override first
-  const configPlatform = platformOverride ?? vscode.workspace.getConfiguration("loom").get<string>("platform");
+  const configPlatform =
+    platformOverride ?? vscode.workspace.getConfiguration("loom").get<string>("platform");
 
   if (configPlatform && configPlatform !== "auto") {
     if (isValidPlatformType(configPlatform)) {
@@ -150,7 +151,8 @@ export function getSupportedPlatforms(): PlatformType[] {
  *   When provided, skips reading vscode config directly. Pass `undefined` to read from config.
  */
 export function getEnabledPlatforms(enabledOverride?: PlatformType[]): PlatformType[] {
-  const enabled = enabledOverride ?? vscode.workspace.getConfiguration("loom").get<string[]>("enabledPlatforms");
+  const enabled =
+    enabledOverride ?? vscode.workspace.getConfiguration("loom").get<string[]>("enabledPlatforms");
 
   if (!enabled || enabled.length === 0) {
     // Default to vscode, antigravity, gemini, claude if not specified

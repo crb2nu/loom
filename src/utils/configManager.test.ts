@@ -84,6 +84,7 @@ describe("ConfigManager", () => {
 
       await manager.set("hubProfile", "newprofile");
 
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(mockConfig.update).toHaveBeenCalledWith(
         "hubProfile",
         "newprofile",
@@ -112,7 +113,8 @@ describe("ConfigManager", () => {
       // Simulate config change
       if (listeners.length > 0) {
         listeners[0]({
-          affectsConfiguration: (section: string) => section === "loom" || section.startsWith("loom."),
+          affectsConfiguration: (section: string) =>
+            section === "loom" || section.startsWith("loom."),
         });
       }
 

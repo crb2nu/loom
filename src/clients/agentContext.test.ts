@@ -110,9 +110,7 @@ describe("AgentContextClient", () => {
     it("should list sessions", async () => {
       mockExecFileAsync.mockResolvedValueOnce({
         stdout: JSON.stringify({
-          sessions: [
-            { session_id: "s1", namespace: "test", status: "active", entry_count: 3 },
-          ],
+          sessions: [{ session_id: "s1", namespace: "test", status: "active", entry_count: 3 }],
         }),
         stderr: "",
       });

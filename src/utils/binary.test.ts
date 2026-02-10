@@ -92,9 +92,7 @@ describe("resolveLoomBinary", () => {
   });
 
   it("should check ~/.local/bin/loom", () => {
-    mockExistsSync.mockImplementation(
-      (p: string) => p === "/home/testuser/.local/bin/loom"
-    );
+    mockExistsSync.mockImplementation((p: string) => p === "/home/testuser/.local/bin/loom");
 
     const result = resolveLoomBinary();
 
@@ -121,9 +119,7 @@ describe("resolveLoomBinary", () => {
 
   it("should skip empty LOOM_BINARY", () => {
     process.env.LOOM_BINARY = "  ";
-    mockExistsSync.mockImplementation(
-      (p: string) => p === "/home/testuser/.local/bin/loom"
-    );
+    mockExistsSync.mockImplementation((p: string) => p === "/home/testuser/.local/bin/loom");
 
     const result = resolveLoomBinary();
 
@@ -157,9 +153,7 @@ describe("resolveHubWrapperCommand", () => {
   });
 
   it("should check workspace shim", () => {
-    mockExistsSync.mockImplementation(
-      (p: string) => p === "/workspace/scripts/mcp/hub_wrapper.sh"
-    );
+    mockExistsSync.mockImplementation((p: string) => p === "/workspace/scripts/mcp/hub_wrapper.sh");
 
     const result = resolveHubWrapperCommand("/workspace");
 

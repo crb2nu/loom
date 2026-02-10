@@ -8,8 +8,9 @@ vi.mock("../utils/http", () => ({
   requestJson: mockRequestJson,
 }));
 
-import { HubClient } from "./hub";
 import { HubSettings } from "../types";
+
+import { HubClient } from "./hub";
 
 describe("HubClient", () => {
   let client: HubClient;

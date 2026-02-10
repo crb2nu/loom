@@ -82,7 +82,7 @@ describe("SkillRecommendationManager", () => {
         "package.json",
         "Dockerfile",
         "main.go",
-      ] as any);
+      ] as unknown as ReturnType<typeof fs.readdirSync>);
 
       manager.initialize("/workspace");
 

@@ -78,8 +78,7 @@ export class ConfigManager implements vscode.Disposable {
       hubUrl: c.get<string>("hubUrl") ?? DEFAULTS.hubUrl,
       hubProfile: c.get<string>("hubProfile") ?? DEFAULTS.hubProfile,
       platform: c.get<string>("platform") ?? DEFAULTS.platform,
-      enabledPlatforms:
-        c.get<PlatformType[]>("enabledPlatforms") ?? DEFAULTS.enabledPlatforms,
+      enabledPlatforms: c.get<PlatformType[]>("enabledPlatforms") ?? DEFAULTS.enabledPlatforms,
       syncOnStartup: c.get<boolean>("syncOnStartup") ?? DEFAULTS.syncOnStartup,
       syncStatusPollingInterval:
         c.get<number>("syncStatusPollingInterval") ?? DEFAULTS.syncStatusPollingInterval,
@@ -91,8 +90,7 @@ export class ConfigManager implements vscode.Disposable {
       autoStartSession: c.get<boolean>("autoStartSession") ?? DEFAULTS.autoStartSession,
       showAnnotationDecorations:
         c.get<boolean>("showAnnotationDecorations") ?? DEFAULTS.showAnnotationDecorations,
-      onboardingComplete:
-        c.get<boolean>("onboardingComplete") ?? DEFAULTS.onboardingComplete,
+      onboardingComplete: c.get<boolean>("onboardingComplete") ?? DEFAULTS.onboardingComplete,
       skillsRegistryPath: c.get<string | null>("skillsRegistryPath") ?? DEFAULTS.skillsRegistryPath,
       serverMetricsInterval:
         c.get<number>("serverMetricsInterval") ?? DEFAULTS.serverMetricsInterval,

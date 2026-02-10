@@ -152,9 +152,7 @@ describe("findRegistryPath", () => {
   });
 
   it("should fallback to workspace registry", () => {
-    mockExistsSync.mockImplementation(
-      (p: string) => p === "/workspace/mcp/context/registry.yaml"
-    );
+    mockExistsSync.mockImplementation((p: string) => p === "/workspace/mcp/context/registry.yaml");
 
     const result = findRegistryPath("/workspace");
 

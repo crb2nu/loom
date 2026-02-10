@@ -53,7 +53,10 @@ export class SkillsClient {
    * @param configuredPath - Optional value from "loom.skillsRegistryPath" setting.
    *   When provided, skips reading vscode config directly.
    */
-  private findRegistryPath(workspaceRoot: string, configuredPath?: string | null): string | undefined {
+  private findRegistryPath(
+    workspaceRoot: string,
+    configuredPath?: string | null
+  ): string | undefined {
     const candidates = [
       // Configured path from settings
       configuredPath ?? vscode.workspace.getConfiguration("loom").get<string>("skillsRegistryPath"),
@@ -227,7 +230,7 @@ export class SkillsClient {
   getSkillOutputType(skillName: string, platform: string): SkillOutputType {
     const skill = this.getSkill(skillName);
     if (skill?.targets?.[platform]?.type) {
-      return skill.targets[platform].type!;
+      return skill.targets[platform].type;
     }
 
     // Platform defaults

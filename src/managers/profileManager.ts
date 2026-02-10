@@ -41,7 +41,7 @@ export class ProfileManager implements vscode.Disposable {
     // Load active profile
     this.activeProfile = this.configManager
       ? this.configManager.get("activeProfile")
-      : vscode.workspace.getConfiguration("loom").get<string>("activeProfile") ?? "full";
+      : (vscode.workspace.getConfiguration("loom").get<string>("activeProfile") ?? "full");
   }
 
   /**
@@ -53,14 +53,14 @@ export class ProfileManager implements vscode.Disposable {
           string,
           { servers: string[] | "*"; hubEnabled: boolean; platforms?: PlatformType[] }
         >)
-      : vscode.workspace
+      : (vscode.workspace
           .getConfiguration("loom")
           .get<
             Record<
               string,
               { servers: string[] | "*"; hubEnabled: boolean; platforms?: PlatformType[] }
             >
-          >("profiles") ?? {};
+          >("profiles") ?? {});
 
     this.profiles.clear();
 
@@ -153,9 +153,9 @@ export class ProfileManager implements vscode.Disposable {
     // Get existing profiles and add the new one
     const existingProfiles = this.configManager
       ? (this.configManager.get("profiles") as Record<string, ExtendedServerProfile>)
-      : vscode.workspace
+      : (vscode.workspace
           .getConfiguration("loom")
-          .get<Record<string, ExtendedServerProfile>>("profiles") ?? {};
+          .get<Record<string, ExtendedServerProfile>>("profiles") ?? {});
 
     const updatedProfiles = {
       ...existingProfiles,
@@ -201,9 +201,9 @@ export class ProfileManager implements vscode.Disposable {
 
     const existingProfiles = this.configManager
       ? (this.configManager.get("profiles") as Record<string, ExtendedServerProfile>)
-      : vscode.workspace
+      : (vscode.workspace
           .getConfiguration("loom")
-          .get<Record<string, ExtendedServerProfile>>("profiles") ?? {};
+          .get<Record<string, ExtendedServerProfile>>("profiles") ?? {});
 
     const updatedProfiles = {
       ...existingProfiles,

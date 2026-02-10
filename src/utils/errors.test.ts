@@ -117,9 +117,7 @@ describe("showActionableError", () => {
     await showActionableError(new Error("something unexpected"), "Test");
 
     // eslint-disable-next-line @typescript-eslint/unbound-method
-    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
-      "Test: something unexpected"
-    );
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith("Test: something unexpected");
   });
 
   it("should show error with action buttons", async () => {

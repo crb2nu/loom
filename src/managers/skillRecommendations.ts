@@ -185,7 +185,9 @@ export class SkillRecommendationManager {
         }
       }
 
-      this.logger.info(`Scanned workspace, found project files: ${Array.from(this.contextSignals.projectFiles).join(", ")}`);
+      this.logger.info(
+        `Scanned workspace, found project files: ${Array.from(this.contextSignals.projectFiles).join(", ")}`
+      );
     } catch {
       // Ignore errors scanning workspace
     }
@@ -317,7 +319,9 @@ export class SkillRecommendationManager {
       triggers: reasons,
     }));
 
-    this.logger.info(`Updated recommendations: ${this.recommendations.map((r) => `${r.name}(${Math.round(r.confidence * 100)}%)`).join(", ")}`);
+    this.logger.info(
+      `Updated recommendations: ${this.recommendations.map((r) => `${r.name}(${Math.round(r.confidence * 100)}%)`).join(", ")}`
+    );
 
     this.emitter.fire(this.recommendations);
   }

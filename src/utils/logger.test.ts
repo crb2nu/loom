@@ -90,9 +90,7 @@ describe("Logger", () => {
       child.info("test");
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(channel.appendLine).toHaveBeenCalledWith(
-        expect.stringMatching(/\[hub\] INFO: test/)
-      );
+      expect(channel.appendLine).toHaveBeenCalledWith(expect.stringMatching(/\[hub\] INFO: test/));
     });
 
     it("should inherit parent log level", () => {
@@ -118,9 +116,7 @@ describe("Logger", () => {
       logger.debug("debug msg");
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(channel.appendLine).toHaveBeenCalledWith(
-        expect.stringContaining("DEBUG: debug msg")
-      );
+      expect(channel.appendLine).toHaveBeenCalledWith(expect.stringContaining("DEBUG: debug msg"));
     });
 
     it("should log warn messages", () => {
@@ -130,9 +126,7 @@ describe("Logger", () => {
       logger.warn("warning");
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(channel.appendLine).toHaveBeenCalledWith(
-        expect.stringContaining("WARN: warning")
-      );
+      expect(channel.appendLine).toHaveBeenCalledWith(expect.stringContaining("WARN: warning"));
     });
 
     it("should log error messages", () => {
@@ -142,9 +136,7 @@ describe("Logger", () => {
       logger.error("failure");
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(channel.appendLine).toHaveBeenCalledWith(
-        expect.stringContaining("ERROR: failure")
-      );
+      expect(channel.appendLine).toHaveBeenCalledWith(expect.stringContaining("ERROR: failure"));
     });
   });
 });
