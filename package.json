@@ -51,6 +51,10 @@
                 "title": "Loom: Show Config Sync Status"
             },
             {
+                "command": "loom.showOfflineStatus",
+                "title": "Loom: Show Offline Sync Status"
+            },
+            {
                 "command": "loom.showMeshReport",
                 "title": "Loom: Show MCP Mesh Report"
             },

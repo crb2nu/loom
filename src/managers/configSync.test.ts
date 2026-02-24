@@ -91,6 +91,21 @@ describe("ConfigSyncManager", () => {
       const state = manager.getOfflineState();
       expect(state.pendingSyncs).toEqual([]);
     });
+
+    it("should queue pending syncs without duplicates", () => {
+      manager.queuePendingSync("vscode");
+      manager.queuePendingSync("vscode");
+      manager.queuePendingSync("claude");
+
+      const state = manager.getOfflineState();
+      expect(state.pendingSyncs).toHaveLength(2);
+      expect(state.pendingSyncs.map((s) => s.platform).sort()).toEqual(["claude", "vscode"]);
+    });
+
+    it("should return empty results when processing with no pending syncs", async () => {
+      const results = await manager.processPendingSyncsNow();
+      expect(results).toEqual([]);
+    });
   });
 
   describe("checkSync", () => {
