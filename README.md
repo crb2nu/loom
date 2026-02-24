@@ -97,6 +97,29 @@ npm run watch
 
 Press `F5` to launch the Extension Development Host.
 
+## VS Code Marketplace Release
+
+Maintainer workflow for roadmap item `#3`:
+
+1. Bump `package.json` version and update changelog.
+2. Create and push a matching tag (`vX.Y.Z`).
+3. Verify the tag pipeline builds the VSIX artifact in `package:vsix` and `release:publish`.
+4. Trigger manual `release:marketplace` with `VSCE_PAT` configured in CI variables.
+
+Local publish fallback:
+
+```bash
+export VSCE_PAT=...
+npm ci
+npm run package
+sh scripts/publish-marketplace.sh
+```
+
+Safety checks in `scripts/publish-marketplace.sh`:
+- requires `VSCE_PAT`
+- validates `CI_COMMIT_TAG` matches `package.json` version when running in CI
+- publishes an existing `loom-*.vsix` artifact (or builds one if absent)
+
 ## Configuration
 
 ### Settings

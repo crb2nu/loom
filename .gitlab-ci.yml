@@ -100,6 +100,7 @@ package:vsix:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
 
 # Release on tags
 release:publish:
@@ -108,10 +109,10 @@ release:publish:
   needs:
     - package:vsix
   script:
-    - npm run package
     - |
       VERSION=$(node -p "require('./package.json').version")
-      mv *.vsix loom-${VERSION}.vsix
+      VSIX=$(ls -1 *.vsix | head -n1)
+      mv "$VSIX" loom-${VERSION}.vsix
       echo "Packaged loom-${VERSION}.vsix"
   artifacts:
     paths:
@@ -124,14 +125,10 @@ release:publish:
 release:marketplace:
   stage: deploy
   extends: .install
+  needs:
+    - package:vsix
   script:
-    - |
-      if [ -z "$VSCE_PAT" ]; then
-        echo "VSCE_PAT not set, skipping marketplace publish"
-        exit 0
-      fi
-      npx vsce publish -p $VSCE_PAT
+    - sh scripts/publish-marketplace.sh
   rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
       when: manual
-  allow_failure: true
