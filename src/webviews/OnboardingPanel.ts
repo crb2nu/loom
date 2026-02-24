@@ -474,7 +474,7 @@ export class OnboardingPanel {
     }
     .badge.recommended {
       background: var(--vscode-charts-green);
-      color: white;
+      color: var(--vscode-badge-foreground);
     }
     .platform-card.detected {
       border-color: var(--vscode-charts-green);

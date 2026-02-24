@@ -281,26 +281,22 @@ export class SyncDashboardPanel {
       border-radius: 10px;
       font-size: 11px;
       font-weight: 500;
+      color: var(--vscode-badge-foreground);
     }
     .status-synced {
-      background-color: var(--vscode-testing-iconPassed);
-      color: #fff;
+      background-color: var(--vscode-testing-iconPassed, var(--vscode-charts-green));
     }
     .status-out-of-sync {
-      background-color: var(--vscode-editorWarning-foreground);
-      color: #fff;
+      background-color: var(--vscode-editorWarning-foreground, var(--vscode-charts-yellow));
     }
     .status-missing {
       background-color: var(--vscode-disabledForeground);
-      color: #fff;
     }
     .status-error {
-      background-color: var(--vscode-testing-iconFailed);
-      color: #fff;
+      background-color: var(--vscode-testing-iconFailed, var(--vscode-errorForeground));
     }
     .status-unknown {
       background-color: var(--vscode-descriptionForeground);
-      color: #fff;
     }
     .card-details {
       font-size: 12px;
