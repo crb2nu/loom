@@ -49,6 +49,13 @@ describe("DaemonClient", () => {
     } as unknown as vscode.OutputChannel;
 
     client = new DaemonClient("/workspace", mockChannel);
+    // Speed up retry-based tests.
+    (client as unknown as { retryConfig: unknown }).retryConfig = {
+      maxRetries: 3,
+      initialDelayMs: 1,
+      maxDelayMs: 2,
+      backoffMultiplier: 1,
+    };
   });
 
   describe("getServers", () => {
@@ -331,6 +338,45 @@ github__list_repos   List repos`;
       const result = await client.restartServer("github");
 
       expect(result).toBe(false);
+    });
+  });
+
+  describe("daemon lifecycle recovery", () => {
+    it("should notify when start daemon recovers after a retry", async () => {
+      mockExecFileAsync
+        .mockRejectedValueOnce(new Error("temporary start failure"))
+        .mockResolvedValueOnce({ stdout: "", stderr: "" })
+        .mockResolvedValueOnce({ stdout: "running", stderr: "" });
+
+      const result = await client.startDaemon();
+
+      expect(result).toBe(true);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining("Retrying")
+      );
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining("recovered and completed start the Loom daemon")
+      );
+    });
+
+    it("should notify when start daemon exhausts retries", async () => {
+      (client as unknown as { retryConfig: unknown }).retryConfig = {
+        maxRetries: 1,
+        initialDelayMs: 1,
+        maxDelayMs: 2,
+        backoffMultiplier: 1,
+      };
+      mockExecFileAsync.mockRejectedValue(new Error("persistent start failure"));
+
+      const result = await client.startDaemon();
+
+      expect(result).toBe(false);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+        expect.stringContaining("failed to start the Loom daemon after 2 attempts")
+      );
     });
   });
 });

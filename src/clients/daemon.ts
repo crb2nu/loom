@@ -25,6 +25,11 @@ interface RetryConfig {
   backoffMultiplier: number;
 }
 
+interface RetryOptions {
+  notifyUser?: boolean;
+  userOperation?: string;
+}
+
 const DEFAULT_RETRY_CONFIG: RetryConfig = {
   maxRetries: 3,
   initialDelayMs: 500,
@@ -126,9 +131,14 @@ export class DaemonClient {
   /**
    * Execute an operation with retry logic and exponential backoff.
    */
-  private async withRetry<T>(operation: () => Promise<T>, operationName: string): Promise<T> {
+  private async withRetry<T>(
+    operation: () => Promise<T>,
+    operationName: string,
+    options: RetryOptions = {}
+  ): Promise<T> {
     let lastError: Error | undefined;
     let delay = this.retryConfig.initialDelayMs;
+    const userOperation = options.userOperation ?? operationName;
 
     for (let attempt = 0; attempt <= this.retryConfig.maxRetries; attempt++) {
       try {
@@ -137,12 +147,23 @@ export class DaemonClient {
           this.channel.appendLine(
             `[DaemonClient] Retry attempt ${attempt}/${this.retryConfig.maxRetries} for ${operationName}`
           );
+          if (options.notifyUser) {
+            void vscode.window.showWarningMessage(
+              `Loom: failed to ${userOperation} (attempt ${attempt}/${this.retryConfig.maxRetries + 1}). Retrying...`
+            );
+          }
           await this.sleep(delay);
           delay = Math.min(delay * this.retryConfig.backoffMultiplier, this.retryConfig.maxDelayMs);
         }
 
         const result = await operation();
         this.setConnectionState("connected");
+        if (attempt > 0 && options.notifyUser) {
+          const retryLabel = attempt === 1 ? "retry" : "retries";
+          void vscode.window.showInformationMessage(
+            `Loom: recovered and completed ${userOperation} after ${attempt} ${retryLabel}.`
+          );
+        }
         return result;
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
@@ -155,6 +176,11 @@ export class DaemonClient {
         // If this was the last attempt, set disconnected
         if (attempt === this.retryConfig.maxRetries) {
           this.setConnectionState("disconnected");
+          if (options.notifyUser) {
+            void vscode.window.showErrorMessage(
+              `Loom: failed to ${userOperation} after ${this.retryConfig.maxRetries + 1} attempts. Check the Loom output channel for details.`
+            );
+          }
         }
       }
     }
@@ -191,36 +217,30 @@ export class DaemonClient {
       const loomBinary = resolveLoomBinary(this.workspaceRoot);
       this.channel.appendLine(`[DaemonClient] Starting daemon...`);
 
-      // Start daemon in background
-      const { spawn } = await import("child_process");
-      const process = spawn(loomBinary, ["daemon", "start"], {
-        cwd: this.workspaceRoot || os.homedir(),
-        detached: true,
-        stdio: "ignore",
-      });
-      process.unref();
+      await this.withRetry(
+        async () => {
+          await execFileAsync(loomBinary, ["daemon", "start"], {
+            cwd: this.workspaceRoot || os.homedir(),
+            timeout: 10000,
+          });
+          await this.sleep(1500);
+          const isRunning = await this.isDaemonRunning();
+          if (!isRunning) {
+            throw new Error("daemon did not report healthy status after start");
+          }
+        },
+        "startDaemon",
+        { notifyUser: true, userOperation: "start the Loom daemon" }
+      );
 
-      // Wait a moment for daemon to start
-      await this.sleep(2000);
-
-      // Verify it's running
-      const isRunning = await this.isDaemonRunning();
-      if (isRunning) {
-        this.setConnectionState("connected");
-        this.channel.appendLine(`[DaemonClient] Daemon started successfully`);
-        vscode.window.showInformationMessage("Loom daemon started successfully.");
-        return true;
-      } else {
-        this.channel.appendLine(`[DaemonClient] Daemon failed to start`);
-        vscode.window.showErrorMessage(
-          "Failed to start Loom daemon. Check the output channel for details."
-        );
-        return false;
-      }
+      this.setConnectionState("connected");
+      this.invalidateCache();
+      this.channel.appendLine(`[DaemonClient] Daemon started successfully`);
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.channel.appendLine(`[DaemonClient] Failed to start daemon: ${message}`);
-      vscode.window.showErrorMessage(`Failed to start Loom daemon: ${message}`);
+      this.setConnectionState("disconnected");
       return false;
     }
   }
@@ -233,10 +253,16 @@ export class DaemonClient {
       const loomBinary = resolveLoomBinary(this.workspaceRoot);
       this.channel.appendLine(`[DaemonClient] Stopping daemon...`);
 
-      await execFileAsync(loomBinary, ["daemon", "stop"], {
-        cwd: this.workspaceRoot || os.homedir(),
-        timeout: 10000,
-      });
+      await this.withRetry(
+        async () => {
+          await execFileAsync(loomBinary, ["daemon", "stop"], {
+            cwd: this.workspaceRoot || os.homedir(),
+            timeout: 10000,
+          });
+        },
+        "stopDaemon",
+        { notifyUser: true, userOperation: "stop the Loom daemon" }
+      );
 
       this.setConnectionState("disconnected");
       this.invalidateCache();
@@ -257,24 +283,26 @@ export class DaemonClient {
       const loomBinary = resolveLoomBinary(this.workspaceRoot);
       this.channel.appendLine(`[DaemonClient] Restarting daemon...`);
 
-      await execFileAsync(loomBinary, ["daemon", "restart"], {
-        cwd: this.workspaceRoot || os.homedir(),
-        timeout: 30000,
-      });
+      await this.withRetry(
+        async () => {
+          await execFileAsync(loomBinary, ["daemon", "restart"], {
+            cwd: this.workspaceRoot || os.homedir(),
+            timeout: 30000,
+          });
+          await this.sleep(1500);
+          const isRunning = await this.isDaemonRunning();
+          if (!isRunning) {
+            throw new Error("daemon did not report healthy status after restart");
+          }
+        },
+        "restartDaemon",
+        { notifyUser: true, userOperation: "restart the Loom daemon" }
+      );
 
-      // Wait for daemon to restart
-      await this.sleep(2000);
-
-      const isRunning = await this.isDaemonRunning();
-      if (isRunning) {
-        this.setConnectionState("connected");
-        this.invalidateCache();
-        this.channel.appendLine(`[DaemonClient] Daemon restarted successfully`);
-        return true;
-      }
-
-      this.setConnectionState("disconnected");
-      return false;
+      this.setConnectionState("connected");
+      this.invalidateCache();
+      this.channel.appendLine(`[DaemonClient] Daemon restarted successfully`);
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.channel.appendLine(`[DaemonClient] Failed to restart daemon: ${message}`);
