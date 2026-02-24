@@ -1,4 +1,4 @@
-![Loom Banner](assets/banner.png)
+![Loom Banner](https://gitlab.flexinfer.ai/services/loom/-/raw/main/assets/banner.png)
 
 # Loom - MCP Context Manager for VS Code
 
