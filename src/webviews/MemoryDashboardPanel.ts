@@ -73,6 +73,11 @@ export class MemoryDashboardPanel extends BaseWebviewPanel {
     <title>Memory Dashboard</title>
     <style>
         ${this.getBaseStyles()}
+        :root {
+            --loom-tier-working: var(--vscode-charts-blue, #4fc3f7);
+            --loom-tier-short-term: var(--vscode-charts-green, #81c784);
+            --loom-tier-long-term: var(--vscode-charts-purple, #ba68c8);
+        }
         .dashboard {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -103,9 +108,9 @@ export class MemoryDashboardPanel extends BaseWebviewPanel {
             height: 24px;
             border-radius: 50%;
         }
-        .tier-working .tier-icon { background: #4fc3f7; }
-        .tier-short_term .tier-icon { background: #81c784; }
-        .tier-long_term .tier-icon { background: #ba68c8; }
+        .tier-working .tier-icon { background: var(--loom-tier-working); }
+        .tier-short_term .tier-icon { background: var(--loom-tier-short-term); }
+        .tier-long_term .tier-icon { background: var(--loom-tier-long-term); }
         .tier-stats {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -137,9 +142,9 @@ export class MemoryDashboardPanel extends BaseWebviewPanel {
             height: 100%;
             transition: width 0.3s ease;
         }
-        .tier-working .tier-bar-fill { background: #4fc3f7; }
-        .tier-short_term .tier-bar-fill { background: #81c784; }
-        .tier-long_term .tier-bar-fill { background: #ba68c8; }
+        .tier-working .tier-bar-fill { background: var(--loom-tier-working); }
+        .tier-short_term .tier-bar-fill { background: var(--loom-tier-short-term); }
+        .tier-long_term .tier-bar-fill { background: var(--loom-tier-long-term); }
         .entry-list {
             max-height: 200px;
             overflow-y: auto;

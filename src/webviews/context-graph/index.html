@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Loom Context Graph</title>
     <style>
+      :root {
+        --loom-context-link: var(--vscode-descriptionForeground, #404040);
+        --loom-context-node-stroke: var(--vscode-editor-background, #fff);
+        --loom-context-label: var(--vscode-editor-foreground, #ccc);
+        --loom-context-hub-ok: var(--vscode-charts-green, #00ffaa);
+        --loom-context-hub-error: var(--vscode-charts-red, #ff3333);
+        --loom-context-node-default: var(--vscode-charts-blue, #00aaff);
+      }
       body {
         margin: 0;
         overflow: hidden;
@@ -35,10 +43,15 @@
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script>
         const vscode = acquireVsCodeApi();
-        
+
         let simulation;
         let svg;
         let container;
+
+        function cssVar(name, fallback) {
+            const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+            return value || fallback;
+        }
         
         // Listen for messages from the extension
         window.addEventListener('message', event => {
@@ -53,6 +66,11 @@
         function renderGraph(data) {
             const width = window.innerWidth;
             const height = window.innerHeight;
+            const palette = {
+                link: cssVar("--loom-context-link", "#404040"),
+                nodeStroke: cssVar("--loom-context-node-stroke", "#fff"),
+                label: cssVar("--loom-context-label", "#ccc")
+            };
 
             // Clear previous graph
             d3.select("#graph-container").innerHTML = "";
@@ -91,7 +109,7 @@
                 .selectAll("line")
                 .data(data.edges)
                 .enter().append("line")
-                .attr("stroke", "#404040")
+                .attr("stroke", palette.link)
                 .attr("stroke-width", 2);
 
             const node = g.append("g")
@@ -101,7 +119,7 @@
                 .enter().append("circle")
                 .attr("r", d => d.type === 'hub' ? 20 : 10)
                 .attr("fill", d => getNodeColor(d))
-                .attr("stroke", "#fff")
+                .attr("stroke", palette.nodeStroke)
                 .attr("stroke-width", 1.5)
                 .style("filter", "url(#glow)")
                 .call(d3.drag()
@@ -120,7 +138,7 @@
                 .attr("dx", 15)
                 .attr("dy", 4)
                 .text(d => d.label)
-                .attr("fill", "#ccc")
+                .attr("fill", palette.label)
                 .style("font-size", "12px")
                 .style("pointer-events", "none");
 
@@ -143,9 +161,11 @@
 
         function getNodeColor(d) {
             if (d.type === 'hub') {
-                return d.status === 'ok' ? '#00ffaa' : '#ff3333';
+                return d.status === 'ok'
+                    ? cssVar("--loom-context-hub-ok", "#00ffaa")
+                    : cssVar("--loom-context-hub-error", "#ff3333");
             }
-            return '#00aaff';
+            return cssVar("--loom-context-node-default", "#00aaff");
         }
 
         function dragstarted(event, d) {

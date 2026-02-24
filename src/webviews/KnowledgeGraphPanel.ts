@@ -120,6 +120,20 @@ export class KnowledgeGraphPanel {
     ${csp}
     <title>Knowledge Graph</title>
     <style>
+        :root {
+            --loom-graph-type-file: var(--vscode-charts-blue, #4fc3f7);
+            --loom-graph-type-function: var(--vscode-charts-green, #81c784);
+            --loom-graph-type-class: var(--vscode-charts-yellow, #ffb74d);
+            --loom-graph-type-module: var(--vscode-charts-purple, #ba68c8);
+            --loom-graph-type-concept: var(--vscode-charts-red, #e57373);
+            --loom-graph-type-decision: var(--vscode-charts-blue, #64b5f6);
+            --loom-graph-type-entity: var(--vscode-charts-orange, #aed581);
+            --loom-graph-type-default: var(--vscode-disabledForeground, #90a4ae);
+            --loom-graph-link: var(--vscode-descriptionForeground, #555);
+            --loom-graph-link-label: var(--vscode-descriptionForeground, #888);
+            --loom-graph-node-stroke: var(--vscode-editor-background, #fff);
+            --loom-graph-node-label: var(--vscode-editor-foreground, #ccc);
+        }
         body {
             margin: 0;
             overflow: hidden;
@@ -173,16 +187,23 @@ export class KnowledgeGraphPanel {
         const vscode = acquireVsCodeApi();
         let simulation;
 
-        const typeColors = {
-            'file': '#4fc3f7',
-            'function': '#81c784',
-            'class': '#ffb74d',
-            'module': '#ba68c8',
-            'concept': '#e57373',
-            'decision': '#64b5f6',
-            'entity': '#aed581',
-            'default': '#90a4ae'
-        };
+        function cssVar(name, fallback) {
+            const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+            return value || fallback;
+        }
+
+        function getTypeColors() {
+            return {
+                file: cssVar("--loom-graph-type-file", "#4fc3f7"),
+                function: cssVar("--loom-graph-type-function", "#81c784"),
+                class: cssVar("--loom-graph-type-class", "#ffb74d"),
+                module: cssVar("--loom-graph-type-module", "#ba68c8"),
+                concept: cssVar("--loom-graph-type-concept", "#e57373"),
+                decision: cssVar("--loom-graph-type-decision", "#64b5f6"),
+                entity: cssVar("--loom-graph-type-entity", "#aed581"),
+                default: cssVar("--loom-graph-type-default", "#90a4ae")
+            };
+        }
 
         window.addEventListener('message', event => {
             const message = event.data;
@@ -194,6 +215,13 @@ export class KnowledgeGraphPanel {
         function renderGraph(data) {
             const width = window.innerWidth;
             const height = window.innerHeight;
+            const typeColors = getTypeColors();
+            const palette = {
+                link: cssVar("--loom-graph-link", "#555"),
+                linkLabel: cssVar("--loom-graph-link-label", "#888"),
+                nodeStroke: cssVar("--loom-graph-node-stroke", "#fff"),
+                nodeLabel: cssVar("--loom-graph-node-label", "#ccc")
+            };
 
             d3.select("#graph-container").selectAll("*").remove();
 
@@ -229,7 +257,7 @@ export class KnowledgeGraphPanel {
                 .selectAll("line")
                 .data(data.edges)
                 .enter().append("line")
-                .attr("stroke", "#555")
+                .attr("stroke", palette.link)
                 .attr("stroke-width", 1.5)
                 .attr("stroke-opacity", 0.6);
 
@@ -239,7 +267,7 @@ export class KnowledgeGraphPanel {
                 .enter().append("text")
                 .text(d => d.type)
                 .attr("font-size", 10)
-                .attr("fill", "#888")
+                .attr("fill", palette.linkLabel)
                 .attr("text-anchor", "middle");
 
             const node = g.append("g")
@@ -248,7 +276,7 @@ export class KnowledgeGraphPanel {
                 .enter().append("circle")
                 .attr("r", 12)
                 .attr("fill", d => typeColors[d.type] || typeColors.default)
-                .attr("stroke", "#fff")
+                .attr("stroke", palette.nodeStroke)
                 .attr("stroke-width", 2)
                 .on("mouseover", showTooltip)
                 .on("mouseout", hideTooltip)
@@ -266,7 +294,7 @@ export class KnowledgeGraphPanel {
                 .enter().append("text")
                 .text(d => d.label)
                 .attr("font-size", 11)
-                .attr("fill", "#ccc")
+                .attr("fill", palette.nodeLabel)
                 .attr("dx", 15)
                 .attr("dy", 4);
 
