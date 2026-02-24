@@ -35,6 +35,7 @@ import {
   TasksProvider,
   PlatformsProvider,
 } from "./providers";
+import { HubStatusSnapshot } from "./types";
 import {
   deriveHubSettings,
   findRegistryPath,
@@ -230,7 +231,10 @@ function registerRegistryAndServers(
 }
 
 function registerConfigSync(
-  env: Pick<ActivationEnvironment, "workspaceRoot" | "loomChannel" | "configManager">,
+  env: Pick<
+    ActivationEnvironment,
+    "workspaceRoot" | "loomChannel" | "configManager" | "hubStatusManager"
+  >,
   context: vscode.ExtensionContext
 ): { configSyncManager: ConfigSyncManager; secretsProvider: SecretsProvider } {
   // Config sync drift detection
@@ -258,6 +262,15 @@ function registerConfigSync(
     })
   );
 
+  // Keep offline mode in sync with hub connectivity.
+  context.subscriptions.push(
+    env.hubStatusManager.onDidChange(() => {
+      const snapshot = env.hubStatusManager.getStatus();
+      const { mode, reason } = getOfflineModeFromHub(snapshot);
+      configSyncManager.setOfflineMode(mode, reason);
+    })
+  );
+
   // Secrets tree view provider
   const secretsProvider = new SecretsProvider(env.workspaceRoot, env.loomChannel);
   context.subscriptions.push(
@@ -265,6 +278,44 @@ function registerConfigSync(
   );
 
   return { configSyncManager, secretsProvider };
+}
+
+function getOfflineModeFromHub(snapshot: HubStatusSnapshot): {
+  mode: "online" | "offline" | "degraded";
+  reason?: string;
+} {
+  if (snapshot.error) {
+    if (isConnectivityFailure(snapshot.error)) {
+      return { mode: "offline", reason: snapshot.error };
+    }
+    return { mode: "degraded", reason: snapshot.error };
+  }
+
+  if (snapshot.readiness && snapshot.readiness.ready === false) {
+    return { mode: "degraded", reason: snapshot.readiness.error ?? "Hub not ready" };
+  }
+
+  if (snapshot.health?.status && snapshot.health.status !== "ok") {
+    return { mode: "degraded", reason: `Hub health: ${snapshot.health.status}` };
+  }
+
+  return { mode: "online", reason: undefined };
+}
+
+function isConnectivityFailure(message: string): boolean {
+  const text = message.toLowerCase();
+  return [
+    "econnrefused",
+    "enotfound",
+    "etimedout",
+    "timed out",
+    "network",
+    "socket",
+    "connect",
+    "offline",
+    "unable to fetch",
+    "fetch failed",
+  ].some((pattern) => text.includes(pattern));
 }
 
 // ============================================================================
@@ -661,7 +712,10 @@ export async function activate(context: vscode.ExtensionContext) {
   const { registryProvider, serverProvider, toolProvider, daemonClient } =
     registerRegistryAndServers({ ...base, hubStatusManager }, context);
 
-  const { configSyncManager, secretsProvider } = registerConfigSync(base, context);
+  const { configSyncManager, secretsProvider } = registerConfigSync(
+    { ...base, hubStatusManager },
+    context
+  );
 
   const platformConfigClient = registerPlatforms(base, context);
 

@@ -88,7 +88,11 @@ export class ConfigSyncManager implements vscode.Disposable {
    * Get current offline state.
    */
   getOfflineState(): OfflineState {
-    return { ...this.offlineState };
+    return {
+      ...this.offlineState,
+      pendingSyncs: [...this.offlineState.pendingSyncs],
+      cachedServers: [...this.offlineState.cachedServers],
+    };
   }
 
   /**
@@ -125,8 +129,17 @@ export class ConfigSyncManager implements vscode.Disposable {
     const exists = this.offlineState.pendingSyncs.some((s) => s.platform === platform);
     if (!exists) {
       this.offlineState.pendingSyncs.push({ platform, timestamp: new Date() });
+      this.updateOfflineStatusBar();
+      this.offlineEmitter.fire(this.getOfflineState());
       this.logger.info(`Queued pending sync for ${platform}`);
     }
+  }
+
+  /**
+   * Process pending syncs immediately.
+   */
+  async processPendingSyncsNow(): Promise<PendingSyncResult[]> {
+    return this.processPendingSyncs();
   }
 
   /**
@@ -153,15 +166,17 @@ export class ConfigSyncManager implements vscode.Disposable {
 
   /**
    * Process pending syncs when back online.
-   * Executes `loom sync <platform>` for each queued platform.
+   * Executes `loom sync <platform> --regen` for each queued platform.
    */
-  private async processPendingSyncs(): Promise<void> {
+  private async processPendingSyncs(): Promise<PendingSyncResult[]> {
     if (this.offlineState.pendingSyncs.length === 0) {
-      return;
+      return [];
     }
 
     const pending = [...this.offlineState.pendingSyncs];
     this.offlineState.pendingSyncs = [];
+    this.updateOfflineStatusBar();
+    this.offlineEmitter.fire(this.getOfflineState());
 
     this.logger.info(`Processing ${pending.length} pending syncs`);
 
@@ -175,7 +190,7 @@ export class ConfigSyncManager implements vscode.Disposable {
 
       try {
         const loomBinary = resolveLoomBinary(this.root);
-        await execFileAsync(loomBinary, ["sync", sync.platform], {
+        await execFileAsync(loomBinary, ["sync", sync.platform, "--regen"], {
           cwd: this.root || os.homedir(),
           timeout: 30000,
         });
@@ -210,6 +225,10 @@ export class ConfigSyncManager implements vscode.Disposable {
     } else if (successful > 0) {
       vscode.window.showInformationMessage(`Processed ${successful} pending sync(s) successfully.`);
     }
+
+    this.updateOfflineStatusBar();
+    this.offlineEmitter.fire(this.getOfflineState());
+    return results;
   }
 
   /**
