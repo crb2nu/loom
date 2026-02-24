@@ -1,4 +1,4 @@
-![Loom Banner](assets/banner.png)
+![Loom Banner](https://gitlab.flexinfer.ai/services/loom/-/raw/main/assets/banner.png)
 
 # Loom - MCP Context Manager for VS Code
 
@@ -264,6 +264,7 @@ services/
 - [AGENTS.md](AGENTS.md) - Agent working notes
 - [ROADMAP.md](ROADMAP.md) - Project roadmap
 - [CHANGELOG.md](CHANGELOG.md) - Version history
+- [docs/API_STABILITY.md](docs/API_STABILITY.md) - Stable vs internal API policy
 - [.agents/skills/mcp-config.md](../../.agents/skills/mcp-config.md) - MCP config guide
 
 ## Requirements
