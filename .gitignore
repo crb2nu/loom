@@ -19,3 +19,4 @@ out
 # Claude Desktop app config (local)
 claude_desktop_config/
 coverage/
+.husky/_/

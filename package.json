@@ -1,452 +1,453 @@
 {
-    "name": "loom",
-    "displayName": "Loom - MCP Context Manager",
-    "description": "Unified MCP hub management for AI coding assistants. Sync configs across VS Code, Antigravity, Codex, Claude, Kilocode, and Gemini.",
-    "version": "0.9.0",
-    "publisher": "cblevins",
-    "license": "MIT",
-    "icon": "assets/icon.png",
-    "galleryBanner": {
-        "color": "#1a1a2e",
-        "theme": "dark"
-    },
-    "repository": {
-        "type": "git",
-        "url": "https://gitlab.flexinfer.ai/services/loom.git"
-    },
-    "homepage": "https://gitlab.flexinfer.ai/services/loom",
-    "bugs": {
-        "url": "https://gitlab.flexinfer.ai/services/loom/-/issues"
-    },
-    "keywords": [
-        "mcp",
-        "model-context-protocol",
-        "ai",
-        "coding-assistant",
-        "claude",
-        "codex",
-        "gemini",
-        "context-management",
-        "sync"
+  "name": "loom",
+  "displayName": "Loom - MCP Context Manager",
+  "description": "Unified MCP hub management for AI coding assistants. Sync configs across VS Code, Antigravity, Codex, Claude, Kilocode, and Gemini.",
+  "version": "0.9.0",
+  "publisher": "cblevins",
+  "license": "MIT",
+  "icon": "assets/icon.png",
+  "galleryBanner": {
+    "color": "#1a1a2e",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://gitlab.flexinfer.ai/services/loom.git"
+  },
+  "homepage": "https://gitlab.flexinfer.ai/services/loom",
+  "bugs": {
+    "url": "https://gitlab.flexinfer.ai/services/loom/-/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "coding-assistant",
+    "claude",
+    "codex",
+    "gemini",
+    "context-management",
+    "sync"
+  ],
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "loom.showStatus",
+        "title": "Loom: Show Context Status"
+      },
+      {
+        "command": "loom.showSyncStatus",
+        "title": "Loom: Show Config Sync Status"
+      },
+      {
+        "command": "loom.showOfflineStatus",
+        "title": "Loom: Show Offline Sync Status"
+      },
+      {
+        "command": "loom.showMeshReport",
+        "title": "Loom: Show MCP Mesh Report"
+      },
+      {
+        "command": "loom.syncConfigs",
+        "title": "Loom: Sync MCP Configs"
+      },
+      {
+        "command": "loom.checkMcpHealth",
+        "title": "Loom: Check MCP Server Health"
+      },
+      {
+        "command": "loom.snapshotContext",
+        "title": "Loom: Snapshot Context to Qdrant"
+      },
+      {
+        "command": "loom.bootstrapContext",
+        "title": "Loom: Bootstrap Workspace Context"
+      },
+      {
+        "command": "loom.refreshHubStatus",
+        "title": "Loom: Refresh MCP Hub Status"
+      },
+      {
+        "command": "loom.verifyHubClient",
+        "title": "Loom: Verify MCP Hub Client"
+      },
+      {
+        "command": "loom.startDaemon",
+        "title": "Loom: Start Daemon"
+      },
+      {
+        "command": "loom.stopDaemon",
+        "title": "Loom: Stop Daemon"
+      },
+      {
+        "command": "loom.restartDaemon",
+        "title": "Loom: Restart Daemon"
+      },
+      {
+        "command": "loom.daemonStatus",
+        "title": "Loom: Show Daemon Status"
+      },
+      {
+        "command": "loom.refreshTools",
+        "title": "Loom: Refresh Tools"
+      },
+      {
+        "command": "loom.searchTools",
+        "title": "Loom: Search Tools"
+      },
+      {
+        "command": "loom.listSecrets",
+        "title": "Loom: List Secrets"
+      },
+      {
+        "command": "loom.setSecret",
+        "title": "Loom: Set Secret"
+      },
+      {
+        "command": "loom.importSecrets",
+        "title": "Loom: Import Secrets from File"
+      },
+      {
+        "command": "loom.validateSecrets",
+        "title": "Loom: Validate Config Secrets"
+      },
+      {
+        "command": "loom.refreshSecrets",
+        "title": "Loom: Refresh Secrets Cache"
+      },
+      {
+        "command": "loom.refreshSkills",
+        "title": "Loom: Refresh Skills"
+      },
+      {
+        "command": "loom.searchSkills",
+        "title": "Loom: Search Skills"
+      },
+      {
+        "command": "loom.showSkillDetails",
+        "title": "Loom: Show Skill Details"
+      },
+      {
+        "command": "loom.runSkillScript",
+        "title": "Loom: Run Skill Script"
+      },
+      {
+        "command": "loom.openSkillResource",
+        "title": "Loom: Open Skill Resource"
+      },
+      {
+        "command": "loom.listSkillCategories",
+        "title": "Loom: List Skill Categories"
+      },
+      {
+        "command": "loom.startAgentSession",
+        "title": "Loom: Start Agent Session"
+      },
+      {
+        "command": "loom.endAgentSession",
+        "title": "Loom: End Agent Session"
+      },
+      {
+        "command": "loom.showAgentSessionMenu",
+        "title": "Loom: Agent Session Menu"
+      },
+      {
+        "command": "loom.addContextEntry",
+        "title": "Loom: Add Context Entry"
+      },
+      {
+        "command": "loom.showContextEntry",
+        "title": "Loom: Show Context Entry"
+      },
+      {
+        "command": "loom.recallContext",
+        "title": "Loom: Recall Context"
+      },
+      {
+        "command": "loom.addTask",
+        "title": "Loom: Add Task"
+      },
+      {
+        "command": "loom.refreshTasks",
+        "title": "Loom: Refresh Tasks"
+      },
+      {
+        "command": "loom.refreshAgentContext",
+        "title": "Loom: Refresh Agent Context"
+      },
+      {
+        "command": "loom.showKnowledgeGraph",
+        "title": "Loom: Show Knowledge Graph"
+      },
+      {
+        "command": "loom.showMemoryDashboard",
+        "title": "Loom: Show Memory Dashboard"
+      },
+      {
+        "command": "loom.toggleAnnotations",
+        "title": "Loom: Toggle Code Annotations"
+      },
+      {
+        "command": "loom.showServerHealth",
+        "title": "Loom: Show Server Health Dashboard"
+      },
+      {
+        "command": "loom.pingServer",
+        "title": "Loom: Ping Server"
+      },
+      {
+        "command": "loom.switchProfile",
+        "title": "Loom: Switch Server Profile"
+      },
+      {
+        "command": "loom.showRoutingStatus",
+        "title": "Loom: Show Routing Status"
+      },
+      {
+        "command": "loom.refreshServerMetrics",
+        "title": "Loom: Refresh Server Metrics"
+      },
+      {
+        "command": "loom.showPlatformConfigs",
+        "title": "Loom: Show Platform Configs"
+      },
+      {
+        "command": "loom.syncPlatformConfig",
+        "title": "Loom: Sync Platform Config"
+      },
+      {
+        "command": "loom.syncAllPlatforms",
+        "title": "Loom: Sync All Platforms"
+      },
+      {
+        "command": "loom.diffPlatformConfig",
+        "title": "Loom: Diff Platform Config"
+      },
+      {
+        "command": "loom.openPlatformConfig",
+        "title": "Loom: Open Platform Config"
+      },
+      {
+        "command": "loom.regeneratePlatformConfig",
+        "title": "Loom: Regenerate Platform Config"
+      },
+      {
+        "command": "loom.filterSkillsByPlatform",
+        "title": "Loom: Filter Skills by Platform"
+      },
+      {
+        "command": "loom.showSyncDashboard",
+        "title": "Loom: Show Sync Dashboard"
+      },
+      {
+        "command": "loom.pullFromHome",
+        "title": "Loom: Pull Config from Home"
+      },
+      {
+        "command": "loom.backupConfigs",
+        "title": "Loom: Backup All Configs"
+      },
+      {
+        "command": "loom.refreshPlatforms",
+        "title": "Loom: Refresh Platforms"
+      }
     ],
-    "engines": {
-        "vscode": "^1.80.0"
-    },
-    "categories": [
-        "Machine Learning",
-        "Other"
-    ],
-    "activationEvents": [
-        "onStartupFinished"
-    ],
-    "main": "./out/extension.js",
-    "contributes": {
-        "commands": [
-            {
-                "command": "loom.showStatus",
-                "title": "Loom: Show Context Status"
-            },
-            {
-                "command": "loom.showSyncStatus",
-                "title": "Loom: Show Config Sync Status"
-            },
-            {
-                "command": "loom.showOfflineStatus",
-                "title": "Loom: Show Offline Sync Status"
-            },
-            {
-                "command": "loom.showMeshReport",
-                "title": "Loom: Show MCP Mesh Report"
-            },
-            {
-                "command": "loom.syncConfigs",
-                "title": "Loom: Sync MCP Configs"
-            },
-            {
-                "command": "loom.checkMcpHealth",
-                "title": "Loom: Check MCP Server Health"
-            },
-            {
-                "command": "loom.snapshotContext",
-                "title": "Loom: Snapshot Context to Qdrant"
-            },
-            {
-                "command": "loom.bootstrapContext",
-                "title": "Loom: Bootstrap Workspace Context"
-            },
-            {
-                "command": "loom.refreshHubStatus",
-                "title": "Loom: Refresh MCP Hub Status"
-            },
-            {
-                "command": "loom.verifyHubClient",
-                "title": "Loom: Verify MCP Hub Client"
-            },
-            {
-                "command": "loom.startDaemon",
-                "title": "Loom: Start Daemon"
-            },
-            {
-                "command": "loom.stopDaemon",
-                "title": "Loom: Stop Daemon"
-            },
-            {
-                "command": "loom.restartDaemon",
-                "title": "Loom: Restart Daemon"
-            },
-            {
-                "command": "loom.daemonStatus",
-                "title": "Loom: Show Daemon Status"
-            },
-            {
-                "command": "loom.refreshTools",
-                "title": "Loom: Refresh Tools"
-            },
-            {
-                "command": "loom.searchTools",
-                "title": "Loom: Search Tools"
-            },
-            {
-                "command": "loom.listSecrets",
-                "title": "Loom: List Secrets"
-            },
-            {
-                "command": "loom.setSecret",
-                "title": "Loom: Set Secret"
-            },
-            {
-                "command": "loom.importSecrets",
-                "title": "Loom: Import Secrets from File"
-            },
-            {
-                "command": "loom.validateSecrets",
-                "title": "Loom: Validate Config Secrets"
-            },
-            {
-                "command": "loom.refreshSecrets",
-                "title": "Loom: Refresh Secrets Cache"
-            },
-            {
-                "command": "loom.refreshSkills",
-                "title": "Loom: Refresh Skills"
-            },
-            {
-                "command": "loom.searchSkills",
-                "title": "Loom: Search Skills"
-            },
-            {
-                "command": "loom.showSkillDetails",
-                "title": "Loom: Show Skill Details"
-            },
-            {
-                "command": "loom.runSkillScript",
-                "title": "Loom: Run Skill Script"
-            },
-            {
-                "command": "loom.openSkillResource",
-                "title": "Loom: Open Skill Resource"
-            },
-            {
-                "command": "loom.listSkillCategories",
-                "title": "Loom: List Skill Categories"
-            },
-            {
-                "command": "loom.startAgentSession",
-                "title": "Loom: Start Agent Session"
-            },
-            {
-                "command": "loom.endAgentSession",
-                "title": "Loom: End Agent Session"
-            },
-            {
-                "command": "loom.showAgentSessionMenu",
-                "title": "Loom: Agent Session Menu"
-            },
-            {
-                "command": "loom.addContextEntry",
-                "title": "Loom: Add Context Entry"
-            },
-            {
-                "command": "loom.showContextEntry",
-                "title": "Loom: Show Context Entry"
-            },
-            {
-                "command": "loom.recallContext",
-                "title": "Loom: Recall Context"
-            },
-            {
-                "command": "loom.addTask",
-                "title": "Loom: Add Task"
-            },
-            {
-                "command": "loom.refreshTasks",
-                "title": "Loom: Refresh Tasks"
-            },
-            {
-                "command": "loom.refreshAgentContext",
-                "title": "Loom: Refresh Agent Context"
-            },
-            {
-                "command": "loom.showKnowledgeGraph",
-                "title": "Loom: Show Knowledge Graph"
-            },
-            {
-                "command": "loom.showMemoryDashboard",
-                "title": "Loom: Show Memory Dashboard"
-            },
-            {
-                "command": "loom.toggleAnnotations",
-                "title": "Loom: Toggle Code Annotations"
-            },
-            {
-                "command": "loom.showServerHealth",
-                "title": "Loom: Show Server Health Dashboard"
-            },
-            {
-                "command": "loom.pingServer",
-                "title": "Loom: Ping Server"
-            },
-            {
-                "command": "loom.switchProfile",
-                "title": "Loom: Switch Server Profile"
-            },
-            {
-                "command": "loom.showRoutingStatus",
-                "title": "Loom: Show Routing Status"
-            },
-            {
-                "command": "loom.refreshServerMetrics",
-                "title": "Loom: Refresh Server Metrics"
-            },
-            {
-                "command": "loom.showPlatformConfigs",
-                "title": "Loom: Show Platform Configs"
-            },
-            {
-                "command": "loom.syncPlatformConfig",
-                "title": "Loom: Sync Platform Config"
-            },
-            {
-                "command": "loom.syncAllPlatforms",
-                "title": "Loom: Sync All Platforms"
-            },
-            {
-                "command": "loom.diffPlatformConfig",
-                "title": "Loom: Diff Platform Config"
-            },
-            {
-                "command": "loom.openPlatformConfig",
-                "title": "Loom: Open Platform Config"
-            },
-            {
-                "command": "loom.regeneratePlatformConfig",
-                "title": "Loom: Regenerate Platform Config"
-            },
-            {
-                "command": "loom.filterSkillsByPlatform",
-                "title": "Loom: Filter Skills by Platform"
-            },
-            {
-                "command": "loom.showSyncDashboard",
-                "title": "Loom: Show Sync Dashboard"
-            },
-            {
-                "command": "loom.pullFromHome",
-                "title": "Loom: Pull Config from Home"
-            },
-            {
-                "command": "loom.backupConfigs",
-                "title": "Loom: Backup All Configs"
-            },
-            {
-                "command": "loom.refreshPlatforms",
-                "title": "Loom: Refresh Platforms"
-            }
-        ],
-        "views": {
-            "explorer": [
-                {
-                    "id": "loomHubOverview",
-                    "name": "Loom Hub"
-                },
-                {
-                    "id": "loomServers",
-                    "name": "Loom Servers"
-                },
-                {
-                    "id": "loomTools",
-                    "name": "Loom Tools"
-                },
-                {
-                    "id": "loomSecrets",
-                    "name": "Loom Secrets"
-                },
-                {
-                    "id": "loomSkills",
-                    "name": "Loom Skills"
-                },
-                {
-                    "id": "loomAgentContext",
-                    "name": "Loom Agent Context"
-                },
-                {
-                    "id": "loomTasks",
-                    "name": "Loom Tasks"
-                },
-                {
-                    "id": "loomPlatforms",
-                    "name": "Loom Platforms"
-                }
-            ]
+    "views": {
+      "explorer": [
+        {
+          "id": "loomHubOverview",
+          "name": "Loom Hub"
         },
-        "configuration": {
-            "title": "Loom",
-            "properties": {
-                "loom.hubUrl": {
-                    "type": "string",
-                    "default": "wss://mcp.flexinfer.ai/ws",
-                    "description": "WebSocket URL for the centralized MCP hub gateway."
-                },
-                "loom.hubProfile": {
-                    "type": "string",
-                    "default": "codex",
-                    "description": "Profile sent to the MCP hub (codex, kilocode, vscode, etc.)."
-                },
-                "loom.autoSyncOnDrift": {
-                    "type": "string",
-                    "enum": [
-                        "off",
-                        "prompt",
-                        "auto"
-                    ],
-                    "default": "prompt",
-                    "description": "Action when config drift is detected. 'off' = ignore, 'prompt' = ask user, 'auto' = sync automatically."
-                },
-                "loom.skillsRegistryPath": {
-                    "type": "string",
-                    "default": "",
-                    "description": "Path to skills-registry.yaml. If empty, searches standard locations."
-                },
-                "loom.agentId": {
-                    "type": "string",
-                    "default": "vscode-loom",
-                    "description": "Unique identifier for this VS Code instance as an agent."
-                },
-                "loom.autoStartSession": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "Automatically start an agent session when opening a workspace."
-                },
-                "loom.showAnnotationDecorations": {
-                    "type": "boolean",
-                    "default": true,
-                    "description": "Show gutter decorations for agent code annotations."
-                },
-                "loom.serverMetricsInterval": {
-                    "type": "number",
-                    "default": 30000,
-                    "minimum": 5000,
-                    "description": "Interval (ms) for collecting server health metrics."
-                },
-                "loom.activeProfile": {
-                    "type": "string",
-                    "default": "full",
-                    "description": "Active server profile name."
-                },
-                "loom.profiles": {
-                    "type": "object",
-                    "default": {},
-                    "description": "Server profiles for quick switching. Each profile has 'servers' (array or '*'), 'hubEnabled' (boolean), and optional 'platforms' (array)."
-                },
-                "loom.platform": {
-                    "type": "string",
-                    "enum": [
-                        "auto",
-                        "vscode",
-                        "antigravity"
-                    ],
-                    "default": "auto",
-                    "description": "Platform mode. 'auto' detects automatically between VS Code and Antigravity."
-                },
-                "loom.enabledPlatforms": {
-                    "type": "array",
-                    "items": {
-                        "type": "string",
-                        "enum": [
-                            "vscode",
-                            "antigravity",
-                            "gemini",
-                            "codex",
-                            "kilocode",
-                            "claude"
-                        ]
-                    },
-                    "default": [
-                        "vscode",
-                        "antigravity",
-                        "gemini",
-                        "claude"
-                    ],
-                    "description": "Platforms to manage for MCP configuration sync."
-                },
-                "loom.syncOnStartup": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "Automatically sync platform configs on extension startup."
-                },
-                "loom.syncStatusPollingInterval": {
-                    "type": "number",
-                    "default": 60000,
-                    "minimum": 0,
-                    "description": "Interval (ms) for polling platform sync status. Set to 0 to disable."
-                }
-            }
+        {
+          "id": "loomServers",
+          "name": "Loom Servers"
+        },
+        {
+          "id": "loomTools",
+          "name": "Loom Tools"
+        },
+        {
+          "id": "loomSecrets",
+          "name": "Loom Secrets"
+        },
+        {
+          "id": "loomSkills",
+          "name": "Loom Skills"
+        },
+        {
+          "id": "loomAgentContext",
+          "name": "Loom Agent Context"
+        },
+        {
+          "id": "loomTasks",
+          "name": "Loom Tasks"
+        },
+        {
+          "id": "loomPlatforms",
+          "name": "Loom Platforms"
         }
+      ]
     },
-    "scripts": {
-        "vscode:prepublish": "npm run compile",
-        "compile": "tsc -p ./",
-        "watch": "tsc -watch -p ./",
-        "package": "vsce package --baseContentUrl https://gitlab.flexinfer.ai/services/loom/-/blob/main --baseImagesUrl https://gitlab.flexinfer.ai/services/loom/-/raw/main",
-        "package:prerelease": "vsce package --pre-release --baseContentUrl https://gitlab.flexinfer.ai/services/loom/-/blob/main --baseImagesUrl https://gitlab.flexinfer.ai/services/loom/-/raw/main",
-        "publish": "vsce publish",
-        "publish:prerelease": "vsce publish --pre-release",
-        "lint": "eslint src --ext .ts",
-        "lint:fix": "eslint src --ext .ts --fix",
-        "format": "prettier --write \"src/**/*.ts\"",
-        "format:check": "prettier --check \"src/**/*.ts\"",
-        "test": "vitest run",
-        "test:watch": "vitest",
-        "test:coverage": "vitest run --coverage",
-        "check": "npm run lint && npm run format:check && tsc --noEmit",
-        "prepublishOnly": "npm run check && npm test"
-    },
-    "lint-staged": {
-        "*.{ts,tsx,js,json,md}": [
-            "prettier --write"
-        ],
-        "src/**/*.{ts,tsx}": [
-            "eslint --fix"
-        ]
-    },
-    "devDependencies": {
-        "@types/node": "^20.0.0",
-        "@types/vscode": "^1.80.0",
-        "@typescript-eslint/eslint-plugin": "^8.18.0",
-        "@typescript-eslint/parser": "^8.18.0",
-        "@vitest/coverage-v8": "^2.1.0",
-        "@vscode/vsce": "^3.1.0",
-        "eslint": "^8.57.0",
-        "eslint-config-prettier": "^9.1.0",
-        "eslint-import-resolver-typescript": "^4.4.4",
-        "eslint-plugin-import": "^2.31.0",
-        "husky": "^9.0.0",
-        "lint-staged": "^15.0.0",
-        "prettier": "^3.4.2",
-        "typescript": "^5.4.0",
-        "vitest": "^2.1.0"
-    },
-    "dependencies": {
-        "yaml": "^2.4.2"
+    "configuration": {
+      "title": "Loom",
+      "properties": {
+        "loom.hubUrl": {
+          "type": "string",
+          "default": "wss://mcp.flexinfer.ai/ws",
+          "description": "WebSocket URL for the centralized MCP hub gateway."
+        },
+        "loom.hubProfile": {
+          "type": "string",
+          "default": "codex",
+          "description": "Profile sent to the MCP hub (codex, kilocode, vscode, etc.)."
+        },
+        "loom.autoSyncOnDrift": {
+          "type": "string",
+          "enum": [
+            "off",
+            "prompt",
+            "auto"
+          ],
+          "default": "prompt",
+          "description": "Action when config drift is detected. 'off' = ignore, 'prompt' = ask user, 'auto' = sync automatically."
+        },
+        "loom.skillsRegistryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to skills-registry.yaml. If empty, searches standard locations."
+        },
+        "loom.agentId": {
+          "type": "string",
+          "default": "vscode-loom",
+          "description": "Unique identifier for this VS Code instance as an agent."
+        },
+        "loom.autoStartSession": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically start an agent session when opening a workspace."
+        },
+        "loom.showAnnotationDecorations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show gutter decorations for agent code annotations."
+        },
+        "loom.serverMetricsInterval": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 5000,
+          "description": "Interval (ms) for collecting server health metrics."
+        },
+        "loom.activeProfile": {
+          "type": "string",
+          "default": "full",
+          "description": "Active server profile name."
+        },
+        "loom.profiles": {
+          "type": "object",
+          "default": {},
+          "description": "Server profiles for quick switching. Each profile has 'servers' (array or '*'), 'hubEnabled' (boolean), and optional 'platforms' (array)."
+        },
+        "loom.platform": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "vscode",
+            "antigravity"
+          ],
+          "default": "auto",
+          "description": "Platform mode. 'auto' detects automatically between VS Code and Antigravity."
+        },
+        "loom.enabledPlatforms": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "vscode",
+              "antigravity",
+              "gemini",
+              "codex",
+              "kilocode",
+              "claude"
+            ]
+          },
+          "default": [
+            "vscode",
+            "antigravity",
+            "gemini",
+            "claude"
+          ],
+          "description": "Platforms to manage for MCP configuration sync."
+        },
+        "loom.syncOnStartup": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically sync platform configs on extension startup."
+        },
+        "loom.syncStatusPollingInterval": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 0,
+          "description": "Interval (ms) for polling platform sync status. Set to 0 to disable."
+        }
+      }
     }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --baseContentUrl https://gitlab.flexinfer.ai/services/loom/-/blob/main --baseImagesUrl https://gitlab.flexinfer.ai/services/loom/-/raw/main",
+    "package:prerelease": "vsce package --pre-release --baseContentUrl https://gitlab.flexinfer.ai/services/loom/-/blob/main --baseImagesUrl https://gitlab.flexinfer.ai/services/loom/-/raw/main",
+    "publish": "vsce publish",
+    "publish:prerelease": "vsce publish --pre-release",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check": "npm run lint && npm run format:check && tsc --noEmit",
+    "prepublishOnly": "npm run check && npm test",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,json,md}": [
+      "prettier --write"
+    ],
+    "src/**/*.{ts,tsx}": [
+      "eslint --fix"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.80.0",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "@vitest/coverage-v8": "^2.1.0",
+    "@vscode/vsce": "^3.1.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-import-resolver-typescript": "^4.4.4",
+    "eslint-plugin-import": "^2.31.0",
+    "husky": "^9.0.0",
+    "lint-staged": "^15.0.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.4.0",
+    "vitest": "^2.1.0"
+  },
+  "dependencies": {
+    "yaml": "^2.4.2"
+  }
 }
