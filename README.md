@@ -120,6 +120,31 @@ Safety checks in `scripts/publish-marketplace.sh`:
 - validates `CI_COMMIT_TAG` matches `package.json` version when running in CI
 - publishes an existing `loom-*.vsix` artifact (or builds one if absent)
 
+## Antigravity Store Release
+
+Maintainer workflow for roadmap item `#6`:
+
+1. Bump `package.json` version and push tag `vX.Y.Z`.
+2. Verify tag pipeline produces a VSIX in `package:vsix`.
+3. Trigger manual `release:antigravity`.
+4. Configure one publish mode in CI variables:
+   - Open VSX mode: `OVSX_PAT` (optionally `ANTIGRAVITY_REGISTRY_URL`)
+   - Direct upload mode: `ANTIGRAVITY_STORE_UPLOAD_URL` + `ANTIGRAVITY_STORE_TOKEN`
+
+Local publish fallback:
+
+```bash
+npm ci
+npm run package
+export OVSX_PAT=...
+sh scripts/publish-antigravity.sh
+```
+
+Safety checks in `scripts/publish-antigravity.sh`:
+- validates `CI_COMMIT_TAG` matches `package.json` version when running in CI
+- uses an existing `loom-*.vsix` artifact first, then builds if missing
+- fails fast when required publish credentials are absent
+
 ## Configuration
 
 ### Settings
