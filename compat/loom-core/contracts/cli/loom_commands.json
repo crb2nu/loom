@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "commands": [
+    { "path": ["daemon", "start"] },
+    { "path": ["daemon", "stop"] },
+    { "path": ["daemon", "restart"] },
+    { "path": ["daemon", "status"] },
+    {
+      "path": ["servers"],
+      "flags": ["--json"],
+      "outputs": {
+        "json": {
+          "required_fields": ["servers[].name", "servers[].running"]
+        }
+      }
+    },
+    { "path": ["servers"] },
+    { "path": ["tools", "list"] },
+    { "path": ["sync", "<platform>"], "flags": ["--regen"] }
+  ],
+  "schemas": {
+    "platform_config": {
+      "required_fields": ["mcpServers", "servers"]
+    }
+  }
+}

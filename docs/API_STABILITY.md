@@ -61,6 +61,15 @@ The extension depends on `loom-core` CLI and daemon contracts. For any compatibi
 2. Update extension adapters and tests in lockstep.
 3. Keep roadmap/backlog links current for API-impacting work.
 
+Compatibility harness:
+- `npm run compat:loom-core` validates the required command/field surface consumed by:
+  - `src/clients/daemon.ts`
+  - `src/clients/platformConfig.ts`
+- Contract inputs default to:
+  - `compat/loom-core/contracts/cli/loom_commands.json`
+  - `compat/loom-core/contracts/platform/platform_config_schema.json`
+- CI executes this check in `compat:loom-core` for merge requests and default-branch pipelines.
+
 ## Breaking Change Process
 
 When a breaking change is unavoidable:
