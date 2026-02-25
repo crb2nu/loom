@@ -18,6 +18,7 @@ export interface LoomConfig {
   onboardingComplete: boolean;
   skillsRegistryPath: string | null;
   serverMetricsInterval: number;
+  plugins: string[];
 }
 
 const DEFAULTS: LoomConfig = {
@@ -36,6 +37,7 @@ const DEFAULTS: LoomConfig = {
   onboardingComplete: false,
   skillsRegistryPath: null,
   serverMetricsInterval: 30000,
+  plugins: [],
 };
 
 export class ConfigManager implements vscode.Disposable {
@@ -94,6 +96,7 @@ export class ConfigManager implements vscode.Disposable {
       skillsRegistryPath: c.get<string | null>("skillsRegistryPath") ?? DEFAULTS.skillsRegistryPath,
       serverMetricsInterval:
         c.get<number>("serverMetricsInterval") ?? DEFAULTS.serverMetricsInterval,
+      plugins: c.get<string[]>("plugins") ?? DEFAULTS.plugins,
     };
   }
 

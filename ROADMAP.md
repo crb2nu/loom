@@ -95,7 +95,7 @@ Loom is a VS Code extension for MCP (Model Context Protocol) context management.
 ### Post-1.0 Features
 
 - [ ] **Antigravity store**: Publish to Antigravity extension store
-- [ ] **Plugin system**: Allow custom providers and views
+- [x] **Plugin system**: Allow custom providers and views
 - [ ] **Theme support**: Light/dark theme awareness
 - [ ] **Remote tunnels**: Secure tunneling to remote K8s MCP servers
 - [ ] **Usage analytics**: Track tool usage patterns

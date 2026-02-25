@@ -5,3 +5,4 @@ export * from "./annotationDecoration";
 export * from "./serverMetrics";
 export * from "./profileManager";
 export * from "./skillRecommendations";
+export * from "./pluginManager";

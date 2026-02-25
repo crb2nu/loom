@@ -327,6 +327,14 @@
           "default": "",
           "description": "Path to skills-registry.yaml. If empty, searches standard locations."
         },
+        "loom.plugins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Optional plugin module list. Entries can be package names or workspace-relative paths."
+        },
         "loom.agentId": {
           "type": "string",
           "default": "vscode-loom",

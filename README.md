@@ -13,6 +13,7 @@ Loom is a VS Code extension that manages MCP (Model Context Protocol) server con
 - **Skills registry**: Browse and manage agent skills
 - **Agent context**: Persistent memory across sessions
 - **Server health**: Monitor MCP server status
+- **Plugin support**: Load custom command/provider modules
 
 ## Features
 
@@ -191,12 +192,36 @@ Safety checks in `scripts/publish-antigravity.sh`:
   // Drift detection behavior (off | prompt | auto)
   "loom.autoSyncOnDrift": "prompt",
 
+  // Optional plugin modules (package names or relative paths)
+  "loom.plugins": ["./loom-plugin.cjs"],
+
   // Active server profile
   "loom.activeProfile": "full",
 
   // Custom server profiles
   "loom.profiles": {}
 }
+```
+
+### Plugin System
+
+Loom can load optional plugin modules at startup from `loom.plugins`.
+
+- Relative entries are resolved from the workspace root (for example `./loom-plugin.cjs`)
+- Package entries are resolved from Node module resolution (for example `@my-org/loom-plugin`)
+- Plugins can register commands, tree providers, tree views, and webview views/panels
+
+Example plugin module:
+
+```js
+module.exports = {
+  name: "example-plugin",
+  activate(api) {
+    api.registerCommand("loom.plugin.hello", () => {
+      api.outputChannel.appendLine("Hello from Loom plugin");
+    });
+  },
+};
 ```
 
 ### Server Profiles
