@@ -201,7 +201,7 @@ export function registerAgentContextCommands(ctx: AgentContextCommandContext): v
 
       const entries = await ctx.agentContextClient.addContextEntries(sessionId, [
         {
-          entry_type: entryType.value as AgentContextEntry["entry_type"],
+          entry_type: entryType.value,
           title,
           content,
           tags,
