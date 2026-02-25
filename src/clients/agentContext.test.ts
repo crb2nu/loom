@@ -27,6 +27,13 @@ function toolResponse(text: string, isError = false): { stdout: string; stderr: 
   };
 }
 
+function jsonResponse(payload: unknown): { stdout: string; stderr: string } {
+  return {
+    stdout: JSON.stringify(payload),
+    stderr: "",
+  };
+}
+
 describe("AgentContextClient", () => {
   let client: AgentContextClient;
   let mockChannel: vscode.OutputChannel;
@@ -93,6 +100,40 @@ describe("AgentContextClient", () => {
         expect.stringContaining("MCP tool error")
       );
     });
+
+    it("should fall back to unprefixed tool name when prefixed tool is unavailable", async () => {
+      mockExecFileAsync
+        .mockResolvedValueOnce(
+          toolResponse("tool agent_context__agent_session_start not found", true)
+        )
+        .mockResolvedValueOnce(
+          jsonResponse({
+            session_id: "legacy-sess-1",
+            namespace: "test/feature",
+            agent_id: "test-agent",
+            started_at: "2026-02-24T18:00:00Z",
+            status: "active",
+            entry_count: 0,
+          })
+        );
+
+      const result = await client.startSession("test/feature", "Working on X");
+
+      expect(result?.session_id).toBe("legacy-sess-1");
+      expect(mockExecFileAsync).toHaveBeenCalledTimes(2);
+      expect(mockExecFileAsync).toHaveBeenNthCalledWith(
+        1,
+        "/usr/local/bin/loom",
+        expect.arrayContaining(["agent_context__agent_session_start"]),
+        expect.any(Object)
+      );
+      expect(mockExecFileAsync).toHaveBeenNthCalledWith(
+        2,
+        "/usr/local/bin/loom",
+        expect.arrayContaining(["agent_session_start"]),
+        expect.any(Object)
+      );
+    });
   });
 
   describe("endSession", () => {
@@ -110,6 +151,14 @@ describe("AgentContextClient", () => {
       const result = await client.endSession("sess-1");
 
       expect(result).toBe(false);
+    });
+
+    it("should treat legacy success=true response as success", async () => {
+      mockExecFileAsync.mockResolvedValueOnce(jsonResponse({ success: true }));
+
+      const result = await client.endSession("sess-1");
+
+      expect(result).toBe(true);
     });
   });
 
@@ -145,6 +194,38 @@ describe("AgentContextClient", () => {
       const result = await client.listSessions();
 
       expect(result).toEqual([]);
+    });
+
+    it("should retry without --json when daemon does not support it", async () => {
+      mockExecFileAsync
+        .mockRejectedValueOnce(new Error("unknown flag: --json"))
+        .mockResolvedValueOnce(
+          toolResponse(
+            [
+              "count: 1",
+              "ok: true",
+              "tasks[1]{id,session_id,agent_id,namespace,title,priority,status,created_at,updated_at,token_count}:",
+              '  t1,sess-1,test-agent,test/ns,Fix bug,high,pending,"2026-02-24T18:00:00Z","2026-02-24T18:01:00Z",5',
+            ].join("\n")
+          )
+        );
+
+      const result = await client.listTasks("sess-1");
+
+      expect(result).toHaveLength(1);
+      expect(mockExecFileAsync).toHaveBeenCalledTimes(2);
+      expect(mockExecFileAsync).toHaveBeenNthCalledWith(
+        1,
+        "/usr/local/bin/loom",
+        expect.arrayContaining(["--json"]),
+        expect.any(Object)
+      );
+      expect(mockExecFileAsync).toHaveBeenNthCalledWith(
+        2,
+        "/usr/local/bin/loom",
+        expect.not.arrayContaining(["--json"]),
+        expect.any(Object)
+      );
     });
   });
 
@@ -213,7 +294,7 @@ describe("AgentContextClient", () => {
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(mockChannel.appendLine).toHaveBeenCalledWith(
-        expect.stringContaining("MCP tool error (agent_session_start)")
+        expect.stringContaining("MCP tool error (agent_context__agent_session_start)")
       );
     });
   });
