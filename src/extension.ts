@@ -23,6 +23,7 @@ import {
   ServerMetricsManager,
   ProfileManager,
   SkillRecommendationManager,
+  PluginManager,
 } from "./managers";
 import { DeepSearchManager, SearchResult } from "./managers/deepSearch";
 import {
@@ -688,6 +689,39 @@ function registerServerHealth(
   context.subscriptions.push(...serverHealthCommandDisposables);
 }
 
+// ============================================================================
+// Plugin System Integration
+// ============================================================================
+function registerPlugins(
+  env: Pick<ActivationEnvironment, "workspaceRoot" | "loomChannel" | "configManager">,
+  context: vscode.ExtensionContext
+): void {
+  const pluginLogger = new Logger(env.loomChannel, "Plugins");
+  const pluginManager = new PluginManager({
+    workspaceRoot: env.workspaceRoot,
+    extensionContext: context,
+    outputChannel: env.loomChannel,
+    logger: pluginLogger,
+  });
+  context.subscriptions.push(pluginManager);
+
+  const reloadConfiguredPlugins = () => {
+    const pluginSpecs = env.configManager.get("plugins");
+    void pluginManager.reloadConfiguredPlugins(pluginSpecs);
+  };
+
+  reloadConfiguredPlugins();
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration("loom.plugins")) {
+        pluginLogger.info("Reloading plugins after configuration change");
+        reloadConfiguredPlugins();
+      }
+    })
+  );
+}
+
 function maybeAutoStartSession(
   env: Pick<ActivationEnvironment, "workspaceFolder" | "configManager" | "agentSessionManager">
 ): void {
@@ -747,6 +781,15 @@ export async function activate(context: vscode.ExtensionContext) {
       daemonClient,
       hubStatusManager,
       loomChannel: base.loomChannel,
+    },
+    context
+  );
+
+  registerPlugins(
+    {
+      workspaceRoot: base.workspaceRoot,
+      loomChannel: base.loomChannel,
+      configManager: base.configManager,
     },
     context
   );

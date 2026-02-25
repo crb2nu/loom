@@ -217,7 +217,8 @@ loom sync codex --regen             # Regenerate & sync Codex
   "loom.showAnnotationDecorations": true,
   "loom.onboardingComplete": false,
   "loom.skillsRegistryPath": null,
-  "loom.serverMetricsInterval": 30000
+  "loom.serverMetricsInterval": 30000,
+  "loom.plugins": []
 }
 ```
 
