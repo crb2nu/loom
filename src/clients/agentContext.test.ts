@@ -17,6 +17,16 @@ vi.mock("../utils/binary", () => ({
 
 import { AgentContextClient } from "./agentContext";
 
+function toolResponse(text: string, isError = false): { stdout: string; stderr: string } {
+  return {
+    stdout: JSON.stringify({
+      content: [{ type: "text", text }],
+      ...(isError ? { isError: true } : {}),
+    }),
+    stderr: "",
+  };
+}
+
 describe("AgentContextClient", () => {
   let client: AgentContextClient;
   let mockChannel: vscode.OutputChannel;
@@ -40,31 +50,31 @@ describe("AgentContextClient", () => {
   });
 
   describe("startSession", () => {
-    it("should call MCP tool with correct args", async () => {
-      const session = {
-        session_id: "sess-1",
-        namespace: "test/feature",
-        agent_id: "test-agent",
-        status: "active",
-        started_at: new Date().toISOString(),
-        entry_count: 0,
-      };
-
-      mockExecFileAsync.mockResolvedValueOnce({
-        stdout: JSON.stringify(session),
-        stderr: "",
-      });
+    it("should call MCP tool with new prefixed tool name and parse response", async () => {
+      mockExecFileAsync.mockResolvedValueOnce(
+        toolResponse(
+          [
+            "active_agents: 1",
+            "agent_id: test-agent",
+            "namespace: test/feature",
+            "ok: true",
+            "session_id: sess-1",
+            'started_at: "2026-02-24T18:00:00Z"',
+          ].join("\n")
+        )
+      );
 
       const result = await client.startSession("test/feature", "Working on X");
 
       expect(result).not.toBeNull();
-      expect(result!.session_id).toBe("sess-1");
+      expect(result?.session_id).toBe("sess-1");
       expect(mockExecFileAsync).toHaveBeenCalledWith(
         "/usr/local/bin/loom",
         [
           "tools",
           "call",
-          "agent_session_start",
+          "agent_context__agent_session_start",
+          "--json",
           "--args",
           expect.stringContaining('"namespace":"test/feature"'),
         ],
@@ -72,8 +82,8 @@ describe("AgentContextClient", () => {
       );
     });
 
-    it("should return null on error", async () => {
-      mockExecFileAsync.mockRejectedValueOnce(new Error("command failed"));
+    it("should return null on tool-level error response", async () => {
+      mockExecFileAsync.mockResolvedValueOnce(toolResponse("session_id: is required", true));
 
       const result = await client.startSession("test/ns");
 
@@ -86,18 +96,15 @@ describe("AgentContextClient", () => {
   });
 
   describe("endSession", () => {
-    it("should end session and return success", async () => {
-      mockExecFileAsync.mockResolvedValueOnce({
-        stdout: JSON.stringify({ success: true }),
-        stderr: "",
-      });
+    it("should end session and return true when ok=true", async () => {
+      mockExecFileAsync.mockResolvedValueOnce(toolResponse("ok: true"));
 
       const result = await client.endSession("sess-1", true);
 
       expect(result).toBe(true);
     });
 
-    it("should return false on error", async () => {
+    it("should return false on execution error", async () => {
       mockExecFileAsync.mockRejectedValueOnce(new Error("failed"));
 
       const result = await client.endSession("sess-1");
@@ -107,18 +114,29 @@ describe("AgentContextClient", () => {
   });
 
   describe("listSessions", () => {
-    it("should list sessions", async () => {
-      mockExecFileAsync.mockResolvedValueOnce({
-        stdout: JSON.stringify({
-          sessions: [{ session_id: "s1", namespace: "test", status: "active", entry_count: 3 }],
-        }),
-        stderr: "",
-      });
+    it("should parse session rows from indexed payload", async () => {
+      mockExecFileAsync.mockResolvedValueOnce(
+        toolResponse(
+          [
+            "count: 1",
+            "ok: true",
+            "sessions[1]:",
+            "  -",
+            "    id: s1",
+            "    namespace: test",
+            "    agent_id: test-agent",
+            '    started_at: "2026-02-24T18:00:00Z"',
+            "    status: active",
+            "    entry_count: 3",
+          ].join("\n")
+        )
+      );
 
       const result = await client.listSessions();
 
       expect(result).toHaveLength(1);
       expect(result[0].session_id).toBe("s1");
+      expect(result[0].entry_count).toBe(3);
     });
 
     it("should return empty array on error", async () => {
@@ -131,52 +149,40 @@ describe("AgentContextClient", () => {
   });
 
   describe("addContextEntries", () => {
-    it("should add context entries", async () => {
-      const entries = [
-        {
-          entry_id: "entry-1",
-          session_id: "sess-1",
-          entry_type: "decision",
-          title: "Chose approach A",
-          content: "Because...",
-          created_at: new Date().toISOString(),
-        },
-      ];
-
-      mockExecFileAsync.mockResolvedValueOnce({
-        stdout: JSON.stringify({ entries }),
-        stderr: "",
-      });
+    it("should return created entries with ids from response", async () => {
+      mockExecFileAsync.mockResolvedValueOnce(
+        toolResponse("count: 1\nentry_ids[1]: entry-1\nok: true")
+      );
 
       const result = await client.addContextEntries("sess-1", [
         { entry_type: "decision", title: "Chose approach A", content: "Because..." },
       ]);
 
       expect(result).toHaveLength(1);
+      expect(result[0].entry_id).toBe("entry-1");
+      expect(result[0].session_id).toBe("sess-1");
     });
   });
 
   describe("listTasks", () => {
-    it("should list tasks for session", async () => {
-      mockExecFileAsync.mockResolvedValueOnce({
-        stdout: JSON.stringify({
-          tasks: [
-            {
-              task_id: "t1",
-              session_id: "sess-1",
-              title: "Fix bug",
-              priority: "high",
-              status: "pending",
-            },
-          ],
-        }),
-        stderr: "",
-      });
+    it("should parse task table rows", async () => {
+      mockExecFileAsync.mockResolvedValueOnce(
+        toolResponse(
+          [
+            "count: 1",
+            "ok: true",
+            "tasks[1]{id,session_id,agent_id,namespace,title,priority,status,created_at,updated_at,token_count}:",
+            '  t1,sess-1,test-agent,test/ns,Fix bug,high,pending,"2026-02-24T18:00:00Z","2026-02-24T18:01:00Z",5',
+          ].join("\n")
+        )
+      );
 
       const result = await client.listTasks("sess-1");
 
       expect(result).toHaveLength(1);
+      expect(result[0].task_id).toBe("t1");
       expect(result[0].title).toBe("Fix bug");
+      expect(result[0].priority).toBe("high");
     });
 
     it("should return empty array on error", async () => {
@@ -189,21 +195,18 @@ describe("AgentContextClient", () => {
   });
 
   describe("error logging", () => {
-    it("should log tool invocations", async () => {
-      mockExecFileAsync.mockResolvedValueOnce({
-        stdout: JSON.stringify({ sessions: [] }),
-        stderr: "",
-      });
+    it("should log prefixed tool invocations", async () => {
+      mockExecFileAsync.mockResolvedValueOnce(toolResponse("count: 0\nok: true\nsessions[0]:"));
 
       await client.listSessions();
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(mockChannel.appendLine).toHaveBeenCalledWith(
-        expect.stringContaining("MCP tool: agent_session_list")
+        expect.stringContaining("MCP tool: agent_context__agent_session_list")
       );
     });
 
-    it("should log tool errors with name", async () => {
+    it("should log tool execution errors with original tool name", async () => {
       mockExecFileAsync.mockRejectedValueOnce(new Error("oops"));
 
       await client.startSession("ns");

@@ -169,14 +169,14 @@ export interface AgentSession {
   agent_id: string;
   started_at: string;
   ended_at?: string;
-  status: "active" | "ended";
+  status: "active" | "ended" | "summarized";
   entry_count: number;
 }
 
 export interface AgentContextEntry {
   entry_id: string;
   session_id: string;
-  entry_type: "decision" | "finding" | "file_read" | "question" | "note" | "error";
+  entry_type: string;
   title: string;
   content: string;
   tags?: string[];
