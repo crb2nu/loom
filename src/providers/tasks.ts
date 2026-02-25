@@ -40,6 +40,8 @@ export class TasksProvider implements vscode.TreeDataProvider<TaskTreeItem> {
   readonly onDidChangeTreeData = this.emitter.event;
   private tasks: AgentTask[] = [];
   private groupMode: TaskGroupMode = "priority";
+  private hasLoaded = false;
+  private refreshPromise: Promise<void> | null = null;
 
   constructor(client: AgentContextClient, sessionManager: AgentSessionManager) {
     this.client = client;
@@ -52,9 +54,22 @@ export class TasksProvider implements vscode.TreeDataProvider<TaskTreeItem> {
   }
 
   async refresh(): Promise<void> {
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
     const sessionId = this.sessionManager.getSessionId();
-    this.tasks = await this.client.listTasks(sessionId);
-    this.emitter.fire();
+    this.refreshPromise = (async () => {
+      this.tasks = await this.client.listTasks(sessionId);
+      this.hasLoaded = true;
+      this.emitter.fire();
+    })();
+
+    try {
+      await this.refreshPromise;
+    } finally {
+      this.refreshPromise = null;
+    }
   }
 
   setGroupMode(mode: TaskGroupMode): void {
@@ -68,7 +83,7 @@ export class TasksProvider implements vscode.TreeDataProvider<TaskTreeItem> {
 
   async getChildren(element?: TaskTreeItem): Promise<TaskTreeItem[]> {
     if (!element) {
-      if (this.tasks.length === 0) {
+      if (!this.hasLoaded) {
         await this.refresh();
       }
       return this.getRootItems();

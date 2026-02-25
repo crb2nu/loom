@@ -1,4 +1,5 @@
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 
 import * as vscode from "vscode";
@@ -34,7 +35,7 @@ export class SkillsClient {
    * @param configuredPath - Optional value from "loom.skillsRegistryPath" setting.
    *   When provided, skips reading vscode config directly.
    */
-  initialize(workspaceRoot: string, customPath?: string, configuredPath?: string | null): void {
+  initialize(workspaceRoot?: string, customPath?: string, configuredPath?: string | null): void {
     this.registryPath = customPath ?? this.findRegistryPath(workspaceRoot, configuredPath);
 
     if (this.registryPath) {
@@ -42,7 +43,7 @@ export class SkillsClient {
       this.loadRegistry();
       this.startWatcher();
     } else {
-      this.logger.info("Skills registry not found in workspace");
+      this.logger.info("Skills registry not found in workspace or home config");
     }
   }
 
@@ -54,27 +55,57 @@ export class SkillsClient {
    *   When provided, skips reading vscode config directly.
    */
   private findRegistryPath(
-    workspaceRoot: string,
+    workspaceRoot?: string,
     configuredPath?: string | null
   ): string | undefined {
+    const workspaceCandidates = workspaceRoot
+      ? [
+          path.join(workspaceRoot, "platform/gitops/mcp/context/skills-registry.yaml"),
+          path.join(workspaceRoot, "mcp/context/skills-registry.yaml"),
+          path.join(workspaceRoot, ".loom/skills-registry.yaml"),
+          path.join(workspaceRoot, "skills-registry.yaml"),
+        ]
+      : [];
+
+    const homeDir = os.homedir();
+    const homeCandidates = [
+      path.join(homeDir, ".config", "loom", "skills-registry.yaml"),
+      path.join(homeDir, ".config", "loom", "skills-registry.yml"),
+      path.join(homeDir, ".config", "loom", "mcp", "context", "skills-registry.yaml"),
+      path.join(homeDir, ".loom", "skills-registry.yaml"),
+    ];
+
     const candidates = [
       // Configured path from settings
       configuredPath ?? vscode.workspace.getConfiguration("loom").get<string>("skillsRegistryPath"),
-      // Workspace relative paths
-      path.join(workspaceRoot, "platform/gitops/mcp/context/skills-registry.yaml"),
-      path.join(workspaceRoot, "mcp/context/skills-registry.yaml"),
-      path.join(workspaceRoot, ".loom/skills-registry.yaml"),
-      path.join(workspaceRoot, "skills-registry.yaml"),
+      ...workspaceCandidates,
+      ...homeCandidates,
     ].filter(Boolean) as string[];
 
     for (const candidate of candidates) {
-      const fullPath = path.isAbsolute(candidate) ? candidate : path.join(workspaceRoot, candidate);
+      const fullPath = this.resolveCandidatePath(candidate, workspaceRoot, homeDir);
       if (fs.existsSync(fullPath)) {
         return fullPath;
       }
     }
 
     return undefined;
+  }
+
+  private resolveCandidatePath(
+    candidate: string,
+    workspaceRoot?: string,
+    homeDir?: string
+  ): string {
+    if (path.isAbsolute(candidate)) {
+      return candidate;
+    }
+
+    if (workspaceRoot) {
+      return path.join(workspaceRoot, candidate);
+    }
+
+    return path.join(homeDir ?? os.homedir(), candidate);
   }
 
   /**
