@@ -474,7 +474,7 @@ export class OnboardingPanel {
     }
     .badge.recommended {
       background: var(--vscode-charts-green);
-      color: var(--vscode-badge-foreground);
+      color: white;
     }
     .platform-card.detected {
       border-color: var(--vscode-charts-green);
@@ -594,22 +594,6 @@ export class OnboardingPanel {
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
 
-    function next() {
-      vscode.postMessage({ command: 'next' });
-    }
-
-    function back() {
-      vscode.postMessage({ command: 'back' });
-    }
-
-    function skip() {
-      vscode.postMessage({ command: 'skip' });
-    }
-
-    function finish() {
-      vscode.postMessage({ command: 'finish' });
-    }
-
     function updateHubSettings() {
       const hubUrl = document.getElementById('hubUrl')?.value ?? '';
       const hubEnabled = document.getElementById('hubEnabled')?.checked ?? false;
@@ -621,7 +605,8 @@ export class OnboardingPanel {
       card?.classList.toggle('selected');
 
       const selected = Array.from(document.querySelectorAll('.platform-card.selected'))
-        .map(el => el.getAttribute('data-platform'));
+        .map(el => el.getAttribute('data-platform'))
+        .filter(platform => typeof platform === 'string');
       vscode.postMessage({ command: 'updatePlatforms', platforms: selected });
     }
 
@@ -634,6 +619,56 @@ export class OnboardingPanel {
 
     function rerunVerification() {
       vscode.postMessage({ command: 'runVerification' });
+    }
+
+    document.addEventListener('click', (event) => {
+      const target = event.target?.closest?.('[data-action]');
+      if (!target) {
+        return;
+      }
+
+      const action = target.getAttribute('data-action');
+      switch (action) {
+        case 'next':
+          vscode.postMessage({ command: 'next' });
+          break;
+        case 'back':
+          vscode.postMessage({ command: 'back' });
+          break;
+        case 'skip':
+          vscode.postMessage({ command: 'skip' });
+          break;
+        case 'finish':
+          vscode.postMessage({ command: 'finish' });
+          break;
+        case 'toggle-platform': {
+          const platform = target.getAttribute('data-platform');
+          if (platform) {
+            togglePlatform(platform);
+          }
+          break;
+        }
+        case 'select-profile': {
+          const profile = target.getAttribute('data-profile');
+          if (profile) {
+            selectProfile(profile);
+          }
+          break;
+        }
+        case 'rerun-verification':
+          rerunVerification();
+          break;
+      }
+    });
+
+    const hubUrlInput = document.getElementById('hubUrl');
+    if (hubUrlInput) {
+      hubUrlInput.addEventListener('change', updateHubSettings);
+    }
+
+    const hubEnabledInput = document.getElementById('hubEnabled');
+    if (hubEnabledInput) {
+      hubEnabledInput.addEventListener('change', updateHubSettings);
     }
   </script>
 </body>
@@ -666,12 +701,12 @@ export class OnboardingPanel {
 
           <div class="form-group">
             <label for="hubUrl">Hub URL</label>
-            <input type="url" id="hubUrl" placeholder="https://mcp-hub.example.com" value="${this.state.hubUrl}" onchange="updateHubSettings()">
+            <input type="url" id="hubUrl" placeholder="https://mcp-hub.example.com" value="${this.state.hubUrl}">
           </div>
 
           <div class="form-group">
             <label class="checkbox-label">
-              <input type="checkbox" id="hubEnabled" ${this.state.hubEnabled ? "checked" : ""} onchange="updateHubSettings()">
+              <input type="checkbox" id="hubEnabled" ${this.state.hubEnabled ? "checked" : ""}>
               Enable hub connection
             </label>
           </div>
@@ -692,7 +727,7 @@ export class OnboardingPanel {
                 (dp) => `
               <div class="platform-card ${this.state.selectedPlatforms.includes(dp.type) ? "selected" : ""} ${dp.detected ? "detected" : ""}"
                    data-platform="${dp.type}"
-                   onclick="togglePlatform('${dp.type}')">
+                   data-action="toggle-platform">
                 <div class="platform-name">
                   ${PLATFORMS[dp.type].displayName}
                   ${dp.detected ? '<span class="badge">Detected</span>' : ""}
@@ -715,7 +750,7 @@ export class OnboardingPanel {
           <p>Select which MCP servers to enable:</p>
 
           <div class="profile-grid">
-            <label class="profile-card ${this.state.profile === "full" ? "selected" : ""}" onclick="selectProfile('full')">
+            <label class="profile-card ${this.state.profile === "full" ? "selected" : ""}" data-action="select-profile" data-profile="full">
               <input type="radio" name="profile" value="full" ${this.state.profile === "full" ? "checked" : ""}>
               <div class="profile-header">
                 <span class="profile-name">Full</span>
@@ -730,7 +765,7 @@ export class OnboardingPanel {
               </ul>
             </label>
 
-            <label class="profile-card ${this.state.profile === "minimal" ? "selected" : ""}" onclick="selectProfile('minimal')">
+            <label class="profile-card ${this.state.profile === "minimal" ? "selected" : ""}" data-action="select-profile" data-profile="minimal">
               <input type="radio" name="profile" value="minimal" ${this.state.profile === "minimal" ? "checked" : ""}>
               <div class="profile-header">
                 <span class="profile-name">Minimal</span>
@@ -743,7 +778,7 @@ export class OnboardingPanel {
               </ul>
             </label>
 
-            <label class="profile-card ${this.state.profile === "custom" ? "selected" : ""}" onclick="selectProfile('custom')">
+            <label class="profile-card ${this.state.profile === "custom" ? "selected" : ""}" data-action="select-profile" data-profile="custom">
               <input type="radio" name="profile" value="custom" ${this.state.profile === "custom" ? "checked" : ""}>
               <div class="profile-header">
                 <span class="profile-name">Custom</span>
@@ -787,7 +822,7 @@ export class OnboardingPanel {
             <div class="tip warning">
               <strong>Note:</strong> Some checks failed. Setup can still complete - fix issues later from the Loom sidebar.
             </div>
-            <button class="btn-secondary" onclick="rerunVerification()">Re-run Checks</button>
+            <button class="btn-secondary" data-action="rerun-verification">Re-run Checks</button>
           `
               : ""
           }
@@ -811,10 +846,18 @@ export class OnboardingPanel {
 
     return `
       <div>
-        ${isFirst ? '<button class="btn-link" onclick="skip()">Skip Setup</button>' : '<button class="btn-secondary" onclick="back()">Back</button>'}
+        ${
+          isFirst
+            ? '<button class="btn-link" data-action="skip">Skip Setup</button>'
+            : '<button class="btn-secondary" data-action="back">Back</button>'
+        }
       </div>
       <div>
-        ${isLast ? '<button class="btn-primary" onclick="finish()">Finish Setup</button>' : '<button class="btn-primary" onclick="next()">Next</button>'}
+        ${
+          isLast
+            ? '<button class="btn-primary" data-action="finish">Finish Setup</button>'
+            : '<button class="btn-primary" data-action="next">Next</button>'
+        }
       </div>
     `;
   }

@@ -34,6 +34,12 @@ interface ToolEnvelope {
   isError?: boolean;
 }
 
+interface ToolExecutionResult {
+  data: LooseRecord | null;
+  errorText?: string;
+  toolNotFound?: boolean;
+}
+
 type LooseRecord = Record<string, unknown>;
 
 /**
@@ -62,54 +68,140 @@ export class AgentContextClient {
     toolName: string,
     args: Record<string, unknown>
   ): Promise<LooseRecord | null> {
+    const normalizedArgs = Object.fromEntries(
+      Object.entries(args).filter(([, value]) => value !== undefined)
+    );
+    const argsJson = JSON.stringify(normalizedArgs);
+    const candidates = this.getToolNameCandidates(toolName);
+
+    for (let i = 0; i < candidates.length; i += 1) {
+      const candidate = candidates[i];
+      this.logger.info(`MCP tool: ${candidate} ${argsJson}`);
+      const result = await this.runToolCall(candidate, argsJson);
+      if (result.data) {
+        return result.data;
+      }
+      if (result.toolNotFound && i < candidates.length - 1) {
+        this.logger.info(`MCP tool not found (${candidate}), trying compatibility fallback`);
+        continue;
+      }
+      if (result.errorText) {
+        this.logger.error(`MCP tool error (${candidate}): ${result.errorText}`);
+        return null;
+      }
+    }
+    return null;
+  }
+
+  private getToolNameCandidates(toolName: string): string[] {
+    if (toolName.startsWith(AGENT_CONTEXT_PREFIX)) {
+      const unprefixed = toolName.slice(AGENT_CONTEXT_PREFIX.length);
+      return unprefixed ? [toolName, unprefixed] : [toolName];
+    }
+    return [`${AGENT_CONTEXT_PREFIX}${toolName}`, toolName];
+  }
+
+  private async runToolCall(toolName: string, argsJson: string): Promise<ToolExecutionResult> {
+    const loomBinary = resolveLoomBinary(this.workspaceRoot);
+    const cwd = this.workspaceRoot || os.homedir();
+
     try {
-      const loomBinary = resolveLoomBinary(this.workspaceRoot);
-      const fullToolName = this.normalizeToolName(toolName);
-      const normalizedArgs = Object.fromEntries(
-        Object.entries(args).filter(([, value]) => value !== undefined)
-      );
-      const argsJson = JSON.stringify(normalizedArgs);
-
-      this.logger.info(`MCP tool: ${fullToolName} ${argsJson}`);
-
       const { stdout } = await execFileAsync(
         loomBinary,
-        ["tools", "call", fullToolName, "--json", "--args", argsJson],
+        ["tools", "call", toolName, "--json", "--args", argsJson],
         {
-          cwd: this.workspaceRoot || os.homedir(),
+          cwd,
           timeout: 30000,
         }
       );
-
-      const envelope = JSON.parse(stdout) as ToolEnvelope;
-      const text = this.extractText(envelope.content ?? []);
-      if (envelope.isError) {
-        this.logger.error(`MCP tool error (${fullToolName}): ${text || "unknown error"}`);
-        return null;
-      }
-
-      if (!text.trim()) {
-        return {};
-      }
-
-      try {
-        const parsed = parseYaml(text) as unknown;
-        const normalized = this.normalizeSpecialKeys(parsed);
-        return this.asRecord(normalized) ?? { raw: text };
-      } catch {
-        return { raw: text };
-      }
+      return this.parseToolOutput(stdout);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`MCP tool error (${toolName}): ${message}`);
+      if (this.isJsonFlagUnsupported(message)) {
+        try {
+          const { stdout } = await execFileAsync(
+            loomBinary,
+            ["tools", "call", toolName, "--args", argsJson],
+            {
+              cwd,
+              timeout: 30000,
+            }
+          );
+          return this.parseToolOutput(stdout);
+        } catch (fallbackError) {
+          const fallbackMessage =
+            fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+          return {
+            data: null,
+            errorText: fallbackMessage,
+            toolNotFound: this.isToolNotFoundMessage(fallbackMessage),
+          };
+        }
+      }
+
+      return {
+        data: null,
+        errorText: message,
+        toolNotFound: this.isToolNotFoundMessage(message),
+      };
+    }
+  }
+
+  private parseToolOutput(stdout: string): ToolExecutionResult {
+    const trimmed = stdout.trim();
+    if (!trimmed) {
+      return { data: {} };
+    }
+
+    try {
+      const parsedJson = JSON.parse(trimmed) as unknown;
+      const parsedRecord = this.asRecord(parsedJson);
+      const envelope = parsedRecord as ToolEnvelope | null;
+      if (envelope && Array.isArray(envelope.content)) {
+        const text = this.extractText(envelope.content);
+        if (envelope.isError) {
+          return {
+            data: null,
+            errorText: text || "unknown error",
+            toolNotFound: this.isToolNotFoundMessage(text),
+          };
+        }
+        if (!text.trim()) {
+          return { data: {} };
+        }
+        const parsedText = this.parseTextPayload(text);
+        return { data: parsedText ?? { raw: text } };
+      }
+
+      const normalizedJson = this.normalizeSpecialKeys(parsedJson);
+      const asRecord = this.asRecord(normalizedJson);
+      if (asRecord) {
+        return { data: asRecord };
+      }
+    } catch {
+      // Fall through to plain text/YAML parsing.
+    }
+
+    const parsedText = this.parseTextPayload(trimmed);
+    return { data: parsedText ?? { raw: trimmed } };
+  }
+
+  private parseTextPayload(text: string): LooseRecord | null {
+    try {
+      const parsedYaml = parseYaml(text) as unknown;
+      const normalized = this.normalizeSpecialKeys(parsedYaml);
+      return this.asRecord(normalized);
+    } catch {
       return null;
     }
   }
 
-  private normalizeToolName(toolName: string): string {
-    return toolName.startsWith(AGENT_CONTEXT_PREFIX)
-      ? toolName
-      : `${AGENT_CONTEXT_PREFIX}${toolName}`;
+  private isJsonFlagUnsupported(message: string): boolean {
+    return /unknown flag: --json|flag provided but not defined/i.test(message);
+  }
+
+  private isToolNotFoundMessage(message: string): boolean {
+    return /not found|unknown tool|no such tool|does not exist|unrecognized tool/i.test(message);
   }
 
   private extractText(content: ToolContent[]): string {
@@ -411,6 +503,13 @@ export class AgentContextClient {
     return "note";
   }
 
+  private normalizeMemoryTier(tier: string | undefined): MemoryTier["tier"] {
+    if (tier === "working" || tier === "short_term" || tier === "long_term") {
+      return tier;
+    }
+    return "working";
+  }
+
   private normalizeEntity(entity: LooseRecord): KnowledgeGraphEntity {
     const entityType = this.asString(entity.entity_type) ?? this.asString(entity.type) ?? "entity";
     const properties = { ...entity };
@@ -476,7 +575,7 @@ export class AgentContextClient {
       session_id: sessionId,
       summarize,
     });
-    return Boolean(result?.ok);
+    return Boolean(result?.ok ?? result?.success);
   }
 
   /**
@@ -551,11 +650,18 @@ export class AgentContextClient {
     }
   ): Promise<AgentContextEntry[]> {
     const searchQuery = query.trim() || "*";
-    const result = await this.executeTool("agent_context_search", {
+    let result = await this.executeTool("agent_context_search", {
       query: searchQuery,
       agent_id: this.agentId,
       ...options,
     });
+    if (!result && query.trim().length === 0) {
+      result = await this.executeTool("agent_context_search", {
+        query: "",
+        agent_id: this.agentId,
+        ...options,
+      });
+    }
     if (!result) return [];
 
     const results = this.asRecordArray(result.results);
@@ -675,13 +781,20 @@ export class AgentContextClient {
     status?: AgentTask["status"],
     priority?: AgentTask["priority"]
   ): Promise<AgentTask[]> {
-    const result = await this.executeTool("agent_task_list", {
+    let result = await this.executeTool("agent_task_list", {
       session_id: sessionId,
       status: status ? [status] : undefined,
       agent_id: this.agentId,
       include_completed: true,
       limit: 200,
     });
+    if (!result) {
+      result = await this.executeTool("agent_task_list", {
+        session_id: sessionId,
+        status,
+        priority,
+      });
+    }
     if (!result) return [];
 
     const tasks = this.asRecordArray(result.tasks).map((task) => this.normalizeTask(task));
@@ -706,6 +819,11 @@ export class AgentContextClient {
       session_id: sessionId,
       ...annotation,
     });
+    const annotationRecord = this.asRecord(result?.annotation);
+    if (annotationRecord) {
+      return this.normalizeAnnotation(annotationRecord);
+    }
+
     const annotationId = this.asString(result?.annotation_id);
     if (!annotationId) return null;
 
@@ -748,7 +866,7 @@ export class AgentContextClient {
   async createEntities(
     entities: Array<Omit<KnowledgeGraphEntity, "entity_id">>
   ): Promise<KnowledgeGraphEntity[]> {
-    const result = await this.executeTool("agent_entity_add", {
+    let result = await this.executeTool("agent_entity_add", {
       entities: entities.map((entity) => ({
         name: entity.name,
         type: entity.entity_type,
@@ -756,9 +874,26 @@ export class AgentContextClient {
       })),
       agent_id: this.agentId,
     });
+    if (!result) {
+      result = await this.executeTool("agent_entity_create", {
+        entities: entities.map((entity) => ({
+          name: entity.name,
+          entity_type: entity.entity_type,
+          properties: entity.properties,
+        })),
+      });
+    }
     if (!result) return [];
 
     const entityIds = this.asStringArray(result.entity_ids);
+    if (entityIds.length === 0) {
+      const legacyEntities = this.asRecordArray(result.entities).map((entity) =>
+        this.normalizeEntity(entity)
+      );
+      if (legacyEntities.length > 0) {
+        return legacyEntities;
+      }
+    }
     return entities.map((entity, index) => ({
       entity_id: entityIds[index] ?? `entity-${index}`,
       ...entity,
@@ -771,7 +906,7 @@ export class AgentContextClient {
   async createRelations(
     relations: Array<Omit<KnowledgeGraphRelation, "relation_id">>
   ): Promise<KnowledgeGraphRelation[]> {
-    const result = await this.executeTool("agent_relation_add", {
+    let result = await this.executeTool("agent_relation_add", {
       relations: relations.map((relation) => ({
         source_id: relation.source_id,
         target_id: relation.target_id,
@@ -780,9 +915,27 @@ export class AgentContextClient {
       })),
       agent_id: this.agentId,
     });
+    if (!result) {
+      result = await this.executeTool("agent_relation_create", {
+        relations: relations.map((relation) => ({
+          source_id: relation.source_id,
+          target_id: relation.target_id,
+          relation_type: relation.relation_type,
+          properties: relation.properties,
+        })),
+      });
+    }
     if (!result) return [];
 
     const relationIds = this.asStringArray(result.relation_ids);
+    if (relationIds.length === 0) {
+      const legacyRelations = this.asRecordArray(result.relations).map((relation) =>
+        this.normalizeRelation(relation)
+      );
+      if (legacyRelations.length > 0) {
+        return legacyRelations;
+      }
+    }
     return relations.map((relation, index) => ({
       relation_id: relationIds[index] ?? `relation-${index}`,
       ...relation,
@@ -796,9 +949,12 @@ export class AgentContextClient {
     entities: KnowledgeGraphEntity[];
     relations: KnowledgeGraphRelation[];
   }> {
-    const result = await this.executeTool("agent_graph_query", {
+    let result = await this.executeTool("agent_graph_query", {
       limit: 500,
     });
+    if (!result) {
+      result = await this.executeTool("agent_knowledge_graph_get", {});
+    }
     if (!result) return { entities: [], relations: [] };
 
     const entities = this.asRecordArray(result.entities).map((entity) =>
@@ -817,9 +973,15 @@ export class AgentContextClient {
     query: string,
     entityTypes?: string[]
   ): Promise<KnowledgeGraphEntity[]> {
-    const result = await this.executeTool("agent_entity_find", {
+    let result = await this.executeTool("agent_entity_find", {
       limit: 500,
     });
+    if (!result) {
+      result = await this.executeTool("agent_entity_search", {
+        query,
+        entity_types: entityTypes,
+      });
+    }
     if (!result) return [];
 
     const normalizedQuery = query.trim().toLowerCase();
@@ -850,7 +1012,18 @@ export class AgentContextClient {
    */
   async getMemoryTiers(sessionId?: string): Promise<MemoryTier[]> {
     const stats = await this.executeTool("agent_memory_stats", {});
-    if (!stats) return [];
+    if (!stats) {
+      const legacyTiersResult = await this.executeTool("agent_memory_tiers_get", {
+        session_id: sessionId,
+      });
+      if (!legacyTiersResult) return [];
+      return this.asRecordArray(legacyTiersResult.tiers).map((tier) => ({
+        tier: this.normalizeMemoryTier(this.asString(tier.tier)),
+        entry_count: this.asNumber(tier.entry_count) ?? 0,
+        total_tokens: this.asNumber(tier.total_tokens) ?? 0,
+        entries: this.asRecordArray(tier.entries).map((entry) => this.normalizeContextEntry(entry)),
+      }));
+    }
 
     const recall = await this.executeTool("agent_memory_recall", {
       session_id: sessionId,
@@ -896,24 +1069,31 @@ export class AgentContextClient {
    * Promote entry to a higher tier.
    */
   async promoteEntry(entryId: string, targetTier: MemoryTier["tier"]): Promise<boolean> {
-    // targetTier is retained for API compatibility; server promotes based on current tier.
-    void targetTier;
-    const result = await this.executeTool("agent_memory_promote", {
+    let result = await this.executeTool("agent_memory_promote", {
       item_ids: [entryId],
     });
-    return Boolean(result?.ok);
+    if (!result) {
+      result = await this.executeTool("agent_memory_promote", {
+        entry_id: entryId,
+        target_tier: targetTier,
+      });
+    }
+    return Boolean(result?.ok ?? result?.success);
   }
 
   /**
    * Compress memory (summarize and archive).
    */
   async compressMemory(sessionId: string): Promise<boolean> {
-    // sessionId is retained for API compatibility; compression is tier/item based.
-    void sessionId;
-    const result = await this.executeTool("agent_memory_compress", {
+    let result = await this.executeTool("agent_memory_compress", {
       tier: "working",
     });
-    return Boolean(result?.ok);
+    if (!result) {
+      result = await this.executeTool("agent_memory_compress", {
+        session_id: sessionId,
+      });
+    }
+    return Boolean(result?.ok ?? result?.success);
   }
 
   // ============================================================================
