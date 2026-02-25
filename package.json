@@ -418,6 +418,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "compat:loom-core": "node scripts/compat/check-loom-core-compat.mjs",
     "check": "npm run lint && npm run format:check && tsc --noEmit",
     "prepublishOnly": "npm run check && npm test",
     "prepare": "husky"
