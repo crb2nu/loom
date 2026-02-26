@@ -96,19 +96,21 @@ Loom is a VS Code extension for MCP (Model Context Protocol) context management.
 
 ## Upcoming Work
 
+Tracking issue: [#1](https://gitlab.flexinfer.ai/services/loom/-/issues/1)
+
 ### v1.0.0 Release
 
-- [ ] **Test coverage**: Increase to 40%+ coverage
-- [ ] **Marketplace publishing**: VS Code Marketplace release
-- [ ] **API stability**: Document stable vs internal APIs
-- [ ] **Daemon failure recovery**: Retry logic with user notification
-- [ ] **Offline mode completion**: Full pending sync processing
+- [x] **Test coverage**: Increase to 40%+ coverage ([#2](https://gitlab.flexinfer.ai/services/loom/-/issues/2))
+- [x] **Marketplace publishing**: VS Code Marketplace release ([#3](https://gitlab.flexinfer.ai/services/loom/-/issues/3))
+- [x] **API stability**: Document stable vs internal APIs ([#4](https://gitlab.flexinfer.ai/services/loom/-/issues/4))
+- [x] **Daemon failure recovery**: Retry logic with user notification ([#5](https://gitlab.flexinfer.ai/services/loom/-/issues/5))
+- [x] **Offline mode completion**: Full pending sync processing ([#7](https://gitlab.flexinfer.ai/services/loom/-/issues/7))
 
 ### Post-1.0 Features
 
-- [ ] **Antigravity store**: Publish to Antigravity extension store
-- [x] **Plugin system**: Allow custom providers and views
-- [ ] **Theme support**: Light/dark theme awareness
+- [x] **Antigravity store**: Publish to Antigravity extension store ([#6](https://gitlab.flexinfer.ai/services/loom/-/issues/6))
+- [x] **Plugin system**: Allow custom providers and views ([#8](https://gitlab.flexinfer.ai/services/loom/-/issues/8))
+- [x] **Theme support**: Light/dark theme awareness ([#9](https://gitlab.flexinfer.ai/services/loom/-/issues/9))
 - [x] **Remote tunnels**: Secure tunneling to remote K8s MCP servers ([#11](https://gitlab.flexinfer.ai/services/loom/-/issues/11))
 - [x] **Usage analytics**: Track tool usage patterns ([#10](https://gitlab.flexinfer.ai/services/loom/-/issues/10))
 
