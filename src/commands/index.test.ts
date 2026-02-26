@@ -8,6 +8,7 @@ const mockRegisterDaemonCommands = vi.hoisted(() =>
 const mockRegisterToolsCommands = vi.hoisted(() => vi.fn(() => [{ dispose: vi.fn() }]));
 const mockRegisterSecretsCommands = vi.hoisted(() => vi.fn(() => [{ dispose: vi.fn() }]));
 const mockRegisterHubCommands = vi.hoisted(() => vi.fn(() => [{ dispose: vi.fn() }]));
+const mockRegisterRemoteTunnelCommands = vi.hoisted(() => vi.fn(() => [{ dispose: vi.fn() }]));
 const mockRegisterSyncCommands = vi.hoisted(() => vi.fn(() => [{ dispose: vi.fn() }]));
 const mockRegisterContextCommands = vi.hoisted(() => vi.fn(() => [{ dispose: vi.fn() }]));
 const mockRegisterStatusCommands = vi.hoisted(() => vi.fn(() => [{ dispose: vi.fn() }]));
@@ -23,6 +24,9 @@ vi.mock("./secrets", () => ({
 }));
 vi.mock("./hub", () => ({
   registerHubCommands: mockRegisterHubCommands,
+}));
+vi.mock("./remoteTunnels", () => ({
+  registerRemoteTunnelCommands: mockRegisterRemoteTunnelCommands,
 }));
 vi.mock("./sync", () => ({
   registerSyncCommands: mockRegisterSyncCommands,
@@ -51,11 +55,12 @@ describe("registerAllCommands", () => {
     expect(mockRegisterToolsCommands).toHaveBeenCalledWith(ctx);
     expect(mockRegisterSecretsCommands).toHaveBeenCalledWith(ctx);
     expect(mockRegisterHubCommands).toHaveBeenCalledWith(ctx);
+    expect(mockRegisterRemoteTunnelCommands).toHaveBeenCalledWith(ctx);
     expect(mockRegisterSyncCommands).toHaveBeenCalledWith(ctx);
     expect(mockRegisterContextCommands).toHaveBeenCalledWith(ctx);
     expect(mockRegisterStatusCommands).toHaveBeenCalledWith(ctx);
 
-    // 2 daemon + 6 single-disposable groups
-    expect(disposables).toHaveLength(8);
+    // 2 daemon + 7 single-disposable groups
+    expect(disposables).toHaveLength(9);
   });
 });

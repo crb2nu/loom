@@ -7,3 +7,4 @@ export * from "./profileManager";
 export * from "./skillRecommendations";
 export * from "./pluginManager";
 export * from "./usageAnalytics";
+export * from "./remoteTunnel";

@@ -7,6 +7,7 @@ This file applies to the `services/loom` VS Code extension repository.
 ## Repository Purpose
 
 VS Code extension for MCP (Model Context Protocol) context management. Provides UI for:
+
 - Managing MCP server connections across multiple platforms
 - Platform configuration sync (VS Code, Antigravity, Gemini, Claude, Codex, Kilocode)
 - Skills registry browsing, filtering, and context-aware recommendations
@@ -18,16 +19,19 @@ VS Code extension for MCP (Model Context Protocol) context management. Provides 
 ## Current Version: 0.9.0
 
 ### What's New in v0.9.0
+
 - **Onboarding wizard**: First-run setup flow guiding users through initial configuration
 - **Deep search**: Search across all connected MCP servers from a single query
 - **Skill recommendations**: Context-aware skill suggestions based on active file, diagnostics, and workspace context
 - **Server metrics**: Real-time health metrics, latency tracking, and history per server
 - **Usage analytics**: Track tool usage patterns with a generated report command
+- **Remote tunnels**: Managed `kubectl port-forward` commands for remote K8s MCP services
 - **Server profiles**: Named groups of servers with hub routing control
 - **Knowledge graph panel**: Visual exploration of agent context entities and relations
 - **Memory dashboard**: Tiered memory view (working / short-term / long-term)
 
 ### What's New in v0.8.0
+
 - **Error recovery**: Actionable error analysis with suggested remediation actions
 - **Offline mode**: Graceful degradation when hub is unreachable
 - **Config templates**: Daemon config auto-generation from extension settings
@@ -37,6 +41,7 @@ VS Code extension for MCP (Model Context Protocol) context management. Provides 
 - **Annotation toggle**: Enable/disable annotation decorations from command palette
 
 ### v0.7.0 Features
+
 - **Multi-platform support**: VS Code, Antigravity, Gemini, Claude, Codex, Kilocode
 - **Platform detection**: Auto-detects VS Code vs Antigravity
 - **Sync dashboard**: Visual status across all platforms
@@ -58,29 +63,33 @@ gitlab.flexinfer.ai/
 
 ## Relationship to Other Projects
 
-| Component | Purpose | Language | Min Version |
-|-----------|---------|----------|-------------|
-| `loom` | VS Code extension UI | TypeScript | — |
-| `loom-zed` | Zed editor extension | Rust | v0.1.0 |
-| `loom-core` | Backend daemon, CLI, MCP servers | Go | >= v0.7.0 (for `proxy`) |
+| Component   | Purpose                          | Language   | Min Version             |
+| ----------- | -------------------------------- | ---------- | ----------------------- |
+| `loom`      | VS Code extension UI             | TypeScript | —                       |
+| `loom-zed`  | Zed editor extension             | Rust       | v0.1.0                  |
+| `loom-core` | Backend daemon, CLI, MCP servers | Go         | >= v0.7.0 (for `proxy`) |
 
 The extension uses the `loom` CLI for:
+
 - Config generation from registry
 - Platform sync operations
 - Server status queries
 - Agent context operations (sessions, tasks, annotations)
 
 ### Shared Conventions
+
 - **Asset naming**: `loom-core_{version}_{os}_{arch}.{tar.gz|zip}` (e.g. `loom-core_v0.9.1_darwin_arm64.tar.gz`)
 - **Registry format**: YAML-based server definitions in `registry.yaml`
 
 See also:
+
 - [`services/loom-zed/AGENTS.md`](../loom-zed/AGENTS.md) — Zed extension
 - [`services/loom-core/AGENTS.md`](../loom-core/AGENTS.md) — Go backend
 
 ## Key Commands
 
 ### Development
+
 ```bash
 npm install           # Install dependencies
 npm run compile       # Build TypeScript
@@ -91,12 +100,14 @@ npm run check         # Full check (lint + format + tsc)
 ```
 
 ### Packaging
+
 ```bash
 npm run package       # Build .vsix
 code --install-extension loom-*.vsix  # Install locally
 ```
 
 ### Testing
+
 ```bash
 npm test              # Run tests
 npm run test:watch    # Watch mode
@@ -106,6 +117,7 @@ npm run test:coverage # With coverage (thresholds: 70/70/60/70)
 ## Architecture
 
 ### Source Structure
+
 ```
 src/
 ├── clients/           # API clients
@@ -132,7 +144,8 @@ src/
 │   ├── skillRecommendations.ts # Context-aware suggestions
 │   ├── annotationDecoration.ts # Code annotation overlays
 │   ├── deepSearch.ts      # Cross-server search
-│   └── usageAnalytics.ts  # Tool usage aggregation/reporting
+│   ├── usageAnalytics.ts  # Tool usage aggregation/reporting
+│   └── remoteTunnel.ts    # Remote K8s tunnel lifecycle manager
 ├── webviews/          # Rich UI panels
 │   ├── SyncDashboardPanel.ts
 │   ├── OnboardingPanel.ts
@@ -153,30 +166,33 @@ src/
 ```
 
 ### Views Provided
-| View ID | Name | Purpose |
-|---------|------|---------|
-| `loomPlatforms` | Loom Platforms | Platform config sync status |
-| `loomHubOverview` | Loom Hub | Registry servers |
-| `loomServers` | Loom Servers | Running servers |
-| `loomTools` | Loom Tools | Available tools |
-| `loomSkills` | Loom Skills | Skills registry + recommendations |
-| `loomSecrets` | Loom Secrets | Configured secrets |
-| `loomAgentContext` | Loom Agent Context | Session entries |
-| `loomTasks` | Loom Tasks | Agent tasks |
+
+| View ID            | Name               | Purpose                           |
+| ------------------ | ------------------ | --------------------------------- |
+| `loomPlatforms`    | Loom Platforms     | Platform config sync status       |
+| `loomHubOverview`  | Loom Hub           | Registry servers                  |
+| `loomServers`      | Loom Servers       | Running servers                   |
+| `loomTools`        | Loom Tools         | Available tools                   |
+| `loomSkills`       | Loom Skills        | Skills registry + recommendations |
+| `loomSecrets`      | Loom Secrets       | Configured secrets                |
+| `loomAgentContext` | Loom Agent Context | Session entries                   |
+| `loomTasks`        | Loom Tasks         | Agent tasks                       |
 
 ## Platform Configuration
 
 ### Supported Platforms
-| Platform | Config Format | Repo Path | Home Path |
-|----------|--------------|-----------|-----------|
-| VS Code | JSON | `.vscode/mcp.json` | `~/Library/Application Support/Code/User/mcp.json` |
-| Antigravity | JSON | `.antigravity/mcp.json` | `~/.antigravity/mcp.json` |
-| Gemini | JSON | `.gemini/settings.json` | `~/.gemini/settings.json` |
-| Claude | JSON | `.claude/mcp.json` | `~/.claude/mcp.json` |
-| Codex | JSON | `.codex/mcp.json` | `~/.codex/mcp.json` |
-| Kilocode | JSON | `.kilocode/mcp.json` | `~/.kilocode/mcp.json` |
+
+| Platform    | Config Format | Repo Path               | Home Path                                          |
+| ----------- | ------------- | ----------------------- | -------------------------------------------------- |
+| VS Code     | JSON          | `.vscode/mcp.json`      | `~/Library/Application Support/Code/User/mcp.json` |
+| Antigravity | JSON          | `.antigravity/mcp.json` | `~/.antigravity/mcp.json`                          |
+| Gemini      | JSON          | `.gemini/settings.json` | `~/.gemini/settings.json`                          |
+| Claude      | JSON          | `.claude/mcp.json`      | `~/.claude/mcp.json`                               |
+| Codex       | JSON          | `.codex/mcp.json`       | `~/.codex/mcp.json`                                |
+| Kilocode    | JSON          | `.kilocode/mcp.json`    | `~/.kilocode/mcp.json`                             |
 
 ### Sync Commands (via loom CLI)
+
 ```bash
 loom sync status                    # Check all profiles
 loom sync vscode --regen            # Regenerate & sync VS Code
@@ -185,25 +201,30 @@ loom sync codex --regen             # Regenerate & sync Codex
 ```
 
 ### Extension Commands
-| Command | Description |
-|---------|-------------|
-| `loom.showPlatformConfigs` | Refresh platform configs view |
-| `loom.syncPlatformConfig` | Sync specific platform |
-| `loom.syncAllPlatforms` | Sync all enabled platforms |
-| `loom.diffPlatformConfig` | Show repo vs home diff |
-| `loom.openPlatformConfig` | Open config in editor |
-| `loom.showSyncDashboard` | Open sync dashboard webview |
-| `loom.filterSkillsByPlatform` | Filter skills by target |
-| `loom.showOnboarding` | Open onboarding wizard |
-| `loom.deepSearch` | Search across all MCP servers |
-| `loom.showUsageAnalytics` | Open usage analytics report |
-| `loom.showKnowledgeGraph` | Open knowledge graph panel |
-| `loom.showMemoryDashboard` | Open memory dashboard |
-| `loom.toggleAnnotations` | Toggle code annotation decorations |
+
+| Command                       | Description                        |
+| ----------------------------- | ---------------------------------- |
+| `loom.showPlatformConfigs`    | Refresh platform configs view      |
+| `loom.syncPlatformConfig`     | Sync specific platform             |
+| `loom.syncAllPlatforms`       | Sync all enabled platforms         |
+| `loom.diffPlatformConfig`     | Show repo vs home diff             |
+| `loom.openPlatformConfig`     | Open config in editor              |
+| `loom.showSyncDashboard`      | Open sync dashboard webview        |
+| `loom.filterSkillsByPlatform` | Filter skills by target            |
+| `loom.showOnboarding`         | Open onboarding wizard             |
+| `loom.deepSearch`             | Search across all MCP servers      |
+| `loom.showUsageAnalytics`     | Open usage analytics report        |
+| `loom.startRemoteTunnel`      | Start a configured remote tunnel   |
+| `loom.stopRemoteTunnel`       | Stop the active remote tunnel      |
+| `loom.remoteTunnelStatus`     | Show active tunnel status          |
+| `loom.showKnowledgeGraph`     | Open knowledge graph panel         |
+| `loom.showMemoryDashboard`    | Open memory dashboard              |
+| `loom.toggleAnnotations`      | Toggle code annotation decorations |
 
 ## Settings
 
 ### All Settings
+
 ```json
 {
   "loom.hubUrl": "wss://mcp.flexinfer.ai/ws",
@@ -221,19 +242,22 @@ loom sync codex --regen             # Regenerate & sync Codex
   "loom.onboardingComplete": false,
   "loom.skillsRegistryPath": null,
   "loom.serverMetricsInterval": 30000,
-  "loom.plugins": []
+  "loom.plugins": [],
+  "loom.remoteTunnels": []
 }
 ```
 
 ## Adding New Features
 
 ### Adding a New Platform
+
 1. Add to `PlatformType` in `src/types.ts`
 2. Add entry to `PLATFORMS` in `src/utils/platform.ts`
 3. Update `loom.enabledPlatforms` enum in `package.json`
 4. Test sync with `loom sync <platform> --regen`
 
 ### Adding a New Command
+
 1. Add to `contributes.commands` in `package.json`
 2. Create handler in appropriate `src/commands/*.ts`
 3. Register in `extension.ts` or command registration file

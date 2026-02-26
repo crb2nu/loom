@@ -34,6 +34,7 @@ describe("ConfigManager", () => {
       expect(manager.get("agentId")).toBe("vscode-loom");
       expect(manager.get("serverMetricsInterval")).toBe(30000);
       expect(manager.get("plugins")).toEqual([]);
+      expect(manager.get("remoteTunnels")).toEqual([]);
     });
 
     it("should return configured values", () => {
@@ -147,6 +148,10 @@ describe("ConfigManager", () => {
 
     it("should have no plugins configured by default", () => {
       expect(manager.get("plugins")).toEqual([]);
+    });
+
+    it("should have no remote tunnels configured by default", () => {
+      expect(manager.get("remoteTunnels")).toEqual([]);
     });
   });
 });

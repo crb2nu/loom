@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 
-import { PlatformType } from "../types";
+import { PlatformType, RemoteTunnelProfile } from "../types";
 
 export interface LoomConfig {
   hubUrl: string;
@@ -19,6 +19,7 @@ export interface LoomConfig {
   skillsRegistryPath: string | null;
   serverMetricsInterval: number;
   plugins: string[];
+  remoteTunnels: RemoteTunnelProfile[];
 }
 
 const DEFAULTS: LoomConfig = {
@@ -38,6 +39,7 @@ const DEFAULTS: LoomConfig = {
   skillsRegistryPath: null,
   serverMetricsInterval: 30000,
   plugins: [],
+  remoteTunnels: [],
 };
 
 export class ConfigManager implements vscode.Disposable {
@@ -97,6 +99,7 @@ export class ConfigManager implements vscode.Disposable {
       serverMetricsInterval:
         c.get<number>("serverMetricsInterval") ?? DEFAULTS.serverMetricsInterval,
       plugins: c.get<string[]>("plugins") ?? DEFAULTS.plugins,
+      remoteTunnels: c.get<RemoteTunnelProfile[]>("remoteTunnels") ?? DEFAULTS.remoteTunnels,
     };
   }
 

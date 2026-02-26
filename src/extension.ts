@@ -24,6 +24,7 @@ import {
   ProfileManager,
   SkillRecommendationManager,
   PluginManager,
+  RemoteTunnelManager,
   UsageAnalyticsManager,
 } from "./managers";
 import { DeepSearchManager, SearchResult } from "./managers/deepSearch";
@@ -81,6 +82,7 @@ interface ActivationEnvironment {
   agentSessionManager: AgentSessionManager;
   annotationDecorationManager: AnnotationDecorationManager;
   usageAnalyticsManager: UsageAnalyticsManager;
+  remoteTunnelManager: RemoteTunnelManager;
 }
 
 // ============================================================================
@@ -473,6 +475,7 @@ function registerCoreCommands(
     | "toolProvider"
     | "secretsProvider"
     | "usageAnalyticsManager"
+    | "remoteTunnelManager"
   >,
   context: vscode.ExtensionContext
 ): void {
@@ -489,6 +492,7 @@ function registerCoreCommands(
     toolProvider: env.toolProvider,
     secretsProvider: env.secretsProvider,
     usageAnalyticsManager: env.usageAnalyticsManager,
+    remoteTunnelManager: env.remoteTunnelManager,
     extensionContext: context,
   };
 
@@ -521,6 +525,19 @@ function registerUsageAnalytics(
   );
   context.subscriptions.push(usageAnalyticsManager);
   return usageAnalyticsManager;
+}
+
+function registerRemoteTunnels(
+  env: Pick<ActivationEnvironment, "workspaceRoot" | "configManager" | "loomChannel">,
+  context: vscode.ExtensionContext
+): RemoteTunnelManager {
+  const remoteTunnelManager = new RemoteTunnelManager(
+    env.workspaceRoot,
+    env.configManager,
+    env.loomChannel
+  );
+  context.subscriptions.push(remoteTunnelManager);
+  return remoteTunnelManager;
 }
 
 // ============================================================================
@@ -767,6 +784,7 @@ export async function activate(context: vscode.ExtensionContext) {
     { daemonClient, loomChannel: base.loomChannel },
     context
   );
+  const remoteTunnelManager = registerRemoteTunnels(base, context);
 
   const { configSyncManager, secretsProvider } = registerConfigSync(
     { ...base, hubStatusManager },
@@ -790,6 +808,7 @@ export async function activate(context: vscode.ExtensionContext) {
       toolProvider,
       secretsProvider,
       usageAnalyticsManager,
+      remoteTunnelManager,
     },
     context
   );
