@@ -107,6 +107,10 @@
         "title": "Loom: Search Tools"
       },
       {
+        "command": "loom.showUsageAnalytics",
+        "title": "Loom: Show Usage Analytics"
+      },
+      {
         "command": "loom.listSecrets",
         "title": "Loom: List Secrets"
       },

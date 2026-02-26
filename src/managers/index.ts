@@ -6,3 +6,4 @@ export * from "./serverMetrics";
 export * from "./profileManager";
 export * from "./skillRecommendations";
 export * from "./pluginManager";
+export * from "./usageAnalytics";

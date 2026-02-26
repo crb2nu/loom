@@ -19,6 +19,7 @@ export function registerToolsCommands(ctx: CommandContext): vscode.Disposable[] 
   return [
     vscode.commands.registerCommand("loom.refreshTools", () => refreshTools(ctx)),
     vscode.commands.registerCommand("loom.searchTools", () => searchTools(ctx)),
+    vscode.commands.registerCommand("loom.showUsageAnalytics", () => showUsageAnalytics(ctx)),
   ];
 }
 
@@ -149,4 +150,8 @@ async function searchTools(ctx: CommandContext): Promise<void> {
       }
     }
   );
+}
+
+async function showUsageAnalytics(ctx: CommandContext): Promise<void> {
+  await ctx.usageAnalyticsManager.showReport();
 }
