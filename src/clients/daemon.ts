@@ -15,6 +15,16 @@ const execFileAsync = promisify(execFile);
  */
 export type DaemonConnectionState = "connected" | "disconnected" | "connecting";
 
+export interface ToolExecutionEvent {
+  toolName: string;
+  server: string;
+  tool: string;
+  success: boolean;
+  durationMs: number;
+  timestamp: string;
+  error?: string;
+}
+
 /**
  * Retry configuration for daemon operations.
  */
@@ -51,6 +61,8 @@ export class DaemonClient {
   private _connectionState: DaemonConnectionState = "disconnected";
   private readonly _onConnectionStateChange = new vscode.EventEmitter<DaemonConnectionState>();
   readonly onConnectionStateChange = this._onConnectionStateChange.event;
+  private readonly _onToolExecution = new vscode.EventEmitter<ToolExecutionEvent>();
+  readonly onToolExecution = this._onToolExecution.event;
 
   // Retry configuration
   private retryConfig: RetryConfig = DEFAULT_RETRY_CONFIG;
@@ -455,8 +467,11 @@ export class DaemonClient {
     toolName: string,
     args: Record<string, unknown>
   ): Promise<{ success: boolean; result?: unknown; error?: string }> {
+    const startedAt = Date.now();
+    const parsedTool = this.parseToolName(toolName);
+
     try {
-      return await this.withRetry(async () => {
+      const response = await this.withRetry(async () => {
         const loomBinary = resolveLoomBinary(this.workspaceRoot);
         const argsJson = JSON.stringify(args);
 
@@ -481,11 +496,44 @@ export class DaemonClient {
           return { success: true, result: stdout };
         }
       }, `executeTool(${toolName})`);
+
+      this._onToolExecution.fire({
+        toolName,
+        server: parsedTool.server,
+        tool: parsedTool.tool,
+        success: true,
+        durationMs: Date.now() - startedAt,
+        timestamp: new Date().toISOString(),
+      });
+
+      return response;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.channel.appendLine(`[DaemonClient] Tool execution failed: ${message}`);
+
+      this._onToolExecution.fire({
+        toolName,
+        server: parsedTool.server,
+        tool: parsedTool.tool,
+        success: false,
+        durationMs: Date.now() - startedAt,
+        timestamp: new Date().toISOString(),
+        error: message,
+      });
+
       return { success: false, error: message };
     }
+  }
+
+  private parseToolName(toolName: string): { server: string; tool: string } {
+    const separator = toolName.lastIndexOf("__");
+    if (separator === -1 || separator === toolName.length - 2) {
+      return { server: "unknown", tool: toolName };
+    }
+    return {
+      server: toolName.substring(0, separator),
+      tool: toolName.substring(separator + 2),
+    };
   }
 
   /**
@@ -560,5 +608,6 @@ export class DaemonClient {
   dispose(): void {
     this.stopHealthMonitoring();
     this._onConnectionStateChange.dispose();
+    this._onToolExecution.dispose();
   }
 }

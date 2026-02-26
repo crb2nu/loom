@@ -24,6 +24,7 @@ import {
   ProfileManager,
   SkillRecommendationManager,
   PluginManager,
+  UsageAnalyticsManager,
 } from "./managers";
 import { DeepSearchManager, SearchResult } from "./managers/deepSearch";
 import {
@@ -79,6 +80,7 @@ interface ActivationEnvironment {
   agentContextClient: AgentContextClient;
   agentSessionManager: AgentSessionManager;
   annotationDecorationManager: AnnotationDecorationManager;
+  usageAnalyticsManager: UsageAnalyticsManager;
 }
 
 // ============================================================================
@@ -470,6 +472,7 @@ function registerCoreCommands(
     | "serverProvider"
     | "toolProvider"
     | "secretsProvider"
+    | "usageAnalyticsManager"
   >,
   context: vscode.ExtensionContext
 ): void {
@@ -485,6 +488,7 @@ function registerCoreCommands(
     serverProvider: env.serverProvider,
     toolProvider: env.toolProvider,
     secretsProvider: env.secretsProvider,
+    usageAnalyticsManager: env.usageAnalyticsManager,
     extensionContext: context,
   };
 
@@ -504,6 +508,19 @@ function registerCoreCommands(
       }
     })
   );
+}
+
+function registerUsageAnalytics(
+  env: Pick<ActivationEnvironment, "daemonClient" | "loomChannel">,
+  context: vscode.ExtensionContext
+): UsageAnalyticsManager {
+  const usageAnalyticsManager = new UsageAnalyticsManager(
+    env.daemonClient,
+    context.workspaceState,
+    env.loomChannel
+  );
+  context.subscriptions.push(usageAnalyticsManager);
+  return usageAnalyticsManager;
 }
 
 // ============================================================================
@@ -746,6 +763,11 @@ export async function activate(context: vscode.ExtensionContext) {
   const { registryProvider, serverProvider, toolProvider, daemonClient } =
     registerRegistryAndServers({ ...base, hubStatusManager }, context);
 
+  const usageAnalyticsManager = registerUsageAnalytics(
+    { daemonClient, loomChannel: base.loomChannel },
+    context
+  );
+
   const { configSyncManager, secretsProvider } = registerConfigSync(
     { ...base, hubStatusManager },
     context
@@ -767,6 +789,7 @@ export async function activate(context: vscode.ExtensionContext) {
       serverProvider,
       toolProvider,
       secretsProvider,
+      usageAnalyticsManager,
     },
     context
   );

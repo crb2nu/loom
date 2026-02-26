@@ -266,6 +266,38 @@ github__list_repos   List repos`;
         expect.stringContaining("warning: deprecated API")
       );
     });
+
+    it("should emit tool execution event on success", async () => {
+      const events: Array<{
+        toolName: string;
+        success: boolean;
+      }> = [];
+      client.onToolExecution((event) => {
+        events.push({ toolName: event.toolName, success: event.success });
+      });
+      mockExecFile('{"ok":true}');
+
+      await client.executeTool("github__list_repos", { limit: 1 });
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toEqual({ toolName: "github__list_repos", success: true });
+    });
+
+    it("should emit tool execution event on failure", async () => {
+      const events: Array<{
+        toolName: string;
+        success: boolean;
+      }> = [];
+      client.onToolExecution((event) => {
+        events.push({ toolName: event.toolName, success: event.success });
+      });
+      mockExecFileError(new Error("boom"));
+
+      await client.executeTool("failing_tool", {});
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toEqual({ toolName: "failing_tool", success: false });
+    });
   });
 
   describe("startServer", () => {

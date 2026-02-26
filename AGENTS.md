@@ -22,6 +22,7 @@ VS Code extension for MCP (Model Context Protocol) context management. Provides 
 - **Deep search**: Search across all connected MCP servers from a single query
 - **Skill recommendations**: Context-aware skill suggestions based on active file, diagnostics, and workspace context
 - **Server metrics**: Real-time health metrics, latency tracking, and history per server
+- **Usage analytics**: Track tool usage patterns with a generated report command
 - **Server profiles**: Named groups of servers with hub routing control
 - **Knowledge graph panel**: Visual exploration of agent context entities and relations
 - **Memory dashboard**: Tiered memory view (working / short-term / long-term)
@@ -130,7 +131,8 @@ src/
 │   ├── profileManager.ts  # Server profiles
 │   ├── skillRecommendations.ts # Context-aware suggestions
 │   ├── annotationDecoration.ts # Code annotation overlays
-│   └── deepSearch.ts      # Cross-server search
+│   ├── deepSearch.ts      # Cross-server search
+│   └── usageAnalytics.ts  # Tool usage aggregation/reporting
 ├── webviews/          # Rich UI panels
 │   ├── SyncDashboardPanel.ts
 │   ├── OnboardingPanel.ts
@@ -194,6 +196,7 @@ loom sync codex --regen             # Regenerate & sync Codex
 | `loom.filterSkillsByPlatform` | Filter skills by target |
 | `loom.showOnboarding` | Open onboarding wizard |
 | `loom.deepSearch` | Search across all MCP servers |
+| `loom.showUsageAnalytics` | Open usage analytics report |
 | `loom.showKnowledgeGraph` | Open knowledge graph panel |
 | `loom.showMemoryDashboard` | Open memory dashboard |
 | `loom.toggleAnnotations` | Toggle code annotation decorations |
