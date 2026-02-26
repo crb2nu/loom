@@ -1,7 +1,12 @@
 import * as vscode from "vscode";
 
 import { DaemonClient } from "../clients/daemon";
-import { ConfigSyncManager, HubStatusManager, UsageAnalyticsManager } from "../managers";
+import {
+  ConfigSyncManager,
+  HubStatusManager,
+  RemoteTunnelManager,
+  UsageAnalyticsManager,
+} from "../managers";
 import { RegistryProvider, SecretsProvider, ServerProvider, ToolProvider } from "../providers";
 
 /**
@@ -20,6 +25,7 @@ export interface CommandContext {
   toolProvider: ToolProvider;
   secretsProvider: SecretsProvider;
   usageAnalyticsManager: UsageAnalyticsManager;
+  remoteTunnelManager: RemoteTunnelManager;
   extensionContext: vscode.ExtensionContext;
 }
 

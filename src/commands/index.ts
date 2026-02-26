@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { registerContextCommands } from "./context";
 import { registerDaemonCommands } from "./daemon";
 import { registerHubCommands } from "./hub";
+import { registerRemoteTunnelCommands } from "./remoteTunnels";
 import { registerSecretsCommands } from "./secrets";
 import { registerStatusCommands } from "./status";
 import { registerSyncCommands } from "./sync";
@@ -24,6 +25,7 @@ export function registerAllCommands(ctx: CommandContext): vscode.Disposable[] {
     ...registerToolsCommands(ctx),
     ...registerSecretsCommands(ctx),
     ...registerHubCommands(ctx),
+    ...registerRemoteTunnelCommands(ctx),
     ...registerSyncCommands(ctx),
     ...registerContextCommands(ctx),
     ...registerStatusCommands(ctx),

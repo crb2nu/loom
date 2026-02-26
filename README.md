@@ -13,6 +13,7 @@ Loom is a VS Code extension that manages MCP (Model Context Protocol) server con
 - **Skills registry**: Browse and manage agent skills
 - **Agent context**: Persistent memory across sessions
 - **Server health**: Monitor MCP server status
+- **Remote tunnels**: Start secure local tunnels to remote K8s MCP services
 - **Plugin support**: Load custom command/provider modules
 
 ## Features
@@ -71,6 +72,14 @@ Monitor MCP server health and performance:
 - **Health dashboard**: Per-server status
 - **Metrics collection**: Response times, error rates
 - **Profile switching**: Quick server set changes
+
+### Remote K8s Tunnels
+
+Manage local `kubectl port-forward` tunnels to remote MCP services:
+
+- **Named tunnel profiles**: Configure target context/namespace/service and ports
+- **Start/stop commands**: Control tunnel lifecycle from the command palette
+- **Hub URL sync**: Optionally set `loom.hubUrl` to the active local tunnel endpoint
 
 ## Installation
 
@@ -195,6 +204,20 @@ Safety checks in `scripts/publish-antigravity.sh`:
   // Optional plugin modules (package names or relative paths)
   "loom.plugins": ["./loom-plugin.cjs"],
 
+  // Optional remote tunnel profiles for kubectl port-forward
+  "loom.remoteTunnels": [
+    {
+      "name": "k3s-hub",
+      "context": "kc-k3s",
+      "namespace": "flexinfer-system",
+      "service": "mcp-hub",
+      "localPort": 37017,
+      "remotePort": 80,
+      "hubPath": "/ws",
+      "autoSetHubUrl": true
+    }
+  ],
+
   // Active server profile
   "loom.activeProfile": "full",
 
@@ -275,12 +298,15 @@ Loom adds these views to the Explorer sidebar:
 
 ### Hub & Servers
 
-| Command                              | Description           |
-| ------------------------------------ | --------------------- |
-| `Loom: Refresh MCP Hub Status`       | Poll hub status       |
-| `Loom: Check MCP Server Health`      | Run health checks     |
-| `Loom: Show Server Health Dashboard` | Health metrics view   |
-| `Loom: Switch Server Profile`        | Change active profile |
+| Command                              | Description                 |
+| ------------------------------------ | --------------------------- |
+| `Loom: Refresh MCP Hub Status`       | Poll hub status             |
+| `Loom: Check MCP Server Health`      | Run health checks           |
+| `Loom: Show Server Health Dashboard` | Health metrics view         |
+| `Loom: Switch Server Profile`        | Change active profile       |
+| `Loom: Start Remote Tunnel`          | Start configured K8s tunnel |
+| `Loom: Stop Remote Tunnel`           | Stop active tunnel          |
+| `Loom: Show Remote Tunnel Status`    | Show active tunnel details  |
 
 ### Skills
 

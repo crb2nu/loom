@@ -111,6 +111,18 @@
         "title": "Loom: Show Usage Analytics"
       },
       {
+        "command": "loom.startRemoteTunnel",
+        "title": "Loom: Start Remote Tunnel"
+      },
+      {
+        "command": "loom.stopRemoteTunnel",
+        "title": "Loom: Stop Remote Tunnel"
+      },
+      {
+        "command": "loom.remoteTunnelStatus",
+        "title": "Loom: Show Remote Tunnel Status"
+      },
+      {
         "command": "loom.listSecrets",
         "title": "Loom: List Secrets"
       },
@@ -359,6 +371,59 @@
           "default": 30000,
           "minimum": 5000,
           "description": "Interval (ms) for collecting server health metrics."
+        },
+        "loom.remoteTunnels": {
+          "type": "array",
+          "default": [],
+          "description": "Named kubectl port-forward profiles for secure local tunnels to remote K8s MCP services.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "namespace",
+              "service",
+              "localPort",
+              "remotePort"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Unique profile name."
+              },
+              "context": {
+                "type": "string",
+                "description": "Optional kubectl context override."
+              },
+              "namespace": {
+                "type": "string",
+                "description": "Kubernetes namespace for the target service."
+              },
+              "service": {
+                "type": "string",
+                "description": "Service name (without svc/ prefix)."
+              },
+              "localPort": {
+                "type": "number",
+                "minimum": 1,
+                "maximum": 65535,
+                "description": "Local loopback port to bind."
+              },
+              "remotePort": {
+                "type": "number",
+                "minimum": 1,
+                "maximum": 65535,
+                "description": "Target service port exposed remotely."
+              },
+              "hubPath": {
+                "type": "string",
+                "description": "Hub websocket path used to build loom.hubUrl (default /ws)."
+              },
+              "autoSetHubUrl": {
+                "type": "boolean",
+                "description": "When true, update loom.hubUrl to ws://127.0.0.1:<localPort><hubPath> on successful start."
+              }
+            }
+          }
         },
         "loom.activeProfile": {
           "type": "string",

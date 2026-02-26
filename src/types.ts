@@ -262,6 +262,21 @@ export interface ServerProfile {
   hubEnabled: boolean;
 }
 
+// ============================================================================
+// Remote Tunnel Types
+// ============================================================================
+
+export interface RemoteTunnelProfile {
+  name: string;
+  context?: string;
+  namespace: string;
+  service: string;
+  localPort: number;
+  remotePort: number;
+  hubPath?: string;
+  autoSetHubUrl?: boolean;
+}
+
 export interface RoutingStatus {
   hubRouted: string[];
   localRouted: string[];

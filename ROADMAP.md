@@ -13,6 +13,7 @@ Loom is a VS Code extension for MCP (Model Context Protocol) context management.
 - **Skill recommendations**: Context-aware skill suggestions
 - **Server metrics**: Performance monitoring and health tracking
 - **Usage analytics**: Tool invocation tracking and report generation
+- **Remote tunnels**: Managed `kubectl` port-forward workflows for remote K8s MCP services
 
 ### v0.8.0 Highlights
 
@@ -31,6 +32,7 @@ Loom is a VS Code extension for MCP (Model Context Protocol) context management.
 ## Implemented Features
 
 ### Onboarding & Discovery (v0.9.0)
+
 - [x] Welcome wizard with first-run detection
 - [x] Workspace environment snapshot
 - [x] Guided setup for registry and daemon
@@ -38,8 +40,10 @@ Loom is a VS Code extension for MCP (Model Context Protocol) context management.
 - [x] Context-aware skill recommendations
 - [x] Server metrics and performance tracking
 - [x] Usage analytics report command
+- [x] Remote tunnel start/stop/status commands
 
 ### Error Handling & Resilience (v0.8.0)
+
 - [x] Daemon error recovery with notifications
 - [x] Offline mode with pending sync queue
 - [x] Config templates for quick setup
@@ -47,6 +51,7 @@ Loom is a VS Code extension for MCP (Model Context Protocol) context management.
 - [x] Config drift detection
 
 ### Platform Management (v0.7.0)
+
 - [x] Platform detection (VS Code vs Antigravity)
 - [x] Loom Platforms tree view
 - [x] Sync dashboard webview
@@ -55,11 +60,13 @@ Loom is a VS Code extension for MCP (Model Context Protocol) context management.
 - [x] Skills platform filtering
 
 ### Server Health (v0.6.0)
+
 - [x] Health monitoring dashboard
 - [x] Profile manager with quick switching
 - [x] Hub vs local routing status
 
 ### Agent Context (v0.5.0)
+
 - [x] Session management (start/end)
 - [x] Context entries (decisions, findings, questions)
 - [x] Task tracking
@@ -67,17 +74,20 @@ Loom is a VS Code extension for MCP (Model Context Protocol) context management.
 - [x] Code annotations with gutter decorations
 
 ### Skills Registry (v0.4.0)
+
 - [x] Skills browser with categories
 - [x] Script execution from VS Code
 - [x] Skill search and filtering
 - [x] Resource and asset access
 
 ### Secrets Management (v0.3.0)
+
 - [x] Secrets view and management
 - [x] Config validation for missing secrets
 - [x] Keychain integration
 
 ### Core Features (v0.1.0-0.2.0)
+
 - [x] MCP Hub integration
 - [x] Server status polling
 - [x] Tools browser
@@ -99,7 +109,7 @@ Loom is a VS Code extension for MCP (Model Context Protocol) context management.
 - [ ] **Antigravity store**: Publish to Antigravity extension store
 - [x] **Plugin system**: Allow custom providers and views
 - [ ] **Theme support**: Light/dark theme awareness
-- [ ] **Remote tunnels**: Secure tunneling to remote K8s MCP servers
+- [x] **Remote tunnels**: Secure tunneling to remote K8s MCP servers ([#11](https://gitlab.flexinfer.ai/services/loom/-/issues/11))
 - [x] **Usage analytics**: Track tool usage patterns ([#10](https://gitlab.flexinfer.ai/services/loom/-/issues/10))
 
 ## Non-Goals
@@ -139,8 +149,8 @@ loom CLI (Go) - loom-core
 
 ## References
 
-| Document | Purpose |
-|----------|---------|
-| [README.md](README.md) | Installation and usage |
-| [AGENTS.md](AGENTS.md) | Agent working notes |
-| [CHANGELOG.md](CHANGELOG.md) | Version history |
+| Document                     | Purpose                |
+| ---------------------------- | ---------------------- |
+| [README.md](README.md)       | Installation and usage |
+| [AGENTS.md](AGENTS.md)       | Agent working notes    |
+| [CHANGELOG.md](CHANGELOG.md) | Version history        |
