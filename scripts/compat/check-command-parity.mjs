@@ -2,7 +2,6 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { execSync } from "node:child_process";
 
 const repoRoot = process.cwd();
 
@@ -15,14 +14,29 @@ const INTERNAL_REGISTERED_COMMANDS = new Set([
 ]);
 
 function listSourceFiles() {
-  const raw = execSync(
-    "rg --files src | rg -v '\\.(test|spec)\\.ts$'",
-    { cwd: repoRoot, encoding: "utf8" }
-  );
-  return raw
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
+  const sourceRoot = path.join(repoRoot, "src");
+  const files = [];
+
+  function walk(currentDir) {
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const absolutePath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        walk(absolutePath);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith(".ts")) {
+        continue;
+      }
+      if (entry.name.endsWith(".test.ts") || entry.name.endsWith(".spec.ts")) {
+        continue;
+      }
+      files.push(path.relative(repoRoot, absolutePath));
+    }
+  }
+
+  walk(sourceRoot);
+  return files.sort((a, b) => a.localeCompare(b));
 }
 
 function readContributedCommands() {
