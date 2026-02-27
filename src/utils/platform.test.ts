@@ -147,7 +147,7 @@ describe("getPlatformInfo", () => {
   it("should return correct info for each platform", () => {
     expect(getPlatformInfo("vscode").displayName).toBe("VS Code");
     expect(getPlatformInfo("claude").icon).toBe("comment-discussion");
-    expect(getPlatformInfo("gemini").configFormat).toBe("toml");
+    expect(getPlatformInfo("gemini").configFormat).toBe("json");
   });
 });
 

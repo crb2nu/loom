@@ -47,7 +47,7 @@ export const PLATFORMS: Record<PlatformType, PlatformInfo> = {
     type: "gemini",
     displayName: "Gemini",
     label: "Gemini CLI",
-    configFormat: "toml",
+    configFormat: "json",
     repoConfigPath: ".gemini/settings.json",
     homeConfigPath: ".gemini/settings.json",
     icon: "sparkle",

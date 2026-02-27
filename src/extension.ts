@@ -476,6 +476,8 @@ function registerCoreCommands(
     | "secretsProvider"
     | "usageAnalyticsManager"
     | "remoteTunnelManager"
+    | "agentContextClient"
+    | "agentSessionManager"
   >,
   context: vscode.ExtensionContext
 ): void {
@@ -494,6 +496,8 @@ function registerCoreCommands(
     usageAnalyticsManager: env.usageAnalyticsManager,
     remoteTunnelManager: env.remoteTunnelManager,
     extensionContext: context,
+    agentContextClient: env.agentContextClient,
+    agentSessionManager: env.agentSessionManager,
   };
 
   // Register all commands
@@ -797,6 +801,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
   registerDeepSearch({ daemonClient, loomChannel: base.loomChannel }, context);
 
+  registerSkillsIntegration(base, context);
+
+  const { agentContextClient, agentSessionManager } = registerAgentContext(base, context);
+
   registerCoreCommands(
     {
       ...base,
@@ -809,13 +817,11 @@ export async function activate(context: vscode.ExtensionContext) {
       secretsProvider,
       usageAnalyticsManager,
       remoteTunnelManager,
+      agentContextClient,
+      agentSessionManager,
     },
     context
   );
-
-  registerSkillsIntegration(base, context);
-
-  const { agentSessionManager } = registerAgentContext(base, context);
 
   registerServerHealth(
     {

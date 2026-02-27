@@ -147,6 +147,13 @@ describe("status commands", () => {
     expect(loomChannel.appendLine).toHaveBeenCalledWith(
       expect.stringContaining("Local-mode servers: config-only")
     );
+    expect(loomChannel.appendLine).toHaveBeenCalledWith("Domain readiness:");
+    expect(loomChannel.appendLine).toHaveBeenCalledWith(expect.stringContaining("- Fleet:"));
+    expect(loomChannel.appendLine).toHaveBeenCalledWith(expect.stringContaining("- Health:"));
+    expect(loomChannel.appendLine).toHaveBeenCalledWith(expect.stringContaining("- Tasks:"));
+    expect(loomChannel.appendLine).toHaveBeenCalledWith(expect.stringContaining("- Memory:"));
+    expect(loomChannel.appendLine).toHaveBeenCalledWith(expect.stringContaining("- Stream:"));
+    expect(loomChannel.appendLine).toHaveBeenCalledWith(expect.stringContaining("- Presence:"));
     expect(loomChannel.show).toHaveBeenCalledWith(true);
     expect(vscode.window.showInformationMessage).toHaveBeenCalledWith("Loom: mesh report ready");
   });

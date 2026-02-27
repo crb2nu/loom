@@ -36,6 +36,9 @@ const SEARCH_TOOL_CONFIGS: Record<
   qdrant__qdrant_search: { queryParam: "query", extraParams: { limit: 10 } },
 };
 
+const QUERY_PARAM_CANDIDATES = ["query", "q", "search", "search_query", "text", "term"] as const;
+const LIMIT_PARAM_CANDIDATES = ["max_results", "limit", "per_page", "top_k", "count"] as const;
+
 export class DeepSearchManager {
   private searchHistory: Array<{ query: string; results: SearchResult[]; timestamp: Date }> = [];
   private readonly maxHistory = 50;
@@ -68,12 +71,7 @@ export class DeepSearchManager {
     if (options.tools && options.tools.length > 0) {
       searchTools = tools.filter((t) => options.tools!.includes(t.name));
     } else {
-      searchTools = tools.filter(
-        (t) =>
-          t.name.toLowerCase().includes("search") ||
-          t.name.toLowerCase().includes("find") ||
-          t.name.toLowerCase().includes("query")
-      );
+      searchTools = tools.filter((tool) => this.resolveSearchToolConfig(tool) !== undefined);
     }
 
     if (searchTools.length === 0) {
@@ -149,10 +147,10 @@ export class DeepSearchManager {
     maxResults: number
   ): Promise<SearchResult> {
     const startTime = Date.now();
-    const source = this.getSource(tool.name);
+    const source = tool.serverPrefix || this.getSource(tool.name);
 
     // Build tool arguments
-    const config = SEARCH_TOOL_CONFIGS[tool.name];
+    const config = this.resolveSearchToolConfig(tool);
     const queryParam = config?.queryParam ?? "query";
     const extraParams = config?.extraParams ?? {};
 
@@ -242,12 +240,7 @@ export class DeepSearchManager {
    */
   public async getSearchTools(): Promise<DaemonToolInfo[]> {
     const tools = await this.daemonClient.getTools();
-    return tools.filter(
-      (t) =>
-        t.name.toLowerCase().includes("search") ||
-        t.name.toLowerCase().includes("find") ||
-        t.name.toLowerCase().includes("query")
-    );
+    return tools.filter((tool) => this.resolveSearchToolConfig(tool) !== undefined);
   }
 
   private getSource(toolName: string): string {
@@ -256,5 +249,35 @@ export class DeepSearchManager {
       return toolName.split("__")[0];
     }
     return "system";
+  }
+
+  private resolveSearchToolConfig(
+    tool: DaemonToolInfo
+  ): { queryParam: string; extraParams?: Record<string, unknown> } | undefined {
+    const knownConfig = SEARCH_TOOL_CONFIGS[tool.name];
+    if (knownConfig) {
+      return knownConfig;
+    }
+
+    const schemaProperties = tool.inputSchema?.properties;
+    if (!schemaProperties) {
+      return undefined;
+    }
+
+    const queryParam = QUERY_PARAM_CANDIDATES.find((candidate) =>
+      Object.prototype.hasOwnProperty.call(schemaProperties, candidate)
+    );
+    if (!queryParam) {
+      return undefined;
+    }
+
+    const limitParam = LIMIT_PARAM_CANDIDATES.find((candidate) =>
+      Object.prototype.hasOwnProperty.call(schemaProperties, candidate)
+    );
+
+    return {
+      queryParam,
+      extraParams: limitParam ? { [limitParam]: 10 } : undefined,
+    };
   }
 }

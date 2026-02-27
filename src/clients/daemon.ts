@@ -4,7 +4,7 @@ import { promisify } from "util";
 
 import * as vscode from "vscode";
 
-import { DaemonServerInfo, DaemonToolInfo } from "../types";
+import { DaemonServerInfo, DaemonToolInfo, ToolInputSchema } from "../types";
 import { resolveLoomBinary } from "../utils/binary";
 import { Logger } from "../utils/logger";
 
@@ -40,6 +40,24 @@ interface RetryOptions {
   userOperation?: string;
 }
 
+interface LoomToolsListResponse {
+  tools?: Array<{
+    name?: string;
+    description?: string;
+    server?: string;
+    inputSchema?: unknown;
+    input_schema?: unknown;
+  }>;
+  page?: number;
+  pageSize?: number;
+  totalPages?: number;
+  totalTools?: number;
+  // Backward-compatible snake_case support.
+  page_size?: number;
+  total_pages?: number;
+  total_tools?: number;
+}
+
 const DEFAULT_RETRY_CONFIG: RetryConfig = {
   maxRetries: 3,
   initialDelayMs: 500,
@@ -48,6 +66,7 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
 };
 
 export class DaemonClient {
+  private static readonly TOOLS_PAGE_SIZE = 200;
   private readonly workspaceRoot: string;
   private readonly channel: vscode.OutputChannel;
   private readonly logger: Logger;
@@ -415,38 +434,16 @@ export class DaemonClient {
     }
 
     try {
-      const tools = await this.withRetry(async () => {
-        const loomBinary = resolveLoomBinary(this.workspaceRoot);
-        const { stdout } = await execFileAsync(loomBinary, ["tools", "list"], {
-          cwd: this.workspaceRoot || os.homedir(),
-          timeout: 30000,
-        });
-
-        // Parse text output format: "tool_name  description"
-        const tools: DaemonToolInfo[] = [];
-        const lines = stdout.split("\n");
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed.startsWith("NAME") || trimmed.startsWith("----")) {
-            continue;
-          }
-          // Tool name format: server__toolname
-          const match = trimmed.match(/^(\S+)\s*(.*)/);
-          if (match) {
-            const fullName = match[1];
-            const description = match[2]?.trim() || undefined;
-            // Parse server from tool name (format: server__toolname)
-            const serverMatch = fullName.match(/^([^_]+(?:__)?[^_]*)__(.+)$/);
-            const server = serverMatch ? serverMatch[1] : "unknown";
-            tools.push({
-              name: fullName,
-              description,
-              server,
-            });
-          }
-        }
-        return tools;
-      }, "getTools");
+      let tools: DaemonToolInfo[];
+      try {
+        tools = await this.withRetry(() => this.getToolsFromJsonPaged(), "getTools(json)");
+      } catch (jsonError) {
+        const message = jsonError instanceof Error ? jsonError.message : String(jsonError);
+        this.channel.appendLine(
+          `[DaemonClient] JSON tool listing failed, falling back to text parsing: ${message}`
+        );
+        tools = await this.withRetry(() => this.getToolsFromText(), "getTools(text)");
+      }
 
       this.cachedTools = tools;
       this.lastToolFetch = now;
@@ -455,6 +452,125 @@ export class DaemonClient {
       // Return cached tools on failure
       return this.cachedTools;
     }
+  }
+
+  private async getToolsFromJsonPaged(): Promise<DaemonToolInfo[]> {
+    const loomBinary = resolveLoomBinary(this.workspaceRoot);
+    const cwd = this.workspaceRoot || os.homedir();
+    const deduped = new Map<string, DaemonToolInfo>();
+
+    let page = 1;
+    let totalPages = 1;
+    while (page <= totalPages) {
+      const args = [
+        "tools",
+        "list",
+        "--json",
+        "--page",
+        String(page),
+        "--limit",
+        String(DaemonClient.TOOLS_PAGE_SIZE),
+      ];
+      const { stdout } = await execFileAsync(loomBinary, args, {
+        cwd,
+        timeout: 30000,
+      });
+
+      const payload = JSON.parse(stdout) as LoomToolsListResponse;
+      const pageTools = Array.isArray(payload.tools) ? payload.tools : [];
+      for (const tool of pageTools) {
+        const name = tool.name?.trim();
+        if (!name) {
+          continue;
+        }
+
+        const parsedName = this.parseToolName(name);
+        const server = tool.server?.trim() || parsedName.server;
+        const description = tool.description?.trim() || undefined;
+        const inputSchema = this.normalizeToolInputSchema(tool.inputSchema ?? tool.input_schema);
+        deduped.set(name, {
+          name,
+          description,
+          server,
+          serverPrefix: server,
+          inputSchema,
+        });
+      }
+
+      const nextTotalPages = this.extractTotalPages(payload);
+      totalPages = Math.max(1, nextTotalPages);
+      page += 1;
+    }
+
+    return [...deduped.values()];
+  }
+
+  private extractTotalPages(payload: LoomToolsListResponse): number {
+    const candidate = payload.totalPages ?? payload.total_pages;
+    if (typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0) {
+      return Math.floor(candidate);
+    }
+    return 1;
+  }
+
+  private async getToolsFromText(): Promise<DaemonToolInfo[]> {
+    const loomBinary = resolveLoomBinary(this.workspaceRoot);
+    const { stdout } = await execFileAsync(loomBinary, ["tools", "list"], {
+      cwd: this.workspaceRoot || os.homedir(),
+      timeout: 30000,
+    });
+
+    // Parse text output format: "tool_name  description"
+    const tools: DaemonToolInfo[] = [];
+    const lines = stdout.split("\n");
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("NAME") || trimmed.startsWith("----")) {
+        continue;
+      }
+      const match = trimmed.match(/^(\S+)\s*(.*)/);
+      if (match) {
+        const fullName = match[1];
+        const description = match[2]?.trim() || undefined;
+        const server = this.parseToolName(fullName).server;
+        tools.push({
+          name: fullName,
+          description,
+          server,
+          serverPrefix: server,
+          inputSchema: undefined,
+        });
+      }
+    }
+    return tools;
+  }
+
+  private normalizeToolInputSchema(value: unknown): ToolInputSchema | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    const candidate = value as Record<string, unknown>;
+
+    const type = typeof candidate.type === "string" ? candidate.type : "object";
+    const properties =
+      candidate.properties &&
+      typeof candidate.properties === "object" &&
+      !Array.isArray(candidate.properties)
+        ? (candidate.properties as Record<string, unknown>)
+        : undefined;
+    const required = Array.isArray(candidate.required)
+      ? candidate.required.filter((entry): entry is string => typeof entry === "string")
+      : undefined;
+
+    if (!properties && !required && typeof candidate.type !== "string") {
+      return undefined;
+    }
+
+    return {
+      type,
+      properties,
+      required,
+    };
   }
 
   /**

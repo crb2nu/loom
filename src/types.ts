@@ -70,6 +70,8 @@ export interface DaemonToolInfo {
   name: string;
   description?: string;
   server: string;
+  serverPrefix: string;
+  inputSchema?: ToolInputSchema;
 }
 
 export interface HubStatusSnapshot {

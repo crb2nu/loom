@@ -28,8 +28,8 @@ Manage MCP configurations for multiple AI assistants from a single interface:
 | Antigravity | JSON          | Supported |
 | Gemini      | JSON          | Supported |
 | Claude      | JSON          | Supported |
-| Codex       | TOML          | Supported |
-| Kilocode    | TOML          | Supported |
+| Codex       | JSON          | Supported |
+| Kilocode    | JSON          | Supported |
 
 **Platform Commands:**
 

@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
 
-import { DaemonClient } from "../clients/daemon";
+import { AgentContextClient, DaemonClient } from "../clients";
 import {
+  AgentSessionManager,
   ConfigSyncManager,
   HubStatusManager,
   RemoteTunnelManager,
@@ -27,6 +28,8 @@ export interface CommandContext {
   usageAnalyticsManager: UsageAnalyticsManager;
   remoteTunnelManager: RemoteTunnelManager;
   extensionContext: vscode.ExtensionContext;
+  agentContextClient?: AgentContextClient;
+  agentSessionManager?: AgentSessionManager;
 }
 
 /**

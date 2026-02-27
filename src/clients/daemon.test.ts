@@ -185,28 +185,62 @@ git       idle      Git operations`;
   });
 
   describe("getTools", () => {
-    it("should parse tool list output", async () => {
-      const toolOutput = `NAME                          DESCRIPTION
-----                          -----------
-github__list_repos            List GitHub repositories
-github__create_issue          Create GitHub issue
-prometheus__query             Query Prometheus metrics`;
+    it("should parse paged JSON tool list output with normalized metadata", async () => {
+      const page1 = JSON.stringify({
+        page: 1,
+        totalPages: 2,
+        tools: [
+          {
+            name: "github__list_repos",
+            description: "List GitHub repositories",
+            inputSchema: {
+              type: "object",
+              properties: {
+                query: { type: "string" },
+              },
+            },
+          },
+          { name: "github__create_issue", description: "Create GitHub issue" },
+        ],
+      });
+      const page2 = JSON.stringify({
+        page: 2,
+        total_pages: 2,
+        tools: [
+          {
+            name: "prometheus__query",
+            description: "Query Prometheus metrics",
+            input_schema: {
+              properties: {
+                query: { type: "string" },
+                limit: { type: "number" },
+              },
+            },
+          },
+        ],
+      });
 
-      mockExecFile(toolOutput);
-
+      mockExecFileAsync.mockResolvedValueOnce({ stdout: page1, stderr: "" });
+      mockExecFileAsync.mockResolvedValueOnce({ stdout: page2, stderr: "" });
       const tools = await client.getTools();
 
       expect(tools).toHaveLength(3);
       expect(tools[0].name).toBe("github__list_repos");
       expect(tools[0].server).toBe("github");
+      expect(tools[0].serverPrefix).toBe("github");
       expect(tools[0].description).toBe("List GitHub repositories");
+      expect(tools[0].inputSchema?.type).toBe("object");
+      expect(tools[0].inputSchema?.properties).toHaveProperty("query");
+      expect(tools[2].inputSchema?.properties).toHaveProperty("limit");
     });
 
     it("should use cached tools within timeout", async () => {
-      const toolOutput = `NAME                 DESCRIPTION
-github__list_repos   List repos`;
-
-      mockExecFile(toolOutput);
+      const page1 = JSON.stringify({
+        page: 1,
+        totalPages: 1,
+        tools: [{ name: "github__list_repos", description: "List repos" }],
+      });
+      mockExecFile(page1);
 
       // First call
       await client.getTools();
@@ -218,7 +252,29 @@ github__list_repos   List repos`;
       expect(mockExecFileAsync).toHaveBeenCalledTimes(callCount);
     });
 
-    it("should return empty array on error", async () => {
+    it("should fallback to text parsing when JSON listing fails", async () => {
+      const textOutput = `NAME                          DESCRIPTION
+----                          -----------
+github__list_repos            List GitHub repositories
+prometheus__query             Query Prometheus metrics`;
+      // JSON path fails (4 attempts with retry), fallback text succeeds.
+      mockExecFileAsync
+        .mockRejectedValueOnce(new Error("unknown flag: --json"))
+        .mockRejectedValueOnce(new Error("unknown flag: --json"))
+        .mockRejectedValueOnce(new Error("unknown flag: --json"))
+        .mockRejectedValueOnce(new Error("unknown flag: --json"))
+        .mockResolvedValueOnce({ stdout: textOutput, stderr: "" });
+
+      const tools = await client.getTools();
+
+      expect(tools).toHaveLength(2);
+      expect(tools[0].name).toBe("github__list_repos");
+      expect(tools[0].server).toBe("github");
+      expect(tools[0].serverPrefix).toBe("github");
+      expect(tools[0].inputSchema).toBeUndefined();
+    });
+
+    it("should return empty array when both JSON and text listing fail", async () => {
       mockExecFileError(new Error("command failed"));
 
       const tools = await client.getTools();

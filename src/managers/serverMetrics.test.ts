@@ -80,9 +80,9 @@ describe("ServerMetricsManager", () => {
     ];
     hubServers = [{ name: "shared" }, { name: "hub-only" }];
     daemonTools = [
-      { name: "tool-a", server: "shared" },
-      { name: "tool-b", server: "shared" },
-      { name: "tool-c", server: "hub-only" },
+      { name: "tool-a", server: "shared", serverPrefix: "shared" },
+      { name: "tool-b", server: "shared", serverPrefix: "shared" },
+      { name: "tool-c", server: "hub-only", serverPrefix: "hub-only" },
     ];
     resetToolFetchCache();
 
@@ -116,7 +116,7 @@ describe("ServerMetricsManager", () => {
 
   it("caches tool counts for repeated collections", async () => {
     daemonServers = [{ name: "svc", running: true }];
-    daemonTools = [{ name: "tool-1", server: "svc" }];
+    daemonTools = [{ name: "tool-1", server: "svc", serverPrefix: "svc" }];
     resetToolFetchCache();
 
     await manager.collectMetrics();

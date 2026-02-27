@@ -267,6 +267,14 @@
         "title": "Loom: Show Sync Dashboard"
       },
       {
+        "command": "loom.showOnboarding",
+        "title": "Loom: Open Onboarding Wizard"
+      },
+      {
+        "command": "loom.deepSearch",
+        "title": "Loom: Deep Search Across MCP Servers"
+      },
+      {
         "command": "loom.pullFromHome",
         "title": "Loom: Pull Config from Home"
       },
@@ -495,7 +503,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "compat:loom-core": "node scripts/compat/check-loom-core-compat.mjs",
+    "compat:commands": "node scripts/compat/check-command-parity.mjs",
+    "compat:platforms": "node scripts/compat/check-platform-format-consistency.mjs",
+    "compat:loom-core": "node scripts/compat/check-loom-core-compat.mjs && npm run compat:commands && npm run compat:platforms",
     "check": "npm run lint && npm run format:check && tsc --noEmit",
     "prepublishOnly": "npm run check && npm test",
     "prepare": "husky"

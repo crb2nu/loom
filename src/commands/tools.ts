@@ -24,12 +24,12 @@ export function registerToolsCommands(ctx: CommandContext): vscode.Disposable[] 
 }
 
 async function refreshTools(ctx: CommandContext): Promise<void> {
-  const { workspaceRoot, loomChannel, toolProvider } = ctx;
+  const { workspaceRoot, loomChannel, toolProvider, daemonClient } = ctx;
   const loomBinary = resolveLoomBinary(workspaceRoot);
 
   const logger = new Logger(loomChannel, "Tools");
   logger.info("Refreshing tool list...");
-  loomChannel.appendLine(`→ ${loomBinary} tools list`);
+  loomChannel.appendLine(`→ ${loomBinary} tools list --json --page N --limit N`);
 
   await vscode.window.withProgress(
     {
@@ -38,31 +38,27 @@ async function refreshTools(ctx: CommandContext): Promise<void> {
     },
     async () => {
       try {
-        const { stdout, stderr } = await execFileAsync(loomBinary, ["tools", "list"], {
-          cwd: workspaceRoot || os.homedir(),
-          timeout: 30000,
-        });
+        const tools = await daemonClient.getTools(true);
 
         loomChannel.clear();
         logger.info("Available Tools");
         loomChannel.appendLine("─".repeat(60));
-        if (stdout) {
-          loomChannel.append(stdout);
-        }
-        if (stderr) {
-          loomChannel.append(stderr);
+
+        if (tools.length > 0) {
+          const sortedTools = [...tools].sort((a, b) => a.name.localeCompare(b.name));
+          for (const tool of sortedTools) {
+            const description = tool.description ? ` ${tool.description}` : "";
+            loomChannel.appendLine(`${tool.name}${description}`);
+          }
+        } else {
+          loomChannel.appendLine("No tools returned");
         }
         loomChannel.show(true);
 
         // Refresh the tool tree view
-        toolProvider.refresh();
+        toolProvider.refresh(false);
 
-        // Count tools from output
-        const toolCount =
-          (stdout?.match(/^[a-z0-9_-]+__/gm) || []).length ||
-          stdout?.split("\n").filter((line: string) => line.trim()).length ||
-          0;
-        void vscode.window.showInformationMessage(`Loom: ${toolCount} tools available`);
+        void vscode.window.showInformationMessage(`Loom: ${tools.length} tools available`);
       } catch (error) {
         const execError = error as ExecError;
         if (execError.stdout) {
