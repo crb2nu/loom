@@ -61,15 +61,23 @@ dev-install: build package
 		echo "'code' CLI not found. Install VS Code shell command first."; \
 		exit 1; \
 	fi; \
-	if ! command -v antigravity >/dev/null 2>&1; then \
-		echo "'antigravity' CLI not found."; \
-		exit 1; \
-	fi; \
 	echo "Installing $$VSIX into VS Code..."; \
 	code --install-extension "$$VSIX" --force; \
-	echo "Installing $$VSIX into Antigravity..."; \
-	antigravity --install-extension "$$VSIX"; \
-	echo "Installed $$VSIX in VS Code and Antigravity."
+	if command -v antigravity >/dev/null 2>&1; then \
+		echo "Installing $$VSIX into Antigravity..."; \
+		if ! antigravity --install-extension "$$VSIX"; then \
+			echo "Warning: Antigravity install failed (exit $$?)."; \
+			echo "VS Code install succeeded. You can retry Antigravity manually:"; \
+			echo "  antigravity --install-extension $$VSIX"; \
+			if [ "$${STRICT_ANTIGRAVITY_INSTALL:-0}" = "1" ]; then \
+				echo "STRICT_ANTIGRAVITY_INSTALL=1 set, failing dev-install."; \
+				exit 1; \
+			fi; \
+		fi; \
+	else \
+		echo "Warning: 'antigravity' CLI not found. Skipping Antigravity install."; \
+	fi; \
+	echo "Installed $$VSIX in VS Code (Antigravity best-effort)."
 
 # Watch mode for development
 watch:
@@ -107,7 +115,7 @@ help:
 	@echo "  make format-check  - Check formatting"
 	@echo "  make check         - Run all checks (lint + format + typecheck)"
 	@echo "  make package       - Package as .vsix"
-	@echo "  make dev-install   - Build, package, and install in VS Code + Antigravity"
+	@echo "  make dev-install   - Build/package, install in VS Code, then best-effort Antigravity"
 	@echo "  make watch         - Watch mode for development"
 	@echo "  make clean         - Remove build artifacts"
 	@echo "  make setup         - Install dependencies"
