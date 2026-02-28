@@ -91,11 +91,31 @@ describe("DeepSearchManager", () => {
       },
     ];
 
-    await manager.search("vector index", { parallel: false, maxResults: 7 });
+    const results = await manager.search("vector index", { parallel: false, maxResults: 7 });
 
     expect(daemonClient.executeTool).toHaveBeenCalledWith("custom__semantic_lookup", {
       query: "vector index",
       limit: 7,
+    });
+    expect(results[0].status).toBe("ok");
+    expect(results[0].resultCount).toBe(0);
+    expect(results[0].snippet).toBeUndefined();
+  });
+
+  it("uses known family adapters for gitlab search arguments", async () => {
+    tools = [
+      {
+        name: "gitlab__search_repositories",
+        server: "gitlab",
+        serverPrefix: "gitlab",
+      },
+    ];
+
+    await manager.search("loom", { parallel: false, maxResults: 4 });
+
+    expect(daemonClient.executeTool).toHaveBeenCalledWith("gitlab__search_repositories", {
+      search: "loom",
+      per_page: 4,
     });
   });
 });

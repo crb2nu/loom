@@ -440,18 +440,20 @@ function registerDeepSearch(
         },
         async (_progress) => {
           const results: SearchResult[] = await deepSearchManager.search(query);
+          const successCount = results.filter((result) => result.status === "ok").length;
 
-          // Simple output for now - create a new untitled document with JSON results
-          // Long term: Use a Webview or QuickPick
           const content = results
-            .map(
-              (r: SearchResult) =>
-                `## ${r.source.toUpperCase()} (${r.tool})\n${r.error ? `⚠️ Error: ${r.error}` : JSON.stringify(r.data, null, 2)}\n`
-            )
+            .map((result: SearchResult) => formatDeepSearchResult(result))
             .join("\n---\n\n");
 
           const doc = await vscode.workspace.openTextDocument({
-            content: `# Deep Search Results: "${query}"\n\n${content}`,
+            content: [
+              `# Deep Search Results: "${query}"`,
+              "",
+              `Summary: ${successCount}/${results.length} tools succeeded`,
+              "",
+              content || "_No results_",
+            ].join("\n"),
             language: "markdown",
           });
           await vscode.window.showTextDocument(doc);
@@ -459,6 +461,39 @@ function registerDeepSearch(
       );
     })
   );
+}
+
+function formatDeepSearchResult(result: SearchResult): string {
+  const status = result.status === "ok" ? "ok" : "error";
+  const latency = result.durationMs !== undefined ? `${result.durationMs}ms` : "n/a";
+  const count = result.resultCount !== undefined ? String(result.resultCount) : "n/a";
+  const executedAt = result.executedAt ? result.executedAt.toISOString() : "n/a";
+  const snippet = result.snippet ?? "n/a";
+
+  const lines = [
+    `## ${result.source.toUpperCase()} (${result.tool})`,
+    `- Status: ${status}`,
+    `- Latency: ${latency}`,
+    `- Result count: ${count}`,
+    `- Executed at: ${executedAt}`,
+    `- Snippet: ${snippet}`,
+  ];
+
+  if (result.error) {
+    lines.push("", `⚠️ Error: ${result.error}`);
+    return lines.join("\n");
+  }
+
+  const rawPayload = (() => {
+    try {
+      return JSON.stringify(result.data, null, 2);
+    } catch {
+      return String(result.data);
+    }
+  })();
+
+  lines.push("", "```json", rawPayload, "```");
+  return lines.join("\n");
 }
 
 function registerCoreCommands(
