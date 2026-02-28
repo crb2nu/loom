@@ -53,6 +53,7 @@ package:
 dev-install: build package
 	@set -e; \
 	VSIX="$$(ls -t loom-*.vsix 2>/dev/null | head -n1)"; \
+	EXT_ID="cblevins.loom"; \
 	if [ -z "$$VSIX" ]; then \
 		echo "No VSIX package found. Run 'make package' first."; \
 		exit 1; \
@@ -63,21 +64,25 @@ dev-install: build package
 	fi; \
 	echo "Installing $$VSIX into VS Code..."; \
 	code --install-extension "$$VSIX" --force; \
+	if ! code --list-extensions | grep -Fx "$$EXT_ID" >/dev/null 2>&1; then \
+		echo "VS Code install verification failed: $$EXT_ID not found."; \
+		exit 1; \
+	fi; \
 	if command -v antigravity >/dev/null 2>&1; then \
 		echo "Installing $$VSIX into Antigravity..."; \
-		if ! antigravity --install-extension "$$VSIX"; then \
-			echo "Warning: Antigravity install failed (exit $$?)."; \
-			echo "VS Code install succeeded. You can retry Antigravity manually:"; \
-			echo "  antigravity --install-extension $$VSIX"; \
-			if [ "$${STRICT_ANTIGRAVITY_INSTALL:-0}" = "1" ]; then \
-				echo "STRICT_ANTIGRAVITY_INSTALL=1 set, failing dev-install."; \
-				exit 1; \
-			fi; \
+		if ! antigravity --install-extension "$$VSIX" --force; then \
+			echo "Antigravity install failed. Retrying once..."; \
+			sleep 1; \
+			antigravity --install-extension "$$VSIX" --force; \
+		fi; \
+		if ! antigravity --list-extensions | grep -Fx "$$EXT_ID" >/dev/null 2>&1; then \
+			echo "Antigravity install verification failed: $$EXT_ID not found."; \
+			exit 1; \
 		fi; \
 	else \
 		echo "Warning: 'antigravity' CLI not found. Skipping Antigravity install."; \
 	fi; \
-	echo "Installed $$VSIX in VS Code (Antigravity best-effort)."
+	echo "Installed $$VSIX in VS Code and Antigravity."
 
 # Watch mode for development
 watch:
@@ -115,7 +120,7 @@ help:
 	@echo "  make format-check  - Check formatting"
 	@echo "  make check         - Run all checks (lint + format + typecheck)"
 	@echo "  make package       - Package as .vsix"
-	@echo "  make dev-install   - Build/package, install in VS Code, then best-effort Antigravity"
+	@echo "  make dev-install   - Build/package, install in VS Code and verify Antigravity install if available"
 	@echo "  make watch         - Watch mode for development"
 	@echo "  make clean         - Remove build artifacts"
 	@echo "  make setup         - Install dependencies"
