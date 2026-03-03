@@ -2,7 +2,7 @@
   "name": "loom",
   "displayName": "Loom - MCP Context Manager",
   "description": "Unified MCP hub management for AI coding assistants. Sync configs across VS Code, Antigravity, Codex, Claude, Kilocode, and Gemini.",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "publisher": "cblevins",
   "license": "MIT",
   "icon": "assets/icon.png",
