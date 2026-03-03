@@ -100,6 +100,7 @@ export class ConfigSyncManager implements vscode.Disposable {
    */
   setOfflineMode(mode: OfflineMode, reason?: string): void {
     const wasOnline = this.offlineState.mode === "online";
+    const changed = this.offlineState.mode !== mode;
     this.offlineState.mode = mode;
     this.offlineState.reason = reason;
 
@@ -107,6 +108,11 @@ export class ConfigSyncManager implements vscode.Disposable {
       this.offlineState.lastOnline = new Date();
       // Process pending syncs
       void this.processPendingSyncs();
+    }
+
+    // Skip status bar, event, and log updates when mode hasn't changed
+    if (!changed) {
+      return;
     }
 
     this.updateOfflineStatusBar();
