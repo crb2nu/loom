@@ -102,7 +102,9 @@ describe("AgentContextClient", () => {
     });
 
     it("should treat top-level JSON error payload as a failure", async () => {
-      mockExecFileAsync.mockResolvedValueOnce(jsonResponse({ error: "daemon error for tools/call" }));
+      mockExecFileAsync.mockResolvedValueOnce(
+        jsonResponse({ error: "daemon error for tools/call" })
+      );
 
       const result = await client.startSession("test/ns");
 
