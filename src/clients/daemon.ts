@@ -58,6 +58,22 @@ interface LoomToolsListResponse {
   total_tools?: number;
 }
 
+interface ToolCallErrorEnvelope {
+  message?: string;
+  data?: {
+    code?: string;
+    server?: string;
+    tool?: string;
+    stage?: string;
+    retryable?: boolean;
+    retry_after?: string;
+  };
+}
+
+interface ToolCallContentItem {
+  text?: string;
+}
+
 const DEFAULT_RETRY_CONFIG: RetryConfig = {
   maxRetries: 3,
   initialDelayMs: 500,
@@ -573,6 +589,54 @@ export class DaemonClient {
     };
   }
 
+  private extractToolCallError(value: unknown): string | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+
+    const record = value as Record<string, unknown>;
+    const errorValue = record.error;
+
+    if (typeof errorValue === "string" && errorValue.trim().length > 0) {
+      return errorValue.trim();
+    }
+
+    if (errorValue && typeof errorValue === "object" && !Array.isArray(errorValue)) {
+      const envelope = errorValue as ToolCallErrorEnvelope;
+      if (typeof envelope.message === "string" && envelope.message.trim().length > 0) {
+        const details: string[] = [];
+        if (typeof envelope.data?.code === "string" && envelope.data.code.trim().length > 0) {
+          details.push(envelope.data.code.trim());
+        }
+        if (typeof envelope.data?.stage === "string" && envelope.data.stage.trim().length > 0) {
+          details.push(envelope.data.stage.trim());
+        }
+        return details.length > 0
+          ? `${envelope.message.trim()} (${details.join(", ")})`
+          : envelope.message.trim();
+      }
+    }
+
+    if (record.isError === true && Array.isArray(record.content)) {
+      const text = record.content
+        .map((item) => this.extractToolCallContentText(item))
+        .filter((entry) => entry.length > 0)
+        .join("\n")
+        .trim();
+      return text || "tool call failed";
+    }
+
+    return undefined;
+  }
+
+  private extractToolCallContentText(item: unknown): string {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return "";
+    }
+    const contentItem = item as ToolCallContentItem;
+    return typeof contentItem.text === "string" ? contentItem.text : "";
+  }
+
   /**
    * Execute a tool via the loom CLI.
    * @param toolName Full tool name (e.g., "tavily__search")
@@ -606,12 +670,30 @@ export class DaemonClient {
 
         try {
           const result = JSON.parse(stdout) as unknown;
+          const errorMessage = this.extractToolCallError(result);
+          if (errorMessage) {
+            return { success: false, error: errorMessage };
+          }
           return { success: true, result };
         } catch {
           // Output might not be JSON
           return { success: true, result: stdout };
         }
       }, `executeTool(${toolName})`);
+
+      if (!response.success) {
+        this.channel.appendLine(`[DaemonClient] Tool execution failed: ${response.error}`);
+        this._onToolExecution.fire({
+          toolName,
+          server: parsedTool.server,
+          tool: parsedTool.tool,
+          success: false,
+          durationMs: Date.now() - startedAt,
+          timestamp: new Date().toISOString(),
+          error: response.error,
+        });
+        return response;
+      }
 
       this._onToolExecution.fire({
         toolName,

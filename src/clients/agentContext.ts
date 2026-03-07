@@ -34,6 +34,15 @@ interface ToolEnvelope {
   isError?: boolean;
 }
 
+interface ToolCallErrorEnvelope {
+  message?: string;
+  data?: {
+    code?: string;
+    stage?: string;
+    retry_after?: string;
+  };
+}
+
 interface ToolExecutionResult {
   data: LooseRecord | null;
   errorText?: string;
@@ -156,6 +165,14 @@ export class AgentContextClient {
     try {
       const parsedJson = JSON.parse(trimmed) as unknown;
       const parsedRecord = this.asRecord(parsedJson);
+      const structuredError = this.extractStructuredError(parsedRecord);
+      if (structuredError) {
+        return {
+          data: null,
+          errorText: structuredError,
+          toolNotFound: this.isToolNotFoundMessage(structuredError),
+        };
+      }
       const envelope = parsedRecord as ToolEnvelope | null;
       if (envelope && Array.isArray(envelope.content)) {
         const text = this.extractText(envelope.content);
@@ -184,6 +201,42 @@ export class AgentContextClient {
 
     const parsedText = this.parseTextPayload(trimmed);
     return { data: parsedText ?? { raw: trimmed } };
+  }
+
+  private extractStructuredError(parsedRecord: LooseRecord | null): string | undefined {
+    if (!parsedRecord) {
+      return undefined;
+    }
+
+    const topLevelError = parsedRecord.error;
+    if (typeof topLevelError === "string" && topLevelError.trim().length > 0) {
+      return topLevelError.trim();
+    }
+
+    if (topLevelError && typeof topLevelError === "object" && !Array.isArray(topLevelError)) {
+      const envelope = topLevelError as ToolCallErrorEnvelope;
+      if (typeof envelope.message === "string" && envelope.message.trim().length > 0) {
+        const details: string[] = [];
+        if (typeof envelope.data?.code === "string" && envelope.data.code.trim().length > 0) {
+          details.push(envelope.data.code.trim());
+        }
+        if (typeof envelope.data?.stage === "string" && envelope.data.stage.trim().length > 0) {
+          details.push(envelope.data.stage.trim());
+        }
+        return details.length > 0
+          ? `${envelope.message.trim()} (${details.join(", ")})`
+          : envelope.message.trim();
+      }
+    }
+
+    if (parsedRecord.ok === false) {
+      if (typeof parsedRecord.message === "string" && parsedRecord.message.trim().length > 0) {
+        return parsedRecord.message.trim();
+      }
+      return "tool call failed";
+    }
+
+    return undefined;
   }
 
   private parseTextPayload(text: string): LooseRecord | null {

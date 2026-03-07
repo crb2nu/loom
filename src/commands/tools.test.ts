@@ -2,8 +2,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as vscode from "vscode";
 
+const mockExecFileAsync = vi.hoisted(() => vi.fn());
 const mockResolveLoomBinary = vi.hoisted(() => vi.fn(() => "/usr/local/bin/loom"));
 const mockShowActionableError = vi.hoisted(() => vi.fn(async () => undefined));
+
+vi.mock("child_process", () => ({
+  execFile: vi.fn(),
+}));
+
+vi.mock("util", () => ({
+  promisify: () => mockExecFileAsync,
+}));
 
 vi.mock("../utils/binary", () => ({
   resolveLoomBinary: mockResolveLoomBinary,
@@ -43,6 +52,7 @@ describe("tools commands", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockExecFileAsync.mockReset();
 
     loomChannel = {
       name: "Tools tests",
@@ -130,5 +140,39 @@ describe("tools commands", () => {
     expect(loomChannel.appendLine).toHaveBeenCalledWith("✗ listing failed");
     expect(loomChannel.show).toHaveBeenCalledWith(true);
     expect(mockShowActionableError).toHaveBeenCalledWith(failure, "Failed to list tools");
+  });
+
+  it("uses JSON search output from loom-core standard tool search API", async () => {
+    mockExecFileAsync.mockResolvedValueOnce({
+      stdout: JSON.stringify({
+        query: "git",
+        detail: "summary",
+        total: 2,
+        count: 2,
+        results: [
+          { name: "gitlab__list_issues", server: "gitlab", description: "List issues" },
+          { name: "github__list_repos", server: "github", description: "List repos" },
+        ],
+      }),
+      stderr: "",
+    });
+    vi.mocked(vscode.window.showInputBox).mockResolvedValueOnce("git");
+
+    registerToolsCommands(ctx);
+    const handler = getRegisteredCommandHandler("loom.searchTools");
+
+    await handler();
+
+    expect(mockToolProvider.setFilter).toHaveBeenCalledWith("git");
+    expect(mockExecFileAsync).toHaveBeenCalledWith(
+      "/usr/local/bin/loom",
+      ["tools", "search", "git", "--json", "--detail", "summary", "--limit", "200"],
+      expect.any(Object)
+    );
+    expect(loomChannel.appendLine).toHaveBeenCalledWith("gitlab__list_issues (gitlab) List issues");
+    expect(loomChannel.appendLine).toHaveBeenCalledWith("github__list_repos (github) List repos");
+    expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+      'Loom: 2 tools match "git" (filter applied to tree view)'
+    );
   });
 });

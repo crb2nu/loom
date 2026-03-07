@@ -101,6 +101,18 @@ describe("AgentContextClient", () => {
       );
     });
 
+    it("should treat top-level JSON error payload as a failure", async () => {
+      mockExecFileAsync.mockResolvedValueOnce(jsonResponse({ error: "daemon error for tools/call" }));
+
+      const result = await client.startSession("test/ns");
+
+      expect(result).toBeNull();
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(mockChannel.appendLine).toHaveBeenCalledWith(
+        expect.stringContaining("daemon error for tools/call")
+      );
+    });
+
     it("should fall back to unprefixed tool name when prefixed tool is unavailable", async () => {
       mockExecFileAsync
         .mockResolvedValueOnce(

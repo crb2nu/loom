@@ -303,6 +303,15 @@ prometheus__query             Query Prometheus metrics`;
       expect(result.result).toBe("plain text output");
     });
 
+    it("should treat top-level JSON error payload as a tool failure", async () => {
+      mockExecFile('{"error":"daemon error for tools/call: access denied"}');
+
+      const result = await client.executeTool("github__create_issue", {});
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("access denied");
+    });
+
     it("should return error on failure", async () => {
       mockExecFileError(new Error("tool execution failed"));
 
