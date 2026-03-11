@@ -5,7 +5,7 @@ import * as vscode from "vscode";
 
 import { PlatformConfigClient } from "../clients/platformConfig";
 import { PlatformsProvider } from "../providers/platforms";
-import { PlatformType } from "../types";
+import { DoctorReport, PlatformType } from "../types";
 import { PLATFORMS, getEnabledPlatforms } from "../utils/platform";
 
 /**
@@ -375,5 +375,84 @@ export function registerPlatformCommands(ctx: PlatformCommandContext): vscode.Di
     })
   );
 
+  // Show doctor report
+  disposables.push(
+    vscode.commands.registerCommand("loom.showDoctorReport", async () => {
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Running loom doctor...",
+          cancellable: false,
+        },
+        async () => {
+          const report = await ctx.platformConfigClient.getDoctorReport(true);
+          if (!report) {
+            vscode.window.showErrorMessage("Failed to load loom doctor report");
+            return;
+          }
+
+          const doc = await vscode.workspace.openTextDocument({
+            content: formatDoctorReport(report),
+            language: "markdown",
+          });
+          await vscode.window.showTextDocument(doc, { preview: true });
+        }
+      );
+    })
+  );
+
   return disposables;
+}
+
+function formatDoctorReport(report: DoctorReport): string {
+  const lines: string[] = [
+    "# Loom Doctor Report",
+    "",
+    `Status: ${report.ok ? "ok" : "issues detected"}`,
+  ];
+
+  if (report.loomBinary) {
+    lines.push(`Binary: \`${report.loomBinary}\``);
+  }
+  if (report.registry) {
+    lines.push(`Registry: \`${report.registry}\``);
+  }
+  if (report.registrySource) {
+    lines.push(`Registry Source: \`${report.registrySource}\``);
+  }
+
+  lines.push("", "## Platforms", "");
+  for (const platform of report.platforms) {
+    lines.push(
+      `- **${platform.platform}**: status=${platform.status}, hooks=${platform.hooks}, perms=${platform.perms}, schema=${platform.schema}`
+    );
+    if (platform.config_path) {
+      lines.push(`  config: \`${platform.config_path}\``);
+    }
+    if (platform.details && platform.details.length > 0) {
+      lines.push(`  details: ${platform.details.join("; ")}`);
+    }
+  }
+
+  if (report.templateProfiles && report.templateProfiles.length > 0) {
+    lines.push("", "## Template Profiles", "");
+    for (const profile of report.templateProfiles) {
+      lines.push(`- **${profile.profile ?? "unknown"}**: unresolved=${profile.unresolved ?? 0}`);
+      if (profile.items && profile.items.length > 0) {
+        lines.push(`  items: ${profile.items.join("; ")}`);
+      }
+    }
+  }
+
+  if (report.envWarnings && report.envWarnings.length > 0) {
+    lines.push("", "## Environment Warnings", "");
+    for (const warning of report.envWarnings) {
+      lines.push(`- **${warning.key ?? "warning"}**: ${warning.message ?? "warning"}`);
+      if (warning.fix) {
+        lines.push(`  fix: ${warning.fix}`);
+      }
+    }
+  }
+
+  return lines.join("\n");
 }

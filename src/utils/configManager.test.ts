@@ -131,6 +131,10 @@ describe("ConfigManager", () => {
         "antigravity",
         "gemini",
         "claude",
+        "codex",
+        "kilocode",
+        "opencode",
+        "zed",
       ]);
     });
 

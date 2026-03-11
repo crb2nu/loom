@@ -733,7 +733,7 @@ function registerAgentContext(
 function registerServerHealth(
   env: Pick<
     ActivationEnvironment,
-    "configManager" | "daemonClient" | "hubStatusManager" | "loomChannel"
+    "configManager" | "daemonClient" | "hubStatusManager" | "loomChannel" | "workspaceRoot"
   >,
   context: vscode.ExtensionContext
 ): void {
@@ -748,6 +748,7 @@ function registerServerHealth(
   const profileManager = new ProfileManager(
     env.hubStatusManager,
     env.daemonClient,
+    env.workspaceRoot,
     env.loomChannel,
     env.configManager
   );
@@ -864,6 +865,7 @@ export async function activate(context: vscode.ExtensionContext) {
       daemonClient,
       hubStatusManager,
       loomChannel: base.loomChannel,
+      workspaceRoot: base.workspaceRoot,
     },
     context
   );

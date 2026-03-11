@@ -264,6 +264,14 @@ export interface ServerProfile {
   hubEnabled: boolean;
 }
 
+export interface LoomCoreProfile {
+  name: string;
+  description?: string;
+  maxTools?: number;
+  servers: string[] | "*";
+  categories?: string[];
+}
+
 // ============================================================================
 // Remote Tunnel Types
 // ============================================================================
@@ -284,6 +292,10 @@ export interface RoutingStatus {
   localRouted: string[];
   hubHealthy: boolean;
   activeProfile: string;
+  profileDescription?: string;
+  profileMaxTools?: number;
+  profileServers?: string[] | "*";
+  profileCategories?: string[];
 }
 
 // ============================================================================
@@ -293,12 +305,73 @@ export interface RoutingStatus {
 /**
  * Supported platform types for MCP configuration.
  */
-export type PlatformType = "vscode" | "antigravity" | "gemini" | "codex" | "kilocode" | "claude";
+export type PlatformType =
+  | "vscode"
+  | "antigravity"
+  | "gemini"
+  | "codex"
+  | "kilocode"
+  | "claude"
+  | "opencode"
+  | "zed";
+
+export type DoctorCheckStatus = "ok" | "n/a" | "stale" | "missing" | "healthy" | "error";
 
 /**
  * Sync status for a platform configuration.
  */
 export type PlatformSyncStatus = "synced" | "out-of-sync" | "missing" | "error" | "unknown";
+
+export interface DoctorPlatformCapabilities {
+  SessionStartHook?: boolean;
+  SessionEndHook?: boolean;
+  PostToolUseHook?: boolean;
+  PreToolUseHook?: boolean;
+  NotifyHook?: boolean;
+  MCPServers?: boolean;
+  Permissions?: boolean;
+  SandboxMode?: boolean;
+  WebSearch?: boolean;
+  CustomModels?: boolean;
+  PluginSystem?: boolean;
+  DisplayName?: string;
+}
+
+export interface DoctorPlatformReport {
+  platform: string;
+  hooks: DoctorCheckStatus;
+  perms: DoctorCheckStatus;
+  schema: DoctorCheckStatus;
+  status: DoctorCheckStatus;
+  config_path?: string;
+  details?: string[];
+  capabilities?: DoctorPlatformCapabilities;
+}
+
+export interface DoctorTemplateProfile {
+  profile?: string;
+  unresolved?: number;
+  items?: string[];
+  fix?: string[];
+}
+
+export interface DoctorEnvWarning {
+  key?: string;
+  message?: string;
+  fix?: string;
+  servers?: string[];
+}
+
+export interface DoctorReport {
+  ok: boolean;
+  platforms: DoctorPlatformReport[];
+  loomBinary?: string;
+  registry?: string;
+  registrySource?: string;
+  registryPrecedence?: string[];
+  templateProfiles?: DoctorTemplateProfile[];
+  envWarnings?: DoctorEnvWarning[];
+}
 
 /**
  * Platform configuration state.
@@ -314,6 +387,7 @@ export interface PlatformConfig {
   homeHash?: string;
   lastChecked: Date;
   error?: string;
+  doctor?: DoctorPlatformReport;
 }
 
 /**

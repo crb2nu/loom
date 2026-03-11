@@ -88,16 +88,16 @@ export function registerServerHealthCommands(ctx: ServerHealthCommandContext): v
     }),
 
     vscode.commands.registerCommand("loom.switchProfile", async () => {
-      const profiles = ctx.profileManager.getProfiles();
+      const profiles = await ctx.profileManager.getProfiles();
       const activeProfile = ctx.profileManager.getActiveProfileName();
 
       const items = profiles.map((p) => ({
         label: p.name === activeProfile ? `$(check) ${p.name}` : p.name,
-        description: p.hubEnabled ? "Hub enabled" : "Local only",
+        description: p.description ?? "loom-core profile",
         detail:
           p.servers === "*"
-            ? "All servers"
-            : `${p.servers.length} server${p.servers.length !== 1 ? "s" : ""}`,
+            ? `All servers${p.maxTools ? ` · max ${p.maxTools} tools` : ""}`
+            : `${p.servers.length} server${p.servers.length !== 1 ? "s" : ""}${p.maxTools ? ` · max ${p.maxTools} tools` : ""}`,
         profileName: p.name,
       }));
 
@@ -122,6 +122,13 @@ export function registerServerHealthCommands(ctx: ServerHealthCommandContext): v
         "",
         `**Active Profile:** ${routing.activeProfile}`,
         `**Hub Status:** ${routing.hubHealthy ? "Healthy" : "Unhealthy"}`,
+        ...(routing.profileDescription
+          ? [`**Profile Description:** ${routing.profileDescription}`]
+          : []),
+        ...(routing.profileMaxTools ? [`**Profile Max Tools:** ${routing.profileMaxTools}`] : []),
+        ...(routing.profileCategories && routing.profileCategories.length > 0
+          ? [`**Profile Categories:** ${routing.profileCategories.join(", ")}`]
+          : []),
         "",
         "## Hub Routed",
         ...(routing.hubRouted.length > 0 ? routing.hubRouted.map((s) => `- ${s}`) : ["- None"]),

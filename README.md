@@ -2,13 +2,13 @@
 
 # Loom - MCP Context Manager for VS Code
 
-**Weaving context for AI** - Unified MCP hub management across VS Code, Antigravity, Gemini, Claude, Codex, and Kilocode.
+**Weaving context for AI** - Unified MCP hub management across VS Code, Antigravity, Gemini, Claude, Codex, Kilocode, OpenCode, and Zed.
 
 ## Overview
 
 Loom is a VS Code extension that manages MCP (Model Context Protocol) server configurations across multiple AI coding assistant platforms. It provides:
 
-- **Multi-platform sync**: Keep MCP configs consistent across 6 platforms
+- **Multi-platform sync**: Keep MCP configs consistent across 8 platforms
 - **Hub integration**: Connect to centralized MCP gateway
 - **Skills registry**: Browse and manage agent skills
 - **Agent context**: Persistent memory across sessions
@@ -30,6 +30,8 @@ Manage MCP configurations for multiple AI assistants from a single interface:
 | Claude      | JSON          | Supported |
 | Codex       | JSON          | Supported |
 | Kilocode    | JSON          | Supported |
+| OpenCode    | JSON          | Supported |
+| Zed         | JSON          | Supported |
 
 **Platform Commands:**
 
@@ -38,6 +40,7 @@ Manage MCP configurations for multiple AI assistants from a single interface:
 - `Loom: Sync All Platforms` - Sync all enabled platforms
 - `Loom: Show Sync Dashboard` - Visual sync status grid
 - `Loom: Diff Platform Config` - Compare repo vs home configs
+- `Loom: Show Doctor Report` - Run `loom doctor --json` and inspect drift details
 
 ### MCP Hub Integration
 
@@ -184,7 +187,16 @@ Safety checks in `scripts/publish-antigravity.sh`:
   "loom.platform": "auto",
 
   // Platforms to manage
-  "loom.enabledPlatforms": ["vscode", "antigravity", "gemini", "claude"],
+  "loom.enabledPlatforms": [
+    "vscode",
+    "antigravity",
+    "gemini",
+    "claude",
+    "codex",
+    "kilocode",
+    "opencode",
+    "zed"
+  ],
 
   // Auto-sync on startup
   "loom.syncOnStartup": false,
@@ -218,10 +230,10 @@ Safety checks in `scripts/publish-antigravity.sh`:
     }
   ],
 
-  // Active server profile
+  // Active loom-core tool profile
   "loom.activeProfile": "full",
 
-  // Custom server profiles
+  // Deprecated legacy extension profiles (ignored)
   "loom.profiles": {}
 }
 ```
@@ -247,26 +259,14 @@ module.exports = {
 };
 ```
 
-### Server Profiles
+### Loom-Core Profiles
 
-Define custom server profiles for quick switching:
+The extension now treats loom-core as the source of truth for tool profiles.
 
-```json
-{
-  "loom.profiles": {
-    "minimal": {
-      "servers": ["git", "filesystem"],
-      "hubEnabled": false,
-      "platforms": ["vscode"]
-    },
-    "k8s-ops": {
-      "servers": ["k8s", "helm", "flux", "prometheus"],
-      "hubEnabled": true,
-      "platforms": ["vscode", "antigravity", "claude"]
-    }
-  }
-}
-```
+- `loom.activeProfile` stores the selected loom-core profile name
+- invalid values fall back to `full`
+- `loom.profiles` is deprecated and ignored by the extension
+- profile details shown in the UI come from `loom profile list` and `loom profile show <name>`
 
 ## Views
 
@@ -294,6 +294,7 @@ Loom adds these views to the Explorer sidebar:
 | `Loom: Sync All Platforms`    | Sync all enabled platforms    |
 | `Loom: Diff Platform Config`  | Show repo vs home diff        |
 | `Loom: Open Platform Config`  | Open config in editor         |
+| `Loom: Show Doctor Report`    | Show `loom doctor --json`     |
 | `Loom: Show Sync Dashboard`   | Visual sync status dashboard  |
 
 ### Hub & Servers
@@ -303,7 +304,7 @@ Loom adds these views to the Explorer sidebar:
 | `Loom: Refresh MCP Hub Status`       | Poll hub status             |
 | `Loom: Check MCP Server Health`      | Run health checks           |
 | `Loom: Show Server Health Dashboard` | Health metrics view         |
-| `Loom: Switch Server Profile`        | Change active profile       |
+| `Loom: Switch Tool Profile`          | Change active loom-core profile |
 | `Loom: Start Remote Tunnel`          | Start configured K8s tunnel |
 | `Loom: Stop Remote Tunnel`           | Stop active tunnel          |
 | `Loom: Show Remote Tunnel Status`    | Show active tunnel details  |
@@ -348,9 +349,17 @@ loom sync status
 loom sync vscode --regen
 loom sync antigravity --regen
 loom sync claude --regen
+loom sync opencode --regen
+loom sync zed --regen
+
+# Pull a generated config back from a home directory
+loom pull vscode
+
+# Inspect cross-platform drift and template/env issues
+loom doctor --json
 
 # Sync all platforms
-for p in vscode antigravity codex claude gemini kilocode; do
+for p in vscode antigravity codex claude gemini kilocode opencode zed; do
   loom sync $p --regen
 done
 ```

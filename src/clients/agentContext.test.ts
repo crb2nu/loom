@@ -259,6 +259,54 @@ describe("AgentContextClient", () => {
     });
   });
 
+  describe("recallEnhanced", () => {
+    it("should prefer agent_recall for context retrieval", async () => {
+      mockExecFileAsync.mockResolvedValueOnce(
+        jsonResponse({
+          entries: [
+            {
+              entry_id: "entry-1",
+              session_id: "sess-1",
+              entry_type: "decision",
+              title: "Use doctor",
+              content: "doctor report is canonical",
+              created_at: "2026-02-24T18:00:00Z",
+            },
+          ],
+          tasks: [
+            {
+              task_id: "task-1",
+              session_id: "sess-1",
+              title: "Update extension",
+              status: "in_progress",
+              priority: "high",
+              created_at: "2026-02-24T18:00:00Z",
+              updated_at: "2026-02-24T18:01:00Z",
+            },
+          ],
+        })
+      );
+
+      const result = await client.recallEnhanced("doctor", "/workspace/src/extension.ts", "loom");
+
+      expect(result.entries).toHaveLength(1);
+      expect(result.decisions).toHaveLength(1);
+      expect(result.tasks[0]?.task_id).toBe("task-1");
+      expect(mockExecFileAsync).toHaveBeenCalledWith(
+        "/usr/local/bin/loom",
+        [
+          "tools",
+          "call",
+          "agent_context__agent_recall",
+          "--json",
+          "--args",
+          expect.stringContaining('"scope":"context"'),
+        ],
+        expect.any(Object)
+      );
+    });
+  });
+
   describe("listTasks", () => {
     it("should parse task table rows", async () => {
       mockExecFileAsync.mockResolvedValueOnce(
@@ -286,6 +334,90 @@ describe("AgentContextClient", () => {
       const result = await client.listTasks();
 
       expect(result).toEqual([]);
+    });
+  });
+
+  describe("annotations and memory", () => {
+    it("should prefer agent_context_add when creating annotations", async () => {
+      mockExecFileAsync.mockResolvedValueOnce(
+        jsonResponse({ entry_ids: ["entry-annotation-1"], ok: true })
+      );
+
+      const result = await client.addAnnotation("sess-1", {
+        file_path: "/workspace/src/file.ts",
+        line_start: 10,
+        line_end: 12,
+        annotation_type: "warning",
+        content: "Investigate drift",
+      });
+
+      expect(result?.annotation_id).toBe("entry-annotation-1");
+      expect(mockExecFileAsync).toHaveBeenCalledWith(
+        "/usr/local/bin/loom",
+        [
+          "tools",
+          "call",
+          "agent_context__agent_context_add",
+          "--json",
+          "--args",
+          expect.stringContaining('"entry_type":"annotation"'),
+        ],
+        expect.any(Object)
+      );
+    });
+
+    it("should prefer agent_recall for memory tiers", async () => {
+      mockExecFileAsync
+        .mockResolvedValueOnce(
+          jsonResponse({
+            working_memory: { item_count: 1, token_count: 15 },
+            short_term_memory: { item_count: 0, token_count: 0 },
+            long_term_memory: { item_count: 1, token_count: 25 },
+          })
+        )
+        .mockResolvedValueOnce(
+          jsonResponse({
+            items: [
+              {
+                id: "mem-1",
+                session_id: "sess-1",
+                tier: "working",
+                category: "decision",
+                title: "Current note",
+                content: "working memory entry",
+                created_at: "2026-02-24T18:00:00Z",
+              },
+              {
+                id: "mem-2",
+                session_id: "sess-1",
+                tier: "long_term",
+                category: "insight",
+                title: "Archived note",
+                content: "long term memory entry",
+                created_at: "2026-02-24T18:00:00Z",
+              },
+            ],
+          })
+        );
+
+      const result = await client.getMemoryTiers("sess-1");
+
+      expect(result).toHaveLength(3);
+      expect(result[0]?.entries[0]?.entry_id).toBe("mem-1");
+      expect(result[2]?.entries[0]?.entry_id).toBe("mem-2");
+      expect(mockExecFileAsync).toHaveBeenNthCalledWith(
+        2,
+        "/usr/local/bin/loom",
+        [
+          "tools",
+          "call",
+          "agent_context__agent_recall",
+          "--json",
+          "--args",
+          expect.stringContaining('"scope":"memory"'),
+        ],
+        expect.any(Object)
+      );
     });
   });
 

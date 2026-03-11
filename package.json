@@ -1,7 +1,7 @@
 {
   "name": "loom",
   "displayName": "Loom - MCP Context Manager",
-  "description": "Unified MCP hub management for AI coding assistants. Sync configs across VS Code, Antigravity, Codex, Claude, Kilocode, and Gemini.",
+  "description": "Unified MCP hub management for AI coding assistants. Sync configs across VS Code, Antigravity, Codex, Claude, Kilocode, Gemini, OpenCode, and Zed.",
   "version": "0.9.1",
   "publisher": "cblevins",
   "license": "MIT",
@@ -167,6 +167,14 @@
         "title": "Loom: List Skill Categories"
       },
       {
+        "command": "loom.syncSkills",
+        "title": "Loom: Sync Skills"
+      },
+      {
+        "command": "loom.previewSkillOutput",
+        "title": "Loom: Preview Skill Output"
+      },
+      {
         "command": "loom.startAgentSession",
         "title": "Loom: Start Agent Session"
       },
@@ -224,7 +232,7 @@
       },
       {
         "command": "loom.switchProfile",
-        "title": "Loom: Switch Server Profile"
+        "title": "Loom: Switch Tool Profile"
       },
       {
         "command": "loom.showRoutingStatus",
@@ -267,6 +275,10 @@
         "title": "Loom: Show Sync Dashboard"
       },
       {
+        "command": "loom.showContextGraph",
+        "title": "Loom: Show Context Graph"
+      },
+      {
         "command": "loom.showOnboarding",
         "title": "Loom: Open Onboarding Wizard"
       },
@@ -285,6 +297,10 @@
       {
         "command": "loom.refreshPlatforms",
         "title": "Loom: Refresh Platforms"
+      },
+      {
+        "command": "loom.showDoctorReport",
+        "title": "Loom: Show Doctor Report"
       }
     ],
     "views": {
@@ -374,6 +390,11 @@
           "default": true,
           "description": "Show gutter decorations for agent code annotations."
         },
+        "loom.onboardingComplete": {
+          "type": "boolean",
+          "default": false,
+          "description": "Tracks whether the onboarding wizard has been completed."
+        },
         "loom.serverMetricsInterval": {
           "type": "number",
           "default": 30000,
@@ -436,22 +457,28 @@
         "loom.activeProfile": {
           "type": "string",
           "default": "full",
-          "description": "Active server profile name."
+          "description": "Active loom-core tool profile name."
         },
         "loom.profiles": {
           "type": "object",
           "default": {},
-          "description": "Server profiles for quick switching. Each profile has 'servers' (array or '*'), 'hubEnabled' (boolean), and optional 'platforms' (array)."
+          "description": "Deprecated legacy extension profile configuration. Ignored in favor of loom-core profiles."
         },
         "loom.platform": {
           "type": "string",
           "enum": [
             "auto",
             "vscode",
-            "antigravity"
+            "antigravity",
+            "gemini",
+            "codex",
+            "kilocode",
+            "claude",
+            "opencode",
+            "zed"
           ],
           "default": "auto",
-          "description": "Platform mode. 'auto' detects automatically between VS Code and Antigravity."
+          "description": "Platform mode. 'auto' detects automatically; other values force a specific platform."
         },
         "loom.enabledPlatforms": {
           "type": "array",
@@ -463,14 +490,20 @@
               "gemini",
               "codex",
               "kilocode",
-              "claude"
+              "claude",
+              "opencode",
+              "zed"
             ]
           },
           "default": [
             "vscode",
             "antigravity",
             "gemini",
-            "claude"
+            "claude",
+            "codex",
+            "kilocode",
+            "opencode",
+            "zed"
           ],
           "description": "Platforms to manage for MCP configuration sync."
         },

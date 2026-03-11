@@ -541,6 +541,22 @@ export class AgentContextClient {
     };
   }
 
+  private normalizeAnnotationEntry(entry: AgentContextEntry): AgentCodeAnnotation {
+    const lineStart = entry.line_start ?? 1;
+    return {
+      annotation_id: entry.entry_id,
+      session_id: entry.session_id,
+      file_path: entry.file_path ?? "",
+      line_start: lineStart,
+      line_end: entry.line_end ?? lineStart,
+      annotation_type: this.normalizeAnnotationType(
+        entry.entry_type === "annotation" ? "note" : entry.entry_type
+      ),
+      content: entry.content,
+      created_at: entry.created_at,
+    };
+  }
+
   private normalizeAnnotationType(
     type: string | undefined
   ): AgentCodeAnnotation["annotation_type"] {
@@ -699,6 +715,7 @@ export class AgentContextClient {
       session_id?: string;
       entry_types?: string[];
       tags?: string[];
+      file_path?: string;
       limit?: number;
     }
   ): Promise<AgentContextEntry[]> {
@@ -754,25 +771,38 @@ export class AgentContextClient {
     decisions: AgentContextEntry[];
     tasks: AgentTask[];
   }> {
-    const result = await this.executeTool("agent_context_recall_enhanced", {
+    let result = await this.executeTool("agent_recall", {
       query: query.trim() || "*",
       file_context: fileContext,
       namespace,
       agent_id: this.agentId,
+      include_tasks: true,
+      include_decisions: true,
+      include_summaries: true,
+      scope: "context",
     });
+    if (!result) {
+      result = await this.executeTool("agent_context_recall_enhanced", {
+        query: query.trim() || "*",
+        file_context: fileContext,
+        namespace,
+        agent_id: this.agentId,
+      });
+    }
     if (!result) return { entries: [], decisions: [], tasks: [] };
 
+    const decisionRecords = this.asRecordArray(result.decisions);
     const entryRecords = this.asRecordArray(result.entries);
-    const entries = entryRecords.map((entry) => this.normalizeContextEntry(entry));
-    const decisions = entries.filter((entry) => entry.entry_type === "decision");
+    const entries = (entryRecords.length > 0 ? entryRecords : decisionRecords).map((entry) =>
+      this.normalizeContextEntry(entry)
+    );
+    const decisions =
+      decisionRecords.length > 0
+        ? decisionRecords.map((entry) => this.normalizeContextEntry(entry))
+        : entries.filter((entry) => entry.entry_type === "decision");
 
     const taskRecords = this.asRecordArray(result.tasks);
-    const tasks =
-      taskRecords.length > 0
-        ? taskRecords.map((task) => this.normalizeTask(task))
-        : entryRecords
-            .filter((entry) => (this.asString(entry.entry_type) ?? "") === "task")
-            .map((task) => this.normalizeTask(task));
+    const tasks = taskRecords.map((task) => this.normalizeTask(task));
 
     return { entries, decisions, tasks };
   }
@@ -868,16 +898,34 @@ export class AgentContextClient {
     sessionId: string,
     annotation: Omit<AgentCodeAnnotation, "annotation_id" | "session_id" | "created_at">
   ): Promise<AgentCodeAnnotation | null> {
-    const result = await this.executeTool("agent_code_annotate", {
+    let result = await this.executeTool("agent_context_add", {
       session_id: sessionId,
-      ...annotation,
+      entries: [
+        {
+          entry_type: "annotation",
+          annotation_type: annotation.annotation_type,
+          title: `${annotation.annotation_type} annotation`,
+          content: annotation.content,
+          file_path: annotation.file_path,
+          line_start: annotation.line_start,
+          line_end: annotation.line_end,
+        },
+      ],
     });
+    if (!result) {
+      result = await this.executeTool("agent_code_annotate", {
+        session_id: sessionId,
+        ...annotation,
+      });
+    }
+
     const annotationRecord = this.asRecord(result?.annotation);
     if (annotationRecord) {
       return this.normalizeAnnotation(annotationRecord);
     }
 
-    const annotationId = this.asString(result?.annotation_id);
+    const annotationId =
+      this.asStringArray(result?.entry_ids)[0] ?? this.asString(result?.annotation_id);
     if (!annotationId) return null;
 
     const lineEnd = annotation.line_end ?? annotation.line_start;
@@ -894,15 +942,25 @@ export class AgentContextClient {
    * Get annotations for a file.
    */
   async getAnnotations(filePath: string, sessionId?: string): Promise<AgentCodeAnnotation[]> {
-    const result = await this.executeTool("agent_code_annotations_get", {
-      file_path: filePath,
-      limit: 200,
-    });
-    if (!result) return [];
+    let annotations = (
+      await this.searchContext("", {
+        file_path: filePath,
+        entry_types: ["annotation"],
+        limit: 200,
+      })
+    ).map((entry) => this.normalizeAnnotationEntry(entry));
 
-    const annotations = this.asRecordArray(result.annotations).map((annotation) =>
-      this.normalizeAnnotation(annotation)
-    );
+    if (annotations.length === 0) {
+      const result = await this.executeTool("agent_code_annotations_get", {
+        file_path: filePath,
+        limit: 200,
+      });
+      if (!result) return [];
+      annotations = this.asRecordArray(result.annotations).map((annotation) =>
+        this.normalizeAnnotation(annotation)
+      );
+    }
+
     if (!sessionId) {
       return annotations;
     }
@@ -1078,11 +1136,21 @@ export class AgentContextClient {
       }));
     }
 
-    const recall = await this.executeTool("agent_memory_recall", {
+    let recall = await this.executeTool("agent_recall", {
       session_id: sessionId,
+      scope: "memory",
+      memory_tiers: ["working", "short_term", "long_term"],
       limit: 60,
     });
+    if (!recall) {
+      recall = await this.executeTool("agent_memory_recall", {
+        session_id: sessionId,
+        limit: 60,
+      });
+    }
     const recallItems = this.asRecordArray(recall?.items);
+    const recallEntries = this.asRecordArray(recall?.entries);
+    const memoryRecords = recallItems.length > 0 ? recallItems : recallEntries;
 
     const entryByTier = new Map<MemoryTier["tier"], AgentContextEntry[]>([
       ["working", []],
@@ -1090,16 +1158,17 @@ export class AgentContextClient {
       ["long_term", []],
     ]);
 
-    for (const item of recallItems) {
-      const tier = this.asString(item.tier);
+    for (const item of memoryRecords) {
+      const metadata = this.asRecord(item.metadata) ?? {};
+      const tier = this.asString(item.tier) ?? this.asString(metadata.tier);
       if (tier !== "working" && tier !== "short_term" && tier !== "long_term") {
         continue;
       }
       entryByTier.get(tier)!.push({
-        entry_id: this.asString(item.id) ?? `memory-${Date.now()}`,
+        entry_id: this.asString(item.entry_id) ?? this.asString(item.id) ?? `memory-${Date.now()}`,
         session_id: this.asString(item.session_id) ?? "",
-        entry_type: this.asString(item.category) ?? "note",
-        title: this.asString(item.title) ?? "(untitled memory)",
+        entry_type: this.asString(item.entry_type) ?? this.asString(item.category) ?? "note",
+        title: this.asString(item.title) ?? this.asString(item.name) ?? "(untitled memory)",
         content: this.asString(item.content) ?? "",
         created_at: this.asString(item.created_at) ?? new Date().toISOString(),
       });

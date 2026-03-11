@@ -5,6 +5,24 @@ All notable changes to the Loom extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Added platform parity for OpenCode and Zed across settings, onboarding, platform metadata, and tests
+- Added `Loom: Show Doctor Report` backed by `loom doctor --json`
+- Added extension-surface parity tests for registered commands and contributed settings
+
+### Changed
+
+- Profile selection now uses loom-core `profile list/show` as the source of truth
+- Platform sync now prefers `loom sync <platform> --regen`, `loom pull <platform>`, and doctor-based drift reporting
+- Agent context recall and memory flows now prefer current loom-core tools with compatibility fallbacks retained
+
+### Deprecated
+
+- `loom.profiles` is now ignored in favor of loom-core profiles and only retained as a compatibility shim
+
 ## [0.9.0] - 2026-02-01
 
 ### Added

@@ -7,7 +7,13 @@ import { PLATFORMS, getEnabledPlatforms } from "../utils/platform";
 /**
  * Tree item types for platforms hierarchy.
  */
-type PlatformTreeItemType = "platform" | "config-path" | "status" | "server-count" | "action";
+type PlatformTreeItemType =
+  | "platform"
+  | "config-path"
+  | "status"
+  | "server-count"
+  | "doctor"
+  | "action";
 
 /**
  * Custom TreeItem for platforms that tracks item type and metadata.
@@ -161,6 +167,27 @@ export class PlatformsProvider implements vscode.TreeDataProvider<PlatformTreeIt
     }
     children.push(statusItem);
 
+    if (config?.doctor) {
+      for (const [label, value] of [
+        ["Doctor", config.doctor.status],
+        ["Hooks", config.doctor.hooks],
+        ["Permissions", config.doctor.perms],
+        ["Schema", config.doctor.schema],
+      ] as const) {
+        const doctorItem = new PlatformTreeItem(
+          `${label}: ${value}`,
+          vscode.TreeItemCollapsibleState.None,
+          "doctor",
+          platform,
+          config
+        );
+        doctorItem.iconPath = new vscode.ThemeIcon(
+          value === "ok" || value === "healthy" ? "check" : value === "n/a" ? "dash" : "warning"
+        );
+        children.push(doctorItem);
+      }
+    }
+
     // Server count
     const serverCountItem = new PlatformTreeItem(
       `Servers: ${config?.serverCount ?? 0}`,
@@ -182,9 +209,11 @@ export class PlatformsProvider implements vscode.TreeDataProvider<PlatformTreeIt
 
     switch (config.syncStatus) {
       case "synced":
-        return `${config.serverCount} servers`;
+        return config.doctor
+          ? `${config.serverCount} servers · ${config.doctor.status}`
+          : `${config.serverCount} servers`;
       case "out-of-sync":
-        return "needs sync";
+        return config.error ?? "needs sync";
       case "missing":
         return "not configured";
       case "error":
@@ -245,6 +274,14 @@ export class PlatformsProvider implements vscode.TreeDataProvider<PlatformTreeIt
         `**Status:** ${this.formatStatus(config.syncStatus)}`,
         `**Servers:** ${config.serverCount}`
       );
+      if (config.doctor) {
+        lines.push(
+          `**Doctor:** ${config.doctor.status}`,
+          `**Hooks:** ${config.doctor.hooks}`,
+          `**Permissions:** ${config.doctor.perms}`,
+          `**Schema:** ${config.doctor.schema}`
+        );
+      }
       if (config.error) {
         lines.push(`**Error:** ${config.error}`);
       }

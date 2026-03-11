@@ -8,13 +8,12 @@ import * as vscode from "vscode";
 import { resolveLoomBinary } from "../utils/binary";
 import { formatSyncStatus, getStatusIcon } from "../utils/helpers";
 import { Logger } from "../utils/logger";
+import { getEnabledPlatforms } from "../utils/platform";
 import { isPlaceholder, resolvePlaceholder } from "../utils/secrets";
 
 import { CommandContext } from "./types";
 
 const execFileAsync = promisify(execFile);
-const SYNC_PROFILES = ["vscode", "claude", "codex", "kilocode"] as const;
-
 /**
  * Register all sync-related commands.
  */
@@ -125,24 +124,7 @@ async function syncConfigs(ctx: CommandContext): Promise<void> {
         const hubSettings = hubStatusManager.getSettings();
         const loomBinary = resolveLoomBinary(workspaceRoot);
 
-        // Sync vscode profile (generates and copies to .vscode/)
-        loomChannel.appendLine(`→ ${loomBinary} sync vscode --regen`);
-        await execFileAsync(loomBinary, ["sync", "vscode", "--regen"], {
-          cwd: workspaceRoot,
-          env: { ...process.env, MCP_HUB_URL: hubSettings.hubUrl },
-        });
-        loomChannel.appendLine("✓ vscode profile synced");
-
-        // Sync claude profile (generates and copies to .claude/)
-        loomChannel.appendLine(`→ ${loomBinary} sync claude --regen`);
-        await execFileAsync(loomBinary, ["sync", "claude", "--regen"], {
-          cwd: workspaceRoot,
-          env: { ...process.env, MCP_HUB_URL: hubSettings.hubUrl },
-        });
-        loomChannel.appendLine("✓ claude profile synced");
-
-        // Sync codex and kilocode profiles
-        for (const profile of SYNC_PROFILES.slice(2)) {
+        for (const profile of getEnabledPlatforms()) {
           loomChannel.appendLine(`→ ${loomBinary} sync ${profile} --regen`);
           await execFileAsync(loomBinary, ["sync", profile, "--regen"], {
             cwd: workspaceRoot,
@@ -215,7 +197,7 @@ async function showOfflineStatus(ctx: CommandContext): Promise<void> {
   if (state.mode !== "online") {
     picks.push({
       label: "$(clock) Queue full profile sync",
-      description: "Queue vscode, claude, codex, and kilocode for retry",
+      description: "Queue all enabled platform syncs for retry",
       action: "queue",
     });
   }
@@ -330,7 +312,7 @@ export async function applyGeneratedConfigs(
 }
 
 function queuePendingProfileSyncs(configSyncManager: CommandContext["configSyncManager"]): void {
-  for (const profile of SYNC_PROFILES) {
+  for (const profile of getEnabledPlatforms()) {
     configSyncManager.queuePendingSync(profile);
   }
 }

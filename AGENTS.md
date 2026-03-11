@@ -9,7 +9,7 @@ This file applies to the `services/loom` VS Code extension repository.
 VS Code extension for MCP (Model Context Protocol) context management. Provides UI for:
 
 - Managing MCP server connections across multiple platforms
-- Platform configuration sync (VS Code, Antigravity, Gemini, Claude, Codex, Kilocode)
+- Platform configuration sync (VS Code, Antigravity, Gemini, Claude, Codex, Kilocode, OpenCode, Zed)
 - Skills registry browsing, filtering, and context-aware recommendations
 - Agent context, session, and memory management
 - Server health monitoring, metrics, and profiles
@@ -26,7 +26,7 @@ VS Code extension for MCP (Model Context Protocol) context management. Provides 
 - **Server metrics**: Real-time health metrics, latency tracking, and history per server
 - **Usage analytics**: Track tool usage patterns with a generated report command
 - **Remote tunnels**: Managed `kubectl port-forward` commands for remote K8s MCP services
-- **Server profiles**: Named groups of servers with hub routing control
+- **loom-core profiles**: Tool-profile selection sourced from `loom profile list/show`
 - **Knowledge graph panel**: Visual exploration of agent context entities and relations
 - **Memory dashboard**: Tiered memory view (working / short-term / long-term)
 
@@ -42,7 +42,7 @@ VS Code extension for MCP (Model Context Protocol) context management. Provides 
 
 ### v0.7.0 Features
 
-- **Multi-platform support**: VS Code, Antigravity, Gemini, Claude, Codex, Kilocode
+- **Multi-platform support**: VS Code, Antigravity, Gemini, Claude, Codex, Kilocode, OpenCode, Zed
 - **Platform detection**: Auto-detects VS Code vs Antigravity
 - **Sync dashboard**: Visual status across all platforms
 - **Skills filtering**: Filter by target platform
@@ -190,6 +190,8 @@ src/
 | Claude      | JSON          | `.claude/mcp.json`      | `~/.claude/mcp.json`                               |
 | Codex       | JSON          | `.codex/mcp.json`       | `~/.codex/mcp.json`                                |
 | Kilocode    | JSON          | `.kilocode/mcp.json`    | `~/.kilocode/mcp.json`                             |
+| OpenCode    | JSON          | `.opencode/opencode.json` | `~/.config/opencode/opencode.json`               |
+| Zed         | JSON          | `.zed/mcp.json`         | `~/Library/Application Support/Zed/mcp.json`      |
 
 ### Sync Commands (via loom CLI)
 
@@ -198,6 +200,9 @@ loom sync status                    # Check all profiles
 loom sync vscode --regen            # Regenerate & sync VS Code
 loom sync antigravity --regen       # Regenerate & sync Antigravity
 loom sync codex --regen             # Regenerate & sync Codex
+loom sync opencode --regen          # Regenerate & sync OpenCode
+loom pull zed                       # Pull Zed config back from home
+loom doctor --json                  # Canonical drift/health report
 ```
 
 ### Extension Commands
@@ -210,6 +215,7 @@ loom sync codex --regen             # Regenerate & sync Codex
 | `loom.diffPlatformConfig`     | Show repo vs home diff             |
 | `loom.openPlatformConfig`     | Open config in editor              |
 | `loom.showSyncDashboard`      | Open sync dashboard webview        |
+| `loom.showDoctorReport`       | Show structured `loom doctor` report |
 | `loom.filterSkillsByPlatform` | Filter skills by target            |
 | `loom.showOnboarding`         | Open onboarding wizard             |
 | `loom.deepSearch`             | Search across all MCP servers      |
@@ -230,7 +236,16 @@ loom sync codex --regen             # Regenerate & sync Codex
   "loom.hubUrl": "wss://mcp.flexinfer.ai/ws",
   "loom.hubProfile": "codex",
   "loom.platform": "auto",
-  "loom.enabledPlatforms": ["vscode", "antigravity", "gemini", "claude"],
+  "loom.enabledPlatforms": [
+    "vscode",
+    "antigravity",
+    "gemini",
+    "claude",
+    "codex",
+    "kilocode",
+    "opencode",
+    "zed"
+  ],
   "loom.syncOnStartup": false,
   "loom.syncStatusPollingInterval": 60000,
   "loom.autoSyncOnDrift": "prompt",
@@ -263,6 +278,13 @@ loom sync codex --regen             # Regenerate & sync Codex
 3. Register in `extension.ts` or command registration file
 4. Add to this documentation
 
+### Profile Model
+
+- `loom.activeProfile` stores the selected loom-core profile name
+- invalid configured profiles fall back to `full`
+- `loom.profiles` is deprecated and ignored by runtime behavior
+- drift and template/env health come from `loom doctor --json`
+
 ## Testing Locally
 
 1. Build: `npm run compile`
@@ -273,3 +295,17 @@ loom sync codex --regen             # Regenerate & sync Codex
 ## Planning
 
 See `ROADMAP.md` for project status and future plans.
+
+<!-- BEGIN LOOM:AGENT-SAFETY -->
+## Loom Agent Safety Policy (Generated)
+
+- Pre-existing uncommitted/untracked files are baseline context, not an automatic blocker.
+- Continue on the current branch/worktree by default.
+- Stage and commit only files intentionally changed for the active task.
+- Escalate only when new unexpected changes appear in files you are editing, or when a branch/worktree switch is explicitly requested.
+- Dirty-worktree mode: `continue_scoped_commits`.
+
+Canonical nudge for CLI hooks:
+> Dirty worktree detected. Treat pre-existing changes as baseline context, continue work, and stage/commit only files for the active task. Escalate only if new unexpected changes appear in files you are editing.
+
+<!-- END LOOM:AGENT-SAFETY -->

@@ -9,7 +9,7 @@ import { PlatformConfigClient } from "../clients/platformConfig";
 import { PlatformType } from "../types";
 import { PLATFORMS } from "../utils/platform";
 
-export type ProfileType = "full" | "minimal" | "custom";
+export type ProfileType = "full" | "dev" | "infra" | "k8s-ops" | "research";
 
 export interface DetectedPlatform {
   type: PlatformType;
@@ -105,13 +105,17 @@ export class OnboardingPanel {
     // TODO: Use ConfigManager when OnboardingPanel is refactored to receive injected dependencies
     const config = vscode.workspace.getConfiguration("loom");
     this.state.hubUrl = config.get<string>("hubUrl") ?? "";
-    this.state.hubEnabled = config.get<boolean>("hubEnabled") ?? false;
+    this.state.hubEnabled = this.state.hubUrl.trim().length > 0;
+    this.state.profile = (config.get<string>("activeProfile") as ProfileType | undefined) ?? "full";
 
     // Auto-detect installed platforms
     this.state.detectedPlatforms = this.detectInstalledPlatforms();
     this.state.selectedPlatforms = this.state.detectedPlatforms
       .filter((p) => p.detected)
       .map((p) => p.type);
+    if (this.state.selectedPlatforms.length === 0) {
+      this.state.selectedPlatforms = ["vscode"];
+    }
 
     // Set initial content
     this.updateContent();
@@ -274,9 +278,12 @@ export class OnboardingPanel {
   private async finishOnboarding(): Promise<void> {
     // TODO: Use ConfigManager when OnboardingPanel is refactored to receive injected dependencies
     const config = vscode.workspace.getConfiguration("loom");
-    await config.update("hubUrl", this.state.hubUrl, vscode.ConfigurationTarget.Global);
-    await config.update("hubEnabled", this.state.hubEnabled, vscode.ConfigurationTarget.Global);
-    await config.update("serverProfile", this.state.profile, vscode.ConfigurationTarget.Global);
+    await config.update(
+      "hubUrl",
+      this.state.hubEnabled ? this.state.hubUrl : "",
+      vscode.ConfigurationTarget.Global
+    );
+    await config.update("activeProfile", this.state.profile, vscode.ConfigurationTarget.Global);
     await config.update(
       "enabledPlatforms",
       this.state.selectedPlatforms,
@@ -747,7 +754,7 @@ export class OnboardingPanel {
       case 4:
         return `
           <h2>Choose Server Profile</h2>
-          <p>Select which MCP servers to enable:</p>
+          <p>Select the active loom-core tool profile:</p>
 
           <div class="profile-grid">
             <label class="profile-card ${this.state.profile === "full" ? "selected" : ""}" data-action="select-profile" data-profile="full">
@@ -756,37 +763,63 @@ export class OnboardingPanel {
                 <span class="profile-name">Full</span>
                 <span class="badge recommended">Recommended</span>
               </div>
-              <p class="profile-desc">All available servers (40+)</p>
+              <p class="profile-desc">All available tools with smart prioritization</p>
               <ul class="profile-features">
-                <li>Git, GitHub, GitLab</li>
-                <li>Kubernetes, Docker, Helm</li>
-                <li>Prometheus, Grafana, Loki</li>
-                <li>Memory, Agent Context</li>
+                <li>Max 500 tools</li>
+                <li>Broadest local and remote coverage</li>
+                <li>Best default for general development</li>
               </ul>
             </label>
 
-            <label class="profile-card ${this.state.profile === "minimal" ? "selected" : ""}" data-action="select-profile" data-profile="minimal">
-              <input type="radio" name="profile" value="minimal" ${this.state.profile === "minimal" ? "checked" : ""}>
+            <label class="profile-card ${this.state.profile === "dev" ? "selected" : ""}" data-action="select-profile" data-profile="dev">
+              <input type="radio" name="profile" value="dev" ${this.state.profile === "dev" ? "checked" : ""}>
               <div class="profile-header">
-                <span class="profile-name">Minimal</span>
+                <span class="profile-name">Dev</span>
               </div>
-              <p class="profile-desc">Essential servers only (10)</p>
+              <p class="profile-desc">Core development tools for coding workflows</p>
               <ul class="profile-features">
-                <li>Git, GitHub</li>
-                <li>Memory</li>
-                <li>Time, Tavily</li>
+                <li>Max 50 tools</li>
+                <li>Git, GitHub, GitLab focus</li>
+                <li>Fastest day-to-day coding profile</li>
               </ul>
             </label>
 
-            <label class="profile-card ${this.state.profile === "custom" ? "selected" : ""}" data-action="select-profile" data-profile="custom">
-              <input type="radio" name="profile" value="custom" ${this.state.profile === "custom" ? "checked" : ""}>
+            <label class="profile-card ${this.state.profile === "infra" ? "selected" : ""}" data-action="select-profile" data-profile="infra">
+              <input type="radio" name="profile" value="infra" ${this.state.profile === "infra" ? "checked" : ""}>
               <div class="profile-header">
-                <span class="profile-name">Custom</span>
+                <span class="profile-name">Infra</span>
               </div>
-              <p class="profile-desc">Choose specific servers</p>
+              <p class="profile-desc">Infrastructure and cloud management</p>
               <ul class="profile-features">
-                <li>Configure via Loom sidebar</li>
-                <li>Enable/disable individually</li>
+                <li>Cloudflare, MinIO, monitoring</li>
+                <li>Max 60 tools</li>
+                <li>Operations-heavy workflows</li>
+              </ul>
+            </label>
+
+            <label class="profile-card ${this.state.profile === "k8s-ops" ? "selected" : ""}" data-action="select-profile" data-profile="k8s-ops">
+              <input type="radio" name="profile" value="k8s-ops" ${this.state.profile === "k8s-ops" ? "checked" : ""}>
+              <div class="profile-header">
+                <span class="profile-name">K8s Ops</span>
+              </div>
+              <p class="profile-desc">Kubernetes cluster management and debugging</p>
+              <ul class="profile-features">
+                <li>Kubernetes and observability focus</li>
+                <li>Max 40 tools</li>
+                <li>Good for cluster operations</li>
+              </ul>
+            </label>
+
+            <label class="profile-card ${this.state.profile === "research" ? "selected" : ""}" data-action="select-profile" data-profile="research">
+              <input type="radio" name="profile" value="research" ${this.state.profile === "research" ? "checked" : ""}>
+              <div class="profile-header">
+                <span class="profile-name">Research</span>
+              </div>
+              <p class="profile-desc">Web search and content extraction</p>
+              <ul class="profile-features">
+                <li>Tavily and YouTube focus</li>
+                <li>Max 20 tools</li>
+                <li>Best for source gathering</li>
               </ul>
             </label>
           </div>

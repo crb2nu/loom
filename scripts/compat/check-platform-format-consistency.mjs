@@ -7,7 +7,16 @@ const repoRoot = process.cwd();
 const platformsPath = path.join(repoRoot, "src", "utils", "platform.ts");
 const readmePath = path.join(repoRoot, "README.md");
 
-const platformKeys = ["vscode", "antigravity", "gemini", "claude", "codex", "kilocode"];
+const platformKeys = [
+  "vscode",
+  "antigravity",
+  "gemini",
+  "claude",
+  "codex",
+  "kilocode",
+  "opencode",
+  "zed",
+];
 
 function parseRuntimePlatforms(source) {
   const parsed = new Map();

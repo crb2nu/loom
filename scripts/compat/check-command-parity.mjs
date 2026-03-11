@@ -5,13 +5,7 @@ import path from "node:path";
 
 const repoRoot = process.cwd();
 
-const INTERNAL_REGISTERED_COMMANDS = new Set([
-  // Triggered by skills UX flows; not intended as standalone command palette entries.
-  "loom.syncSkills",
-  "loom.previewSkillOutput",
-  // Legacy diagnostic view command kept internal for now.
-  "loom.showContextGraph",
-]);
+const INTERNAL_REGISTERED_COMMANDS = new Set([]);
 
 function listSourceFiles() {
   const sourceRoot = path.join(repoRoot, "src");
