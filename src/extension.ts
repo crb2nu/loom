@@ -83,6 +83,7 @@ interface ActivationEnvironment {
   annotationDecorationManager: AnnotationDecorationManager;
   usageAnalyticsManager: UsageAnalyticsManager;
   remoteTunnelManager: RemoteTunnelManager;
+  profileManager: ProfileManager;
 }
 
 // ============================================================================
@@ -380,7 +381,7 @@ function registerPlatforms(
 function registerOnboarding(
   env: Pick<
     ActivationEnvironment,
-    "workspaceRoot" | "configManager" | "daemonClient" | "platformConfigClient"
+    "workspaceRoot" | "configManager" | "daemonClient" | "platformConfigClient" | "profileManager"
   >,
   context: vscode.ExtensionContext
 ): void {
@@ -390,6 +391,7 @@ function registerOnboarding(
         context.extensionUri,
         env.platformConfigClient,
         env.daemonClient,
+        env.profileManager,
         env.workspaceRoot
       );
     })
@@ -736,7 +738,7 @@ function registerServerHealth(
     "configManager" | "daemonClient" | "hubStatusManager" | "loomChannel" | "workspaceRoot"
   >,
   context: vscode.ExtensionContext
-): void {
+): ProfileManager {
   const serverMetricsManager = new ServerMetricsManager(
     env.daemonClient,
     env.hubStatusManager,
@@ -761,6 +763,7 @@ function registerServerHealth(
     extensionContext: context,
   });
   context.subscriptions.push(...serverHealthCommandDisposables);
+  return profileManager;
 }
 
 // ============================================================================
@@ -832,8 +835,18 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   const platformConfigClient = registerPlatforms(base, context);
+  const profileManager = registerServerHealth(
+    {
+      configManager: base.configManager,
+      daemonClient,
+      hubStatusManager,
+      loomChannel: base.loomChannel,
+      workspaceRoot: base.workspaceRoot,
+    },
+    context
+  );
 
-  registerOnboarding({ ...base, daemonClient, platformConfigClient }, context);
+  registerOnboarding({ ...base, daemonClient, platformConfigClient, profileManager }, context);
 
   registerDeepSearch({ daemonClient, loomChannel: base.loomChannel }, context);
 
@@ -855,17 +868,6 @@ export async function activate(context: vscode.ExtensionContext) {
       remoteTunnelManager,
       agentContextClient,
       agentSessionManager,
-    },
-    context
-  );
-
-  registerServerHealth(
-    {
-      configManager: base.configManager,
-      daemonClient,
-      hubStatusManager,
-      loomChannel: base.loomChannel,
-      workspaceRoot: base.workspaceRoot,
     },
     context
   );

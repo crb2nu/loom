@@ -1,7 +1,9 @@
+import * as path from "path";
+
 import * as vscode from "vscode";
 
 import { PlatformConfigClient } from "../clients/platformConfig";
-import { PlatformConfig, PlatformSyncStatus, PlatformType } from "../types";
+import { PlatformConfig, PlatformConfigArtifact, PlatformSyncStatus, PlatformType } from "../types";
 import { PLATFORMS, getEnabledPlatforms } from "../utils/platform";
 
 /**
@@ -119,39 +121,24 @@ export class PlatformsProvider implements vscode.TreeDataProvider<PlatformTreeIt
     const info = PLATFORMS[platform];
     const children: PlatformTreeItem[] = [];
 
-    // Config path
-    const repoPathItem = new PlatformTreeItem(
-      `Repo: ${info.repoConfigPath}`,
-      vscode.TreeItemCollapsibleState.None,
-      "config-path",
-      platform,
-      config
-    );
-    repoPathItem.iconPath = new vscode.ThemeIcon("file");
-    repoPathItem.description = config?.repoHash ? `#${config.repoHash}` : "missing";
-    repoPathItem.command = {
-      command: "loom.openPlatformConfig",
-      title: "Open Config",
-      arguments: [platform, "repo"],
-    };
-    children.push(repoPathItem);
+    const artifactItems = config?.artifacts ?? [
+      {
+        label: "Repo config",
+        path: info.repoConfigPath,
+        required: true,
+        exists: false,
+      },
+      {
+        label: "Home config",
+        path: info.homeConfigPath,
+        required: true,
+        exists: false,
+      },
+    ];
 
-    // Home path
-    const homePathItem = new PlatformTreeItem(
-      `Home: ${info.homeConfigPath}`,
-      vscode.TreeItemCollapsibleState.None,
-      "config-path",
-      platform,
-      config
-    );
-    homePathItem.iconPath = new vscode.ThemeIcon("home");
-    homePathItem.description = config?.homeHash ? `#${config.homeHash}` : "missing";
-    homePathItem.command = {
-      command: "loom.openPlatformConfig",
-      title: "Open Config",
-      arguments: [platform, "home"],
-    };
-    children.push(homePathItem);
+    for (const artifact of artifactItems) {
+      children.push(this.buildArtifactItem(platform, artifact, config));
+    }
 
     // Status
     const statusItem = new PlatformTreeItem(
@@ -200,6 +187,33 @@ export class PlatformsProvider implements vscode.TreeDataProvider<PlatformTreeIt
     children.push(serverCountItem);
 
     return children;
+  }
+
+  private buildArtifactItem(
+    platform: PlatformType,
+    artifact: PlatformConfigArtifact,
+    config?: PlatformConfig
+  ): PlatformTreeItem {
+    const item = new PlatformTreeItem(
+      `${artifact.label}: ${artifact.path}`,
+      vscode.TreeItemCollapsibleState.None,
+      "config-path",
+      platform,
+      config
+    );
+
+    item.iconPath = new vscode.ThemeIcon(this.getArtifactIcon(artifact));
+    item.description = artifact.exists ? (artifact.hash ?? "present") : "missing";
+    const commandArguments: string[] = [platform, this.getArtifactLocation(artifact, platform)];
+    if (path.isAbsolute(artifact.path)) {
+      commandArguments.push(artifact.path);
+    }
+    item.command = {
+      command: "loom.openPlatformConfig",
+      title: "Open Config",
+      arguments: commandArguments,
+    };
+    return item;
   }
 
   private getStatusDescription(config?: PlatformConfig): string {
@@ -269,6 +283,8 @@ export class PlatformsProvider implements vscode.TreeDataProvider<PlatformTreeIt
     ];
 
     if (config) {
+      const supplementalArtifacts =
+        config.artifacts?.filter((artifact) => !artifact.required) ?? [];
       lines.push(
         "",
         `**Status:** ${this.formatStatus(config.syncStatus)}`,
@@ -285,6 +301,14 @@ export class PlatformsProvider implements vscode.TreeDataProvider<PlatformTreeIt
       if (config.error) {
         lines.push(`**Error:** ${config.error}`);
       }
+      if (supplementalArtifacts.length > 0) {
+        lines.push("", "**Supplemental Artifacts:**");
+        for (const artifact of supplementalArtifacts) {
+          lines.push(
+            `- ${artifact.label}: ${artifact.exists ? "present" : "missing"} \`${artifact.path}\``
+          );
+        }
+      }
       if (config.lastChecked) {
         lines.push(`**Last Checked:** ${config.lastChecked.toLocaleTimeString()}`);
       }
@@ -293,5 +317,32 @@ export class PlatformsProvider implements vscode.TreeDataProvider<PlatformTreeIt
     const tooltip = new vscode.MarkdownString(lines.join("\n"));
     tooltip.isTrusted = true;
     return tooltip;
+  }
+
+  private getArtifactIcon(artifact: PlatformConfigArtifact): string {
+    if (!artifact.exists) {
+      return artifact.required ? "warning" : "circle-slash";
+    }
+
+    if (artifact.path.endsWith("settings.json")) {
+      return "gear";
+    }
+
+    if (artifact.path.includes(".gemini")) {
+      return "home";
+    }
+
+    return "file";
+  }
+
+  private getArtifactLocation(
+    artifact: PlatformConfigArtifact,
+    platform: PlatformType
+  ): "repo" | "home" | "repo-settings" | "home-settings" {
+    if (platform === "antigravity" && artifact.path.endsWith("settings.json")) {
+      return artifact.path.includes(".gemini") ? "home-settings" : "repo-settings";
+    }
+
+    return artifact.label.toLowerCase().includes("repo") ? "repo" : "home";
   }
 }

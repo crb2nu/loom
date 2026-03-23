@@ -381,6 +381,7 @@ export interface PlatformConfig {
   format: "json" | "toml";
   repoPath: string; // Full path to repo config
   homePath: string; // Full path to home config
+  artifacts?: PlatformConfigArtifact[];
   syncStatus: PlatformSyncStatus;
   serverCount: number;
   repoHash?: string;
@@ -410,6 +411,14 @@ export interface SyncDashboardState {
   registryPath?: string;
   registryServerCount: number;
   lastUpdated: Date;
+}
+
+export interface PlatformConfigArtifact {
+  label: string;
+  path: string;
+  required: boolean;
+  exists: boolean;
+  hash?: string;
 }
 
 /**

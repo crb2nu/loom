@@ -185,7 +185,7 @@ src/
 | Platform    | Config Format | Repo Path               | Home Path                                          |
 | ----------- | ------------- | ----------------------- | -------------------------------------------------- |
 | VS Code     | JSON          | `.vscode/mcp.json`      | `~/Library/Application Support/Code/User/mcp.json` |
-| Antigravity | JSON          | `.antigravity/mcp.json` | `~/.antigravity/mcp.json`                          |
+| Antigravity | JSON          | `.antigravity/mcp.json` | `~/.gemini/antigravity/mcp_config.json`           |
 | Gemini      | JSON          | `.gemini/settings.json` | `~/.gemini/settings.json`                          |
 | Claude      | JSON          | `.claude/mcp.json`      | `~/.claude/mcp.json`                               |
 | Codex       | JSON          | `.codex/mcp.json`       | `~/.codex/mcp.json`                                |

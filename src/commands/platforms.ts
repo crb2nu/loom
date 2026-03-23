@@ -18,6 +18,8 @@ export interface PlatformCommandContext {
   platformsProvider: PlatformsProvider;
 }
 
+type PlatformConfigLocation = "repo" | "home" | "repo-settings" | "home-settings";
+
 /**
  * Register all platform-related commands.
  */
@@ -166,7 +168,11 @@ export function registerPlatformCommands(ctx: PlatformCommandContext): vscode.Di
   disposables.push(
     vscode.commands.registerCommand(
       "loom.openPlatformConfig",
-      async (platformArg?: PlatformType, locationArg?: "repo" | "home") => {
+      async (
+        platformArg?: PlatformType,
+        locationArg?: PlatformConfigLocation,
+        filePathOverride?: string
+      ) => {
         let platform = platformArg;
         let location = locationArg;
 
@@ -207,9 +213,14 @@ export function registerPlatformCommands(ctx: PlatformCommandContext): vscode.Di
 
         const info = PLATFORMS[platform];
         const filePath =
-          location === "repo"
+          filePathOverride ??
+          (location === "repo"
             ? path.join(ctx.workspaceRoot, info.repoConfigPath)
-            : path.join(os.homedir(), info.homeConfigPath);
+            : location === "home-settings" && platform === "antigravity"
+              ? path.join(os.homedir(), ".gemini", "antigravity", "settings.json")
+              : location === "repo-settings" && platform === "antigravity"
+                ? path.join(ctx.workspaceRoot, ".antigravity", "settings.json")
+                : path.join(os.homedir(), info.homeConfigPath));
 
         try {
           const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
@@ -228,8 +239,9 @@ export function registerPlatformCommands(ctx: PlatformCommandContext): vscode.Di
             await vscode.workspace.applyEdit(edit);
 
             // Write initial content
-            const initialContent =
-              info.configFormat === "json"
+            const initialContent = filePath.endsWith("settings.json")
+              ? "{}\n"
+              : info.configFormat === "json"
                 ? JSON.stringify({ mcpServers: {} }, null, 2)
                 : "# Gemini MCP Configuration\n[mcpServers]\n";
 
@@ -396,6 +408,60 @@ export function registerPlatformCommands(ctx: PlatformCommandContext): vscode.Di
             language: "markdown",
           });
           await vscode.window.showTextDocument(doc, { preview: true });
+
+          if (!report.ok) {
+            const choice = await vscode.window.showWarningMessage(
+              "Loom doctor found issues that loom-core can try to fix.",
+              "Fix Issues",
+              "Dismiss"
+            );
+
+            if (choice === "Fix Issues") {
+              await vscode.commands.executeCommand("loom.fixDoctorIssues");
+            }
+          }
+        }
+      );
+    })
+  );
+
+  disposables.push(
+    vscode.commands.registerCommand("loom.fixDoctorIssues", async () => {
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Running loom doctor --fix...",
+          cancellable: false,
+        },
+        async () => {
+          try {
+            const result = await ctx.platformConfigClient.fixDoctorIssues();
+            ctx.platformsProvider.refresh();
+
+            if (!result.report) {
+              vscode.window.showWarningMessage(
+                "Loom: doctor fix completed, but the updated report could not be loaded."
+              );
+              return;
+            }
+
+            const doc = await vscode.workspace.openTextDocument({
+              content: formatDoctorReport(result.report),
+              language: "markdown",
+            });
+            await vscode.window.showTextDocument(doc, { preview: true });
+
+            if (result.report.ok) {
+              vscode.window.showInformationMessage("Loom: doctor issues fixed successfully");
+            } else {
+              vscode.window.showWarningMessage(
+                "Loom: doctor fix completed, but some issues still remain."
+              );
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`Loom: failed to run doctor fix (${message})`);
+          }
         }
       );
     })

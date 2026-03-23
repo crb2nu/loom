@@ -41,6 +41,7 @@ Manage MCP configurations for multiple AI assistants from a single interface:
 - `Loom: Show Sync Dashboard` - Visual sync status grid
 - `Loom: Diff Platform Config` - Compare repo vs home configs
 - `Loom: Show Doctor Report` - Run `loom doctor --json` and inspect drift details
+- `Loom: Fix Doctor Issues` - Run `loom doctor --fix` and refresh the report
 
 ### MCP Hub Integration
 
@@ -295,6 +296,7 @@ Loom adds these views to the Explorer sidebar:
 | `Loom: Diff Platform Config`  | Show repo vs home diff        |
 | `Loom: Open Platform Config`  | Open config in editor         |
 | `Loom: Show Doctor Report`    | Show `loom doctor --json`     |
+| `Loom: Fix Doctor Issues`     | Run `loom doctor --fix`       |
 | `Loom: Show Sync Dashboard`   | Visual sync status dashboard  |
 
 ### Hub & Servers

@@ -55,6 +55,15 @@ vi.mock("../utils/platform", () => ({
       icon: "comment-discussion",
       description: "Claude",
     },
+    antigravity: {
+      type: "antigravity",
+      displayName: "Antigravity",
+      configFormat: "json",
+      repoConfigPath: ".antigravity/mcp.json",
+      homeConfigPath: ".gemini/antigravity/mcp_config.json",
+      icon: "rocket",
+      description: "Antigravity",
+    },
   },
 }));
 
@@ -100,6 +109,11 @@ describe("PlatformConfigClient", () => {
             }),
             stderr: "",
           });
+          return;
+        }
+
+        if (command === "doctor --fix") {
+          cb(null, { stdout: "fixed", stderr: "" });
           return;
         }
 
@@ -217,6 +231,19 @@ describe("PlatformConfigClient", () => {
     expect(report?.platforms[0]?.platform).toBe("vscode");
   });
 
+  it("runs loom doctor --fix and reloads the doctor report", async () => {
+    const result = await client.fixDoctorIssues();
+
+    expect(mockExecFile).toHaveBeenCalledWith(
+      "/usr/local/bin/loom",
+      ["doctor", "--fix"],
+      expect.any(Object),
+      expect.anything()
+    );
+    expect(result.output).toContain("fixed");
+    expect(result.report?.ok).toBe(true);
+  });
+
   it("backs up repo and home configs for enabled platforms", async () => {
     mockAccess.mockResolvedValue(undefined);
 
@@ -224,5 +251,74 @@ describe("PlatformConfigClient", () => {
 
     expect(backupDir).toContain(".loom-backup");
     expect(mockCopyFile).toHaveBeenCalled();
+  });
+
+  it("tracks Antigravity primary and supplemental home artifacts", async () => {
+    const repoPath = "/workspace/.antigravity/mcp.json";
+    const homePath = "/home/testuser/.gemini/antigravity/mcp_config.json";
+    const repoSettings = "/workspace/.antigravity/settings.json";
+    const homeSettings = "/home/testuser/.gemini/antigravity/settings.json";
+
+    mockAccess.mockImplementation((filePath: string) => {
+      if ([repoPath, homePath, repoSettings, homeSettings].includes(filePath)) {
+        return Promise.resolve(undefined);
+      }
+      return Promise.reject(new Error("ENOENT"));
+    });
+    mockReadFile.mockImplementation((filePath: string) => {
+      if (filePath === repoPath || filePath === homePath) {
+        return Promise.resolve('{"mcpServers":{"github":{},"gitlab":{}}}');
+      }
+      return Promise.reject(new Error(`unexpected read: ${String(filePath)}`));
+    });
+
+    const config = await client.checkPlatformSyncStatus("antigravity", {
+      platform: "antigravity",
+      hooks: "ok",
+      perms: "ok",
+      schema: "ok",
+      status: "healthy",
+    });
+
+    expect(config.syncStatus).toBe("synced");
+    expect(config.homePath).toBe(homePath);
+    expect(config.artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "Home config", path: homePath, exists: true }),
+        expect.objectContaining({ label: "Home settings stub", path: homeSettings, exists: true }),
+      ])
+    );
+  });
+
+  it("shows supplemental Antigravity artifacts in diffs", async () => {
+    const repoPath = "/workspace/.antigravity/mcp.json";
+    const homePath = "/home/testuser/.gemini/antigravity/mcp_config.json";
+    const repoSettings = "/workspace/.antigravity/settings.json";
+    const homeSettings = "/home/testuser/.gemini/antigravity/settings.json";
+
+    mockAccess.mockImplementation((filePath: string) => {
+      if ([repoPath, homePath, repoSettings, homeSettings].includes(filePath)) {
+        return Promise.resolve(undefined);
+      }
+      return Promise.reject(new Error("ENOENT"));
+    });
+    mockReadFile.mockImplementation((filePath: string) => {
+      if (filePath === repoPath || filePath === homePath) {
+        return Promise.resolve('{"mcpServers":{"github":{},"gitlab":{}}}');
+      }
+      return Promise.reject(new Error(`unexpected read: ${String(filePath)}`));
+    });
+
+    await client.checkPlatformSyncStatus("antigravity", {
+      platform: "antigravity",
+      hooks: "ok",
+      perms: "ok",
+      schema: "ok",
+      status: "healthy",
+    });
+
+    const diff = await client.getDiff("antigravity");
+    expect(diff).toContain("Supplemental Artifacts");
+    expect(diff).toContain(homeSettings);
   });
 });

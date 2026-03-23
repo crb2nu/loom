@@ -14,6 +14,7 @@ import { isPlaceholder, resolvePlaceholder } from "../utils/secrets";
 import { CommandContext } from "./types";
 
 const execFileAsync = promisify(execFile);
+let activeSync: Promise<void> | undefined;
 /**
  * Register all sync-related commands.
  */
@@ -84,6 +85,17 @@ async function showSyncStatus(ctx: CommandContext): Promise<void> {
 }
 
 async function syncConfigs(ctx: CommandContext): Promise<void> {
+  if (activeSync) {
+    return activeSync;
+  }
+
+  activeSync = runSyncConfigs(ctx).finally(() => {
+    activeSync = undefined;
+  });
+  return activeSync;
+}
+
+async function runSyncConfigs(ctx: CommandContext): Promise<void> {
   const {
     workspaceRoot,
     loomChannel,

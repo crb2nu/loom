@@ -113,5 +113,6 @@ describe("extension surface parity", () => {
     expect(enabledPlatforms?.default).toContain("zed");
     expect(properties).toHaveProperty("loom.onboardingComplete");
     expect(commands.has("loom.showDoctorReport")).toBe(true);
+    expect(commands.has("loom.fixDoctorIssues")).toBe(true);
   });
 });

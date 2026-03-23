@@ -301,6 +301,10 @@
       {
         "command": "loom.showDoctorReport",
         "title": "Loom: Show Doctor Report"
+      },
+      {
+        "command": "loom.fixDoctorIssues",
+        "title": "Loom: Fix Doctor Issues"
       }
     ],
     "views": {

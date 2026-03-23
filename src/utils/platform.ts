@@ -47,7 +47,7 @@ export const PLATFORMS: Record<PlatformType, PlatformInfo> = {
     label: "Antigravity",
     configFormat: "json",
     repoConfigPath: ".antigravity/mcp.json",
-    homeConfigPath: ".antigravity/mcp.json",
+    homeConfigPath: ".gemini/antigravity/mcp_config.json",
     icon: "rocket",
     description: "Google's VS Code fork with Gemini/Claude",
   },
