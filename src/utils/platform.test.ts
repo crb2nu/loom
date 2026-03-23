@@ -148,6 +148,9 @@ describe("getPlatformInfo", () => {
     expect(getPlatformInfo("vscode").displayName).toBe("VS Code");
     expect(getPlatformInfo("claude").icon).toBe("comment-discussion");
     expect(getPlatformInfo("gemini").configFormat).toBe("json");
+    expect(getPlatformInfo("antigravity").homeConfigPath).toBe(
+      ".gemini/antigravity/mcp_config.json"
+    );
     expect(getPlatformInfo("opencode").repoConfigPath).toBe(".opencode/opencode.json");
     expect(getPlatformInfo("zed").homeConfigPath).toBe("Library/Application Support/Zed/mcp.json");
   });

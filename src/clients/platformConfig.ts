@@ -12,6 +12,7 @@ import {
   DoctorEnvWarning,
   DoctorPlatformReport,
   DoctorReport,
+  PlatformConfigArtifact,
   PlatformConfig,
   PlatformSyncResult,
   PlatformType,
@@ -24,6 +25,8 @@ import { PLATFORMS, getEnabledPlatforms } from "../utils/platform";
 
 const execFileAsync = promisify(execFile);
 const DOCTOR_CACHE_TTL_MS = 30_000;
+const ANTIGRAVITY_REPO_SETTINGS_STUB = path.join(".antigravity", "settings.json");
+const ANTIGRAVITY_HOME_SETTINGS_STUB = path.join(".gemini", "antigravity", "settings.json");
 
 /**
  * Client for managing MCP configurations across multiple platforms.
@@ -122,6 +125,23 @@ export class PlatformConfigClient implements vscode.Disposable {
     }
   }
 
+  async fixDoctorIssues(): Promise<{ output: string; report: DoctorReport | null }> {
+    const loomBinary = resolveLoomBinary(this.workspaceRoot);
+    const { stdout, stderr } = await execFileAsync(loomBinary, ["doctor", "--fix"], {
+      cwd: this.workspaceRoot || os.homedir(),
+      timeout: 60_000,
+    });
+
+    this.cachedDoctorReport = undefined;
+    this.lastDoctorLoadAt = 0;
+    await this.checkAllSyncStatus();
+
+    return {
+      output: [stdout, stderr].filter(Boolean).join("\n").trim(),
+      report: await this.getDoctorReport(true),
+    };
+  }
+
   async checkAllSyncStatus(): Promise<void> {
     const enabledPlatforms = this.configManager
       ? getEnabledPlatforms(this.configManager.get("enabledPlatforms"))
@@ -151,40 +171,66 @@ export class PlatformConfigClient implements vscode.Disposable {
       format: info.configFormat,
       repoPath,
       homePath,
+      artifacts: [],
       syncStatus: "unknown",
       serverCount: 0,
       lastChecked: new Date(),
       doctor: doctorOverride,
     };
+    let artifacts: PlatformConfigArtifact[] = [];
 
     try {
+      const supplementalArtifacts = await this.getSupplementalArtifacts(platform);
       const [repoExists, homeExists] = await Promise.all([
         this.fileExists(repoPath),
         this.fileExists(homePath),
       ]);
 
+      artifacts = [
+        {
+          label: "Repo config",
+          path: repoPath,
+          required: true,
+          exists: repoExists,
+        },
+        {
+          label: "Home config",
+          path: homePath,
+          required: true,
+          exists: homeExists,
+        },
+        ...supplementalArtifacts,
+      ];
+
       if (repoExists) {
         const repoContent = await fsp.readFile(repoPath, "utf-8");
         config.repoHash = this.hashContent(repoContent);
+        artifacts[0].hash = config.repoHash;
         config.serverCount = this.extractServerNames(this.parseConfigContent(repoContent)).length;
       }
 
       if (homeExists) {
         const homeContent = await fsp.readFile(homePath, "utf-8");
         config.homeHash = this.hashContent(homeContent);
+        artifacts[1].hash = config.homeHash;
         if (config.serverCount === 0) {
           config.serverCount = this.extractServerNames(this.parseConfigContent(homeContent)).length;
         }
       }
 
       const warningCount = envWarnings.length;
+      config.artifacts = artifacts;
       config.syncStatus = this.determineSyncStatus(doctorOverride, repoExists, homeExists);
       config.error = this.buildConfigError(doctorOverride, repoExists, homeExists, warningCount);
     } catch (error) {
+      config.artifacts = artifacts;
       config.syncStatus = "error";
       config.error = error instanceof Error ? error.message : String(error);
+      this.configs.set(platform, config);
+      return config;
     }
 
+    config.artifacts = artifacts;
     this.configs.set(platform, config);
     return config;
   }
@@ -272,6 +318,16 @@ export class PlatformConfigClient implements vscode.Disposable {
     }
     if (onlyInRepo.length === 0 && onlyInHome.length === 0) {
       lines.push("Server sets are aligned.");
+    }
+
+    const supplementalArtifacts = config?.artifacts?.filter((artifact) => !artifact.required) ?? [];
+    if (supplementalArtifacts.length > 0) {
+      lines.push("", "## Supplemental Artifacts");
+      for (const artifact of supplementalArtifacts) {
+        lines.push(
+          `- ${artifact.label}: ${artifact.exists ? "present" : "missing"} \`${artifact.path}\``
+        );
+      }
     }
 
     if (config?.error) {
@@ -482,6 +538,13 @@ export class PlatformConfigClient implements vscode.Disposable {
         serverCount: config.serverCount,
         repoHash: config.repoHash,
         homeHash: config.homeHash,
+        artifacts: config.artifacts?.map((artifact) => ({
+          label: artifact.label,
+          path: artifact.path,
+          required: artifact.required,
+          exists: artifact.exists,
+          hash: artifact.hash,
+        })),
         error: config.error,
         doctorStatus: config.doctor?.status,
       }))
@@ -540,6 +603,37 @@ export class PlatformConfigClient implements vscode.Disposable {
         return false;
       }
     });
+  }
+
+  private async getSupplementalArtifacts(
+    platform: PlatformType
+  ): Promise<PlatformConfigArtifact[]> {
+    if (platform !== "antigravity") {
+      return [];
+    }
+
+    const repoSettingsPath = path.join(this.workspaceRoot, ANTIGRAVITY_REPO_SETTINGS_STUB);
+    const homeSettingsPath = path.join(this.homeDir, ANTIGRAVITY_HOME_SETTINGS_STUB);
+
+    const [repoExists, homeExists] = await Promise.all([
+      this.fileExists(repoSettingsPath),
+      this.fileExists(homeSettingsPath),
+    ]);
+
+    return [
+      {
+        label: "Repo settings stub",
+        path: repoSettingsPath,
+        required: false,
+        exists: repoExists,
+      },
+      {
+        label: "Home settings stub",
+        path: homeSettingsPath,
+        required: false,
+        exists: homeExists,
+      },
+    ];
   }
 
   private getTimestamp(): string {

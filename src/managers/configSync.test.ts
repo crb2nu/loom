@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as vscode from "vscode";
 
-const mockExistsSync = vi.hoisted(() => vi.fn());
+const mockAccess = vi.hoisted(() => vi.fn());
 const mockReadFile = vi.hoisted(() => vi.fn());
 const mockWatch = vi.hoisted(() =>
   vi.fn(() => ({
@@ -11,9 +11,9 @@ const mockWatch = vi.hoisted(() =>
 );
 
 vi.mock("fs", () => ({
-  existsSync: mockExistsSync,
   watch: mockWatch,
   promises: {
+    access: mockAccess,
     readFile: mockReadFile,
     writeFile: vi.fn(),
     mkdir: vi.fn(),
@@ -25,14 +25,27 @@ vi.mock("os", () => ({
 }));
 
 vi.mock("crypto", () => ({
-  createHash: vi.fn(() => ({
-    update: vi.fn().mockReturnThis(),
-    digest: vi.fn(() => "hash123"),
-  })),
+  createHash: vi.fn(() => {
+    let value = "";
+    const hash = {
+      update: vi.fn((input: string) => {
+        value += input;
+        return hash;
+      }),
+      digest: vi.fn(() => `hash:${value}`),
+    };
+    return hash;
+  }),
 }));
 
 vi.mock("../utils/binary", () => ({
   resolveLoomBinary: vi.fn(() => "/usr/local/bin/loom"),
+}));
+
+const mockGetCurrentPlatformInfo = vi.hoisted(() => vi.fn());
+
+vi.mock("../utils/platform", () => ({
+  getCurrentPlatformInfo: mockGetCurrentPlatformInfo,
 }));
 
 import { ConfigSyncManager } from "./configSync";
@@ -43,7 +56,17 @@ describe("ConfigSyncManager", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockExistsSync.mockReturnValue(false);
+    mockAccess.mockRejectedValue(new Error("ENOENT"));
+    mockGetCurrentPlatformInfo.mockReturnValue({
+      type: "vscode",
+      displayName: "VS Code",
+      label: "VS Code",
+      configFormat: "json",
+      repoConfigPath: ".vscode/mcp.json",
+      homeConfigPath: ".vscode/mcp.json",
+      icon: "code",
+      description: "VS Code",
+    });
 
     mockChannel = {
       name: "Test",
@@ -110,7 +133,7 @@ describe("ConfigSyncManager", () => {
 
   describe("checkSync", () => {
     it("should update state when configs exist", async () => {
-      mockExistsSync.mockReturnValue(true);
+      mockAccess.mockResolvedValue(undefined);
       mockReadFile.mockResolvedValue('{"mcpServers":{}}');
 
       await manager.checkSync();
@@ -120,13 +143,53 @@ describe("ConfigSyncManager", () => {
     });
 
     it("should handle no-generated state", async () => {
-      mockExistsSync.mockReturnValue(false);
-
       await manager.checkSync();
 
       const state = manager.getState();
       // Status depends on whether generated config exists
       expect(["unknown", "no-generated"]).toContain(state.status);
+    });
+
+    it("uses Antigravity sync paths from loom-core-compatible metadata", async () => {
+      mockGetCurrentPlatformInfo.mockReturnValue({
+        type: "antigravity",
+        displayName: "Antigravity",
+        label: "Antigravity",
+        configFormat: "json",
+        repoConfigPath: ".antigravity/mcp.json",
+        homeConfigPath: ".gemini/antigravity/mcp_config.json",
+        icon: "rocket",
+        description: "Antigravity",
+      });
+      mockAccess.mockResolvedValue(undefined);
+      mockReadFile.mockResolvedValue('{"mcpServers":{}}');
+
+      await manager.checkSync();
+
+      expect(mockAccess).toHaveBeenCalledWith("/workspace/.antigravity/mcp.json");
+      expect(mockReadFile).toHaveBeenCalledWith("/workspace/.antigravity/mcp.json", "utf-8");
+      expect(mockReadFile).toHaveBeenCalledWith(
+        "/home/testuser/.gemini/antigravity/mcp_config.json",
+        "utf-8"
+      );
+    });
+
+    it("does not emit duplicate drift events for the same diff", async () => {
+      mockAccess.mockResolvedValue(undefined);
+      mockReadFile
+        .mockResolvedValueOnce('{"mcpServers":{"github":{}}}')
+        .mockRejectedValueOnce(new Error("ENOENT"))
+        .mockResolvedValueOnce('{"mcpServers":{"github":{}}}')
+        .mockRejectedValueOnce(new Error("ENOENT"));
+
+      const onDidChange = vi.fn();
+      manager.onDidChange(onDidChange);
+
+      await manager.checkSync();
+      await manager.checkSync();
+
+      expect(onDidChange).toHaveBeenCalledTimes(1);
+      expect(manager.getState().status).toBe("out-of-sync");
     });
   });
 
