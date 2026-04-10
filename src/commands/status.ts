@@ -56,13 +56,20 @@ async function showMeshReport(ctx: CommandContext): Promise<void> {
     agentSessionManager,
   });
   const domains = await readModel.collect();
-  const { fleet, health, tasks, memory, stream, presence } = domains;
+  const { summary, fleet, health, tasks, memory, stream, presence } = domains;
 
   loomChannel.appendLine(
     `Hub status: ${health.hubStatus} (ready=${health.hubReady}, sessions=${health.hubSessions})`
   );
   loomChannel.appendLine(`Hub URL: ${hubStatusManager.getSettings().hubUrl}`);
   loomChannel.appendLine(`Profile: ${hubStatusManager.getSettings().profile}`);
+
+  loomChannel.appendLine(
+    `Overview: ${summary.ready} ready / ${summary.degraded} degraded / ${summary.unavailable} unavailable`
+  );
+  if (summary.attention.length > 0) {
+    loomChannel.appendLine(`Attention: ${summary.attention.join(", ")}`);
+  }
 
   if (!fleet.hasRegistry) {
     loomChannel.appendLine("Registry: registry.yaml not found");

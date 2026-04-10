@@ -21,9 +21,19 @@ const defaultPlatformSchema = path.join(
   "platform",
   "platform_config_schema.json"
 );
+const defaultDownstreamContracts = path.join(
+  repoRoot,
+  "compat",
+  "loom-core",
+  "contracts",
+  "downstream",
+  "contracts.json"
+);
 
 const commandContractPath = process.env.LOOM_CORE_CONTRACT_COMMANDS ?? defaultCommandContract;
 const platformSchemaPath = process.env.LOOM_CORE_PLATFORM_SCHEMA ?? defaultPlatformSchema;
+const downstreamContractsPath =
+  process.env.LOOM_CORE_DOWNSTREAM_CONTRACTS ?? defaultDownstreamContracts;
 
 const platformNames = ["vscode", "antigravity", "gemini", "claude", "codex", "kilocode"];
 
@@ -43,6 +53,32 @@ function readJson(filePath) {
   return JSON.parse(raw);
 }
 
+function resolvePath(filePath) {
+  return path.resolve(repoRoot, filePath);
+}
+
+function getByPath(value, dottedPath) {
+  let current = value;
+  for (const segment of dottedPath.split(".")) {
+    if (current === null || current === undefined) {
+      return undefined;
+    }
+    current = current[segment];
+  }
+  return current;
+}
+
+function loadDownstreamContracts(manifestPath) {
+  const manifest = readJson(manifestPath);
+  const baseDir = path.dirname(manifestPath);
+  const contracts = Array.isArray(manifest.contracts) ? manifest.contracts : [];
+
+  return contracts.map((contract) => ({
+    ...contract,
+    filePath: resolvePath(path.join(baseDir, contract.path)),
+  }));
+}
+
 function parseArgv(argv) {
   const out = {};
   for (let i = 2; i < argv.length; i += 1) {
@@ -52,6 +88,9 @@ function parseArgv(argv) {
       i += 1;
     } else if (part === "--platform-schema" && argv[i + 1]) {
       out.platformSchema = argv[i + 1];
+      i += 1;
+    } else if (part === "--downstream-contracts" && argv[i + 1]) {
+      out.downstreamContracts = argv[i + 1];
       i += 1;
     }
   }
@@ -177,10 +216,69 @@ function extractPlatformConfigFields(contract, schema) {
   return fields.map((x) => String(x));
 }
 
+function validateDownstreamContracts(manifestPath) {
+  const failures = [];
+  const contracts = loadDownstreamContracts(manifestPath);
+
+  if (contracts.length === 0) {
+    failures.push(`Downstream contract manifest has no contracts: ${manifestPath}`);
+    return { failures, contracts };
+  }
+
+  for (const contract of contracts) {
+    if (!fs.existsSync(contract.filePath)) {
+      failures.push(
+        `Missing downstream contract fixture: ${contract.name} (${path.relative(repoRoot, contract.filePath)})`
+      );
+      continue;
+    }
+
+    let fixture;
+    try {
+      fixture = readJson(contract.filePath);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      failures.push(
+        `Invalid downstream contract fixture: ${contract.name} (${path.relative(repoRoot, contract.filePath)}): ${message}`
+      );
+      continue;
+    }
+
+    for (const requiredPath of contract.required_paths ?? []) {
+      if (getByPath(fixture, requiredPath) === undefined) {
+        failures.push(
+          `Downstream contract ${contract.name} missing required field: ${requiredPath}`
+        );
+      }
+    }
+
+    for (const [requiredPath, expectedValue] of Object.entries(contract.required_values ?? {})) {
+      const actualValue = getByPath(fixture, requiredPath);
+      if (actualValue !== expectedValue) {
+        failures.push(
+          `Downstream contract ${contract.name} field mismatch for ${requiredPath}: expected ${JSON.stringify(expectedValue)}, got ${JSON.stringify(actualValue)}`
+        );
+      }
+    }
+
+    for (const arrayPath of contract.required_non_empty_arrays ?? []) {
+      const actualValue = getByPath(fixture, arrayPath);
+      if (!Array.isArray(actualValue) || actualValue.length === 0) {
+        failures.push(
+          `Downstream contract ${contract.name} expected non-empty array at: ${arrayPath}`
+        );
+      }
+    }
+  }
+
+  return { failures, contracts };
+}
+
 function main() {
   const argv = parseArgv(process.argv);
   const commandPath = argv.contract ?? commandContractPath;
   const platformPath = argv.platformSchema ?? platformSchemaPath;
+  const downstreamPath = argv.downstreamContracts ?? downstreamContractsPath;
 
   const failures = [];
 
@@ -192,9 +290,14 @@ function main() {
     console.error(`compat:loom-core missing platform schema: ${platformPath}`);
     process.exit(1);
   }
+  if (!fs.existsSync(downstreamPath)) {
+    console.error(`compat:loom-core missing downstream contract manifest: ${downstreamPath}`);
+    process.exit(1);
+  }
 
   const commandContract = readJson(commandPath);
   const platformSchema = readJson(platformPath);
+  const downstreamValidation = validateDownstreamContracts(downstreamPath);
   const commandEntries = getCommandEntries(commandContract);
 
   for (const check of requiredCommandChecks) {
@@ -216,6 +319,8 @@ function main() {
     failures.push("Platform config contract must include at least one of: mcpServers, servers");
   }
 
+  failures.push(...downstreamValidation.failures);
+
   if (failures.length > 0) {
     console.error("compat:loom-core failed");
     for (const failure of failures) {
@@ -227,6 +332,9 @@ function main() {
   console.log("compat:loom-core passed");
   console.log(`- commands contract: ${path.relative(repoRoot, commandPath)}`);
   console.log(`- platform schema: ${path.relative(repoRoot, platformPath)}`);
+  console.log(
+    `- downstream contracts: ${path.relative(repoRoot, downstreamPath)} (${downstreamValidation.contracts.length} fixtures)`
+  );
   console.log(`- checked command requirements: ${requiredCommandChecks.length}`);
 }
 

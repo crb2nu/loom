@@ -130,6 +130,12 @@ describe("status commands", () => {
     expect(loomChannel.clear).toHaveBeenCalled();
     expect(loomChannel.appendLine).toHaveBeenCalledWith(expect.stringContaining("Hub status: ok"));
     expect(loomChannel.appendLine).toHaveBeenCalledWith(
+      "Overview: 2 ready / 0 degraded / 4 unavailable"
+    );
+    expect(loomChannel.appendLine).toHaveBeenCalledWith(
+      "Attention: Tasks, Memory, Stream, Presence"
+    );
+    expect(loomChannel.appendLine).toHaveBeenCalledWith(
       expect.stringContaining("Registry servers: 2")
     );
     expect(loomChannel.appendLine).toHaveBeenCalledWith(

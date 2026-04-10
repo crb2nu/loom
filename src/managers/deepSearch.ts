@@ -28,33 +28,40 @@ export interface SearchOptions {
 interface SearchToolConfig {
   queryParam: string;
   limitParam?: string;
-  defaultLimit?: number;
   staticParams?: Record<string, unknown>;
 }
 
-const SEARCH_TOOL_CONFIGS: Record<string, SearchToolConfig> = {
-  tavily__search: { queryParam: "query", limitParam: "max_results", defaultLimit: 10 },
-  tavily__search_context: { queryParam: "query", limitParam: "max_results", defaultLimit: 5 },
-  github__search_repos: { queryParam: "query", limitParam: "per_page", defaultLimit: 10 },
-  github__search_code: { queryParam: "query", limitParam: "per_page", defaultLimit: 10 },
-  gitlab__search_repositories: { queryParam: "search", limitParam: "per_page", defaultLimit: 20 },
-  codebase_memory__codebase_search: { queryParam: "query", limitParam: "limit", defaultLimit: 10 },
+const LEGACY_SEARCH_TOOL_CONFIGS: Record<string, SearchToolConfig> = {
+  tavily__search: { queryParam: "query", limitParam: "max_results" },
+  tavily__search_context: { queryParam: "query", limitParam: "max_results" },
+  github__search_repos: { queryParam: "query", limitParam: "per_page" },
+  github__search_code: { queryParam: "query", limitParam: "per_page" },
+  gitlab__search_repositories: { queryParam: "search", limitParam: "per_page" },
+  codebase_memory__codebase_search: { queryParam: "query", limitParam: "limit" },
   codebase_memory__codebase_text_search: {
     queryParam: "query",
     limitParam: "limit",
-    defaultLimit: 10,
   },
-  memory__search_nodes: { queryParam: "query", limitParam: "limit", defaultLimit: 10 },
+  memory__search_nodes: { queryParam: "query", limitParam: "limit" },
   agent_context__agent_context_search: {
     queryParam: "query",
     limitParam: "limit",
-    defaultLimit: 10,
   },
-  qdrant__qdrant_search: { queryParam: "query", limitParam: "limit", defaultLimit: 10 },
+  qdrant__qdrant_search: { queryParam: "query", limitParam: "limit" },
 };
 
 const QUERY_PARAM_CANDIDATES = ["query", "q", "search", "search_query", "text", "term"] as const;
 const LIMIT_PARAM_CANDIDATES = ["max_results", "limit", "per_page", "top_k", "count"] as const;
+const SEARCH_NAME_HINTS = [
+  "search",
+  "lookup",
+  "find",
+  "query",
+  "discover",
+  "semantic",
+  "match",
+  "browse",
+] as const;
 const RESULT_LIST_KEYS = [
   "results",
   "items",
@@ -275,33 +282,120 @@ export class DeepSearchManager {
   }
 
   private resolveSearchToolConfig(tool: DaemonToolInfo): SearchToolConfig | undefined {
-    const knownConfig = SEARCH_TOOL_CONFIGS[tool.name];
-    if (knownConfig) {
-      return knownConfig;
-    }
+    return this.inferSearchToolConfigFromSchema(tool) ?? LEGACY_SEARCH_TOOL_CONFIGS[tool.name];
+  }
 
-    const schemaProperties = tool.inputSchema?.properties;
+  private inferSearchToolConfigFromSchema(tool: DaemonToolInfo): SearchToolConfig | undefined {
+    const schemaProperties = this.getSchemaProperties(tool);
     if (!schemaProperties) {
       return undefined;
     }
 
-    const queryParam = QUERY_PARAM_CANDIDATES.find((candidate) =>
-      Object.prototype.hasOwnProperty.call(schemaProperties, candidate)
-    );
+    const queryParam = this.findQueryParam(schemaProperties, tool);
     if (!queryParam) {
       return undefined;
     }
 
-    const limitParam = LIMIT_PARAM_CANDIDATES.find((candidate) =>
-      Object.prototype.hasOwnProperty.call(schemaProperties, candidate)
-    );
+    const limitParam = this.findLimitParam(schemaProperties);
     const familyDefaultLimit = this.getDefaultLimitParamForFamily(tool.serverPrefix || tool.server);
 
     return {
       queryParam,
       limitParam: limitParam ?? familyDefaultLimit,
-      defaultLimit: 10,
     };
+  }
+
+  private getSchemaProperties(tool: DaemonToolInfo): Record<string, unknown> | undefined {
+    const properties = tool.inputSchema?.properties;
+    if (!properties || typeof properties !== "object" || Array.isArray(properties)) {
+      return undefined;
+    }
+
+    return properties;
+  }
+
+  private findQueryParam(
+    schemaProperties: Record<string, unknown>,
+    tool: DaemonToolInfo
+  ): string | undefined {
+    const exactCandidate = QUERY_PARAM_CANDIDATES.find((candidate) =>
+      Object.prototype.hasOwnProperty.call(schemaProperties, candidate)
+    );
+    if (exactCandidate) {
+      return exactCandidate;
+    }
+
+    if (!this.isSearchLikeTool(tool)) {
+      return undefined;
+    }
+
+    const requiredProperties = this.getRequiredProperties(tool);
+    const requiredStringCandidates = requiredProperties.filter((propertyName) =>
+      this.isStringLikeProperty(schemaProperties[propertyName])
+    );
+    if (requiredStringCandidates.length === 1) {
+      return requiredStringCandidates[0];
+    }
+
+    const stringCandidates = Object.keys(schemaProperties).filter(
+      (propertyName) =>
+        this.isStringLikeProperty(schemaProperties[propertyName]) &&
+        !this.isLimitLikeName(propertyName)
+    );
+
+    if (stringCandidates.length === 1) {
+      return stringCandidates[0];
+    }
+
+    return requiredStringCandidates[0] ?? stringCandidates[0];
+  }
+
+  private findLimitParam(schemaProperties: Record<string, unknown>): string | undefined {
+    return LIMIT_PARAM_CANDIDATES.find((candidate) =>
+      Object.prototype.hasOwnProperty.call(schemaProperties, candidate)
+    );
+  }
+
+  private getRequiredProperties(tool: DaemonToolInfo): string[] {
+    const required = tool.inputSchema?.required;
+    return Array.isArray(required)
+      ? required.filter((value): value is string => typeof value === "string")
+      : [];
+  }
+
+  private isStringLikeProperty(property: unknown): boolean {
+    if (!property || typeof property !== "object" || Array.isArray(property)) {
+      return false;
+    }
+
+    const typedProperty = property as {
+      type?: string | string[];
+      enum?: unknown[];
+    };
+    const propertyType = typedProperty.type;
+
+    if (typeof propertyType === "string") {
+      return propertyType === "string";
+    }
+
+    if (Array.isArray(propertyType) && propertyType.includes("string")) {
+      return true;
+    }
+
+    return Array.isArray(typedProperty.enum);
+  }
+
+  private isLimitLikeName(propertyName: string): boolean {
+    return LIMIT_PARAM_CANDIDATES.some((candidate) => propertyName.includes(candidate));
+  }
+
+  private isSearchLikeTool(tool: DaemonToolInfo): boolean {
+    const haystack = [tool.name, tool.description, tool.server, tool.serverPrefix]
+      .filter((value): value is string => typeof value === "string")
+      .join(" ")
+      .toLowerCase();
+
+    return SEARCH_NAME_HINTS.some((hint) => haystack.includes(hint));
   }
 
   private buildArgs(

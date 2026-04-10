@@ -12,10 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Added platform parity for OpenCode and Zed across settings, onboarding, platform metadata, and tests
 - Added `Loom: Show Doctor Report` backed by `loom doctor --json`
 - Added extension-surface parity tests for registered commands and contributed settings
+- Added planning docs refresh for the current `1.0.0` readiness effort
 
 ### Changed
 
-- Profile selection now uses loom-core `profile list/show` as the source of truth
+- Profile selection continues to use loom-core `profile list/show` with compatibility fallbacks retained until a machine-readable profile contract lands
 - Platform sync now prefers `loom sync <platform> --regen`, `loom pull <platform>`, and doctor-based drift reporting
 - Agent context recall and memory flows now prefer current loom-core tools with compatibility fallbacks retained
 

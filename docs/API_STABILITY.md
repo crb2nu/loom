@@ -2,7 +2,7 @@
 
 This document defines compatibility expectations for the `services/loom` extension.
 
-Status: pre-`1.0.0` extension (`0.9.0` at time of writing).
+Status: pre-`1.0.0` extension (`0.9.1` at time of writing).
 
 ## Scope
 
@@ -33,15 +33,22 @@ Policy for stable surfaces:
 
 These are intended to be stable but may evolve while the extension is `<1.0.0`:
 
-1. CLI invocation set used by extension clients:
+1. Loom runtime resources used by extension clients:
+   - `loom://config`
+   - `loom://servers`
+   - `loom://health`
+   - `loom://tools/index`
+2. CLI invocation set used by extension clients:
    - `loom daemon start|stop|restart|status`
    - `loom servers --json` (primary) and `loom servers` (fallback)
    - `loom tools list`
    - `loom sync <platform> --regen`
-2. Parsed output shapes used by `src/clients/daemon.ts` and `src/clients/platformConfig.ts`.
+3. Parsed output shapes used by `src/clients/daemon.ts` and `src/clients/platformConfig.ts`.
 
 Policy for best-effort surfaces:
 - prefer additive changes
+- prefer resource-first and JSON-first adapters wherever available
+- treat human-readable CLI parsing as fallback behavior, not the primary contract
 - when changing output shape, update extension adapters/tests in the same release train
 - document migration notes in `CHANGELOG.md`
 
@@ -57,14 +64,16 @@ These can change without compatibility guarantees:
 
 The extension depends on `loom-core` CLI and daemon contracts. For any compatibility-sensitive change:
 
-1. Treat command/flag/output changes as contract changes.
+1. Treat command/flag/output/resource changes as contract changes.
 2. Update extension adapters and tests in lockstep.
-3. Keep roadmap/backlog links current for API-impacting work.
+3. Prefer Loom MCP resources and `--json` command outputs for new automation surfaces.
+4. Keep roadmap/backlog links current for API-impacting work.
 
 Compatibility harness:
 - `npm run compat:loom-core` validates the required command/field surface consumed by:
   - `src/clients/daemon.ts`
   - `src/clients/platformConfig.ts`
+- The broader extension contract should also prefer runtime resources where the server exposes them.
 - Contract inputs default to:
   - `compat/loom-core/contracts/cli/loom_commands.json`
   - `compat/loom-core/contracts/platform/platform_config_schema.json`
@@ -93,6 +102,7 @@ For command/view/setting changes:
 - `package.json:46`
 - `package.json:265`
 - `package.json:301`
+- `package.json:346`
 - `src/clients/daemon.ts:196`
 - `src/clients/daemon.ts:299`
 - `src/clients/daemon.ts:315`
@@ -102,3 +112,4 @@ For command/view/setting changes:
 - `src/extension.ts:175`
 - `ROADMAP.md:95`
 - `/Users/cblevins/workspace/services/loom-core/docs/API_STABILITY.md:17`
+- `/Users/cblevins/workspace/services/loom-core/docs/API_STABILITY.md:93`

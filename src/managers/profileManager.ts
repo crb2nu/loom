@@ -17,6 +17,17 @@ const execFileAsync = promisify(execFile);
 
 const PROFILE_CACHE_TTL_MS = 30_000;
 
+interface LoomDoctorTemplateProfile {
+  profile?: string;
+  ok?: boolean;
+  count?: number;
+  unresolved?: unknown[];
+}
+
+interface LoomDoctorResponse {
+  template_profiles?: LoomDoctorTemplateProfile[];
+}
+
 /**
  * Manager for loom-core tool profiles and routing status.
  */
@@ -222,8 +233,70 @@ export class ProfileManager implements vscode.Disposable {
   }
 
   private async loadProfileSummaries(): Promise<LoomCoreProfile[]> {
+    try {
+      return await this.loadProfileSummariesFromDoctor();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.info(`Falling back to loom profile list text parsing: ${message}`);
+      return this.loadProfileSummariesFromCli();
+    }
+  }
+
+  private async loadProfileDetails(profileName: string): Promise<Partial<LoomCoreProfile>> {
+    try {
+      const output = await this.runLoom(["profile", "show", profileName]);
+      const description = this.extractValue(output, "Description");
+      const maxToolsText = this.extractValue(output, "Max Tools");
+      const servers = this.parseBracketList(this.extractValue(output, "Servers"));
+      const categories = this.parseBracketList(this.extractValue(output, "Categories"));
+
+      if (!description && !maxToolsText && servers.length === 0 && categories.length === 0) {
+        this.logger.info(
+          `Profile details for "${profileName}" had no parseable fields; using summary-only fallback`
+        );
+        return { servers: "*" };
+      }
+
+      return {
+        description: description ?? undefined,
+        maxTools: maxToolsText ? Number(maxToolsText) : undefined,
+        servers: servers.length === 1 && servers[0] === "*" ? "*" : servers,
+        categories,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.info(`Falling back to summary-only profile "${profileName}": ${message}`);
+      return { servers: "*" };
+    }
+  }
+
+  private async loadProfileSummariesFromDoctor(): Promise<LoomCoreProfile[]> {
+    const output = await this.runLoom(["doctor", "--json"]);
+    const parsed = JSON.parse(output) as LoomDoctorResponse;
+    const profiles = new Map<string, LoomCoreProfile>();
+
+    for (const candidate of parsed.template_profiles ?? []) {
+      const name = candidate.profile?.trim();
+      if (!name) {
+        continue;
+      }
+
+      profiles.set(name, {
+        name,
+        servers: "*",
+      });
+    }
+
+    if (profiles.size === 0) {
+      throw new Error("loom doctor --json returned no template profiles");
+    }
+
+    return [...profiles.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  private async loadProfileSummariesFromCli(): Promise<LoomCoreProfile[]> {
     const output = await this.runLoom(["profile", "list"]);
-    const profiles: LoomCoreProfile[] = [];
+    const profiles = new Map<string, LoomCoreProfile>();
 
     for (const rawLine of output.split("\n")) {
       const line = rawLine.trimEnd();
@@ -236,34 +309,20 @@ export class ProfileManager implements vscode.Disposable {
         continue;
       }
 
-      profiles.push({
-        name: match[1],
+      const name = match[1];
+      profiles.set(name, {
+        name,
         description: match[2]?.trim() || undefined,
         maxTools: match[3] ? Number(match[3]) : undefined,
         servers: "*",
       });
     }
 
-    if (profiles.length === 0) {
+    if (profiles.size === 0) {
       throw new Error("loom profile list returned no profiles");
     }
 
-    return profiles;
-  }
-
-  private async loadProfileDetails(profileName: string): Promise<Partial<LoomCoreProfile>> {
-    const output = await this.runLoom(["profile", "show", profileName]);
-    const description = this.extractValue(output, "Description");
-    const maxToolsText = this.extractValue(output, "Max Tools");
-    const servers = this.parseBracketList(this.extractValue(output, "Servers"));
-    const categories = this.parseBracketList(this.extractValue(output, "Categories"));
-
-    return {
-      description: description ?? undefined,
-      maxTools: maxToolsText ? Number(maxToolsText) : undefined,
-      servers: servers.length === 1 && servers[0] === "*" ? "*" : servers,
-      categories,
-    };
+    return [...profiles.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   private extractValue(output: string, label: string): string | undefined {

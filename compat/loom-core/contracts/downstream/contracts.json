@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "contracts": [
+    {
+      "name": "mobile_envelope",
+      "source": "loom-core/internal/contracts/testdata/mobile_envelope.golden",
+      "path": "mobile_envelope.golden.json",
+      "required_paths": [
+        "ok",
+        "data.pong",
+        "meta.request_id",
+        "meta.timestamp"
+      ],
+      "required_values": {
+        "ok": true,
+        "data.pong": true
+      }
+    },
+    {
+      "name": "mobile_tasks",
+      "source": "loom-core/internal/contracts/testdata/mobile_tasks.golden",
+      "path": "mobile_tasks.golden.json",
+      "required_paths": [
+        "coordination.summary.active_namespaces",
+        "coordination.summary.orphan_tasks",
+        "counts.pending",
+        "counts.in_progress",
+        "counts.blocked",
+        "counts.completed",
+        "tasks"
+      ],
+      "required_non_empty_arrays": [
+        "tasks"
+      ]
+    },
+    {
+      "name": "dto_task_info",
+      "source": "loom-core/internal/contracts/testdata/dto_task_info.golden",
+      "path": "dto_task_info.golden.json",
+      "required_paths": [
+        "id",
+        "session_id",
+        "agent_id",
+        "namespace",
+        "title",
+        "context",
+        "priority",
+        "status",
+        "tags",
+        "blocked_by",
+        "pipeline_ref.id",
+        "pipeline_ref.project",
+        "pipeline_ref.ref",
+        "pipeline_ref.web_url",
+        "workflow_id",
+        "created_at",
+        "updated_at"
+      ],
+      "required_non_empty_arrays": [
+        "tags",
+        "blocked_by"
+      ]
+    },
+    {
+      "name": "sse_events",
+      "source": "loom-core/internal/contracts/testdata/sse_events.golden",
+      "path": "sse_events.golden.json",
+      "required_paths": [
+        "fleet.type",
+        "health.type",
+        "heartbeat.type",
+        "session_start.type",
+        "session_end.type"
+      ],
+      "required_values": {
+        "fleet.type": "hud.fleet",
+        "health.type": "hud.health",
+        "heartbeat.type": "hud.heartbeat",
+        "session_start.type": "hud.session.start",
+        "session_end.type": "hud.session.end"
+      }
+    }
+  ]
+}

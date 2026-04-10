@@ -27,6 +27,7 @@ import { ProfileManager } from "./profileManager";
 
 describe("ProfileManager", () => {
   let manager: ProfileManager;
+  let doctorJsonAvailable: boolean;
   let configStore: {
     activeProfile: string;
     enabledPlatforms: string[];
@@ -49,6 +50,7 @@ describe("ProfileManager", () => {
       enabledPlatforms: ["vscode", "codex"],
       profiles: { legacy: { servers: ["shared"] } },
     };
+    doctorJsonAvailable = true;
 
     mockConfigSet = vi.fn(async (key: string, value: unknown) => {
       configStore[key as keyof typeof configStore] = value as never;
@@ -87,6 +89,28 @@ describe("ProfileManager", () => {
     mockExecFile.mockImplementation(
       (_: string, args: string[], __: unknown, cb: ExecFileCallback) => {
         const command = args.join(" ");
+        if (command === "doctor --json") {
+          if (!doctorJsonAvailable) {
+            cb(new Error("doctor unavailable"), {
+              stdout: "",
+              stderr: "",
+            });
+            return;
+          }
+
+          cb(null, {
+            stdout: JSON.stringify({
+              template_profiles: [
+                { profile: "dev", ok: true, count: 2, unresolved: [] },
+                { profile: "full", ok: true, count: 0, unresolved: [] },
+                { profile: "research", ok: true, count: 1, unresolved: [] },
+              ],
+            }),
+            stderr: "",
+          });
+          return;
+        }
+
         if (command === "profile list") {
           cb(null, {
             stdout: [
@@ -132,14 +156,7 @@ describe("ProfileManager", () => {
 
         if (command === "profile show research") {
           cb(null, {
-            stdout: [
-              "Profile: research",
-              "Description: Web search and content extraction",
-              "Max Tools: 20",
-              "Servers: [mcp-tavily mcp-youtube]",
-              "Categories: [search docs]",
-              "",
-            ].join("\n"),
+            stdout: ["Profile: research", ""].join("\n"),
             stderr: "",
           });
           return;
@@ -172,6 +189,10 @@ describe("ProfileManager", () => {
       maxTools: 50,
       servers: ["mcp-git", "mcp-gitlab"],
     });
+    expect(profiles.find((profile) => profile.name === "research")).toMatchObject({
+      name: "research",
+      servers: "*",
+    });
   });
 
   it("warns once when deprecated extension-local profiles are configured", async () => {
@@ -192,6 +213,39 @@ describe("ProfileManager", () => {
     await secondManager.getProfiles();
 
     expect(vscode.window.showWarningMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to loom profile list text output when doctor JSON is unavailable", async () => {
+    doctorJsonAvailable = false;
+
+    const fallbackManager = new ProfileManager(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mockHubStatusManager as any,
+      mockDaemonClient,
+      "/workspace",
+      mockChannel,
+      mockConfigManager
+    );
+
+    const profiles = await fallbackManager.getProfiles();
+
+    expect(profiles.map((profile) => profile.name)).toEqual(["dev", "full", "research"]);
+    expect(mockExecFile).toHaveBeenCalledWith(
+      "/mock/bin/loom",
+      ["doctor", "--json"],
+      expect.objectContaining({
+        cwd: "/workspace",
+      }),
+      expect.any(Function)
+    );
+    expect(mockExecFile).toHaveBeenCalledWith(
+      "/mock/bin/loom",
+      ["profile", "list"],
+      expect.objectContaining({
+        cwd: "/workspace",
+      }),
+      expect.any(Function)
+    );
   });
 
   it("returns enabled platforms from config", () => {
@@ -229,6 +283,16 @@ describe("ProfileManager", () => {
     expect(profiles.some((profile) => profile.name === "full")).toBe(true);
     expect(fallbackManager.getActiveProfileName()).toBe("full");
     expect(mockConfigSet).toHaveBeenCalledWith("activeProfile", "full");
+  });
+
+  it("falls back to summary-only profile details when profile show has no parseable fields", async () => {
+    const profiles = await manager.getProfiles();
+
+    const research = profiles.find((profile) => profile.name === "research");
+    expect(research).toMatchObject({
+      name: "research",
+      servers: "*",
+    });
   });
 
   it("computes routing status from hub and daemon state", async () => {
