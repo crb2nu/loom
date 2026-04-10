@@ -12,6 +12,13 @@ interface DomainStatus {
   reason?: string;
 }
 
+export interface ParityOverviewSummary {
+  ready: number;
+  degraded: number;
+  unavailable: number;
+  attention: string[];
+}
+
 export interface FleetDomainSnapshot extends DomainStatus {
   hasRegistry: boolean;
   hasConfig: boolean;
@@ -66,6 +73,7 @@ export interface PresenceDomainSnapshot extends DomainStatus {
 }
 
 export interface ParityDomainSnapshot {
+  summary: ParityOverviewSummary;
   fleet: FleetDomainSnapshot;
   health: HealthDomainSnapshot;
   tasks: TasksDomainSnapshot;
@@ -99,8 +107,17 @@ export class ParityReadModel {
       Promise.resolve(this.collectStream()),
       this.collectPresence(),
     ]);
+    const summary = this.summarizeDomains([
+      ["fleet", fleet],
+      ["health", health],
+      ["tasks", tasks],
+      ["memory", memory],
+      ["stream", stream],
+      ["presence", presence],
+    ]);
 
     return {
+      summary,
       fleet,
       health,
       tasks,
@@ -108,6 +125,37 @@ export class ParityReadModel {
       stream,
       presence,
     };
+  }
+
+  private summarizeDomains(domains: Array<[string, DomainStatus]>): ParityOverviewSummary {
+    const summary: ParityOverviewSummary = {
+      ready: 0,
+      degraded: 0,
+      unavailable: 0,
+      attention: [],
+    };
+
+    for (const [name, domain] of domains) {
+      switch (domain.state) {
+        case "ready":
+          summary.ready += 1;
+          break;
+        case "degraded":
+          summary.degraded += 1;
+          summary.attention.push(this.formatAttentionLabel(name));
+          break;
+        case "unavailable":
+          summary.unavailable += 1;
+          summary.attention.push(this.formatAttentionLabel(name));
+          break;
+      }
+    }
+
+    return summary;
+  }
+
+  private formatAttentionLabel(name: string): string {
+    return name.charAt(0).toUpperCase() + name.slice(1);
   }
 
   private async collectFleet(): Promise<FleetDomainSnapshot> {

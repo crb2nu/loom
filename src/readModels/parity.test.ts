@@ -42,6 +42,12 @@ describe("ParityReadModel", () => {
 
     const snapshot = await readModel.collect();
 
+    expect(snapshot.summary).toEqual({
+      ready: 2,
+      degraded: 0,
+      unavailable: 4,
+      attention: ["Tasks", "Memory", "Stream", "Presence"],
+    });
     expect(snapshot.fleet.state).toBe("ready");
     expect(snapshot.health.state).toBe("ready");
     expect(snapshot.tasks.state).toBe("unavailable");
@@ -115,6 +121,12 @@ describe("ParityReadModel", () => {
 
     const snapshot = await readModel.collect();
 
+    expect(snapshot.summary).toEqual({
+      ready: 6,
+      degraded: 0,
+      unavailable: 0,
+      attention: [],
+    });
     expect(snapshot.health.state).toBe("ready");
     expect(snapshot.tasks.state).toBe("ready");
     expect(snapshot.tasks.total).toBe(2);

@@ -35,7 +35,7 @@ describe("DeepSearchManager", () => {
     manager = new DeepSearchManager(daemonClient as unknown as DaemonClient, channel);
   });
 
-  it("discovers search-capable tools from known configs and input schema", async () => {
+  it("discovers search-capable tools from known configs and schema heuristics", async () => {
     tools = [
       {
         name: "tavily__search",
@@ -46,12 +46,14 @@ describe("DeepSearchManager", () => {
         name: "custom__semantic_lookup",
         server: "custom",
         serverPrefix: "custom",
+        description: "semantic lookup over documents",
         inputSchema: {
           type: "object",
           properties: {
-            query: { type: "string" },
-            limit: { type: "number" },
+            needle: { type: "string" },
+            top_k: { type: "number" },
           },
+          required: ["needle"],
         },
       },
       {
@@ -81,12 +83,14 @@ describe("DeepSearchManager", () => {
         name: "custom__semantic_lookup",
         server: "custom",
         serverPrefix: "custom",
+        description: "semantic lookup over documents",
         inputSchema: {
           type: "object",
           properties: {
-            query: { type: "string" },
-            limit: { type: "number" },
+            needle: { type: "string" },
+            top_k: { type: "number" },
           },
+          required: ["needle"],
         },
       },
     ];
@@ -94,8 +98,8 @@ describe("DeepSearchManager", () => {
     const results = await manager.search("vector index", { parallel: false, maxResults: 7 });
 
     expect(daemonClient.executeTool).toHaveBeenCalledWith("custom__semantic_lookup", {
-      query: "vector index",
-      limit: 7,
+      needle: "vector index",
+      top_k: 7,
     });
     expect(results[0].status).toBe("ok");
     expect(results[0].resultCount).toBe(0);
