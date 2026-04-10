@@ -1,8 +1,8 @@
 # Project Roadmap
 
-> Last Updated: February 2026
+> Last Updated: April 2026
 
-## Current Status: v0.9.0
+## Current Status: v1.0.0 readiness
 
 Loom is a VS Code extension for MCP (Model Context Protocol) context management. It provides unified configuration sync across multiple AI coding assistant platforms.
 
@@ -14,6 +14,8 @@ Loom is a VS Code extension for MCP (Model Context Protocol) context management.
 - **Server metrics**: Performance monitoring and health tracking
 - **Usage analytics**: Tool invocation tracking and report generation
 - **Remote tunnels**: Managed `kubectl` port-forward workflows for remote K8s MCP services
+
+The extension is now beyond the original `v0.9.0` baseline. The remaining work is about stabilizing contracts, aligning docs, and tightening release gates rather than adding another isolated feature tier.
 
 ### v0.8.0 Highlights
 
@@ -94,25 +96,16 @@ Loom is a VS Code extension for MCP (Model Context Protocol) context management.
 - [x] Daemon control (start/stop/restart)
 - [x] Config sync from registry
 
-## Upcoming Work
+## 1.0.0 Release Focus
 
 Tracking issue: [#1](https://gitlab.flexinfer.ai/services/loom/-/issues/1)
 
-### v1.0.0 Release
-
-- [x] **Test coverage**: Increase to 40%+ coverage ([#2](https://gitlab.flexinfer.ai/services/loom/-/issues/2))
-- [x] **Marketplace publishing**: VS Code Marketplace release ([#3](https://gitlab.flexinfer.ai/services/loom/-/issues/3))
-- [x] **API stability**: Document stable vs internal APIs ([#4](https://gitlab.flexinfer.ai/services/loom/-/issues/4))
-- [x] **Daemon failure recovery**: Retry logic with user notification ([#5](https://gitlab.flexinfer.ai/services/loom/-/issues/5))
-- [x] **Offline mode completion**: Full pending sync processing ([#7](https://gitlab.flexinfer.ai/services/loom/-/issues/7))
-
-### Post-1.0 Features
-
-- [x] **Antigravity store**: Publish to Antigravity extension store ([#6](https://gitlab.flexinfer.ai/services/loom/-/issues/6))
-- [x] **Plugin system**: Allow custom providers and views ([#8](https://gitlab.flexinfer.ai/services/loom/-/issues/8))
-- [x] **Theme support**: Light/dark theme awareness ([#9](https://gitlab.flexinfer.ai/services/loom/-/issues/9))
-- [x] **Remote tunnels**: Secure tunneling to remote K8s MCP servers ([#11](https://gitlab.flexinfer.ai/services/loom/-/issues/11))
-- [x] **Usage analytics**: Track tool usage patterns ([#10](https://gitlab.flexinfer.ai/services/loom/-/issues/10))
+- [ ] **Contract-first profile/runtime adapters**: Prefer Loom resources and JSON-first paths where available.
+- [ ] **Downstream contract verification**: Track selected `loom-core` golden fixtures in CI.
+- [ ] **Parity overview**: Promote fleet, health, tasks, memory, presence, and stream into one shell.
+- [ ] **Search capability metadata**: Replace brittle hardcoded tool-family assumptions.
+- [ ] **Webview hardening**: Reduce inline HTML/JS debt in release-critical panels.
+- [ ] **Release gates**: Keep docs, coverage, package, and publish checks aligned with the shipped surface.
 
 ## Non-Goals
 
