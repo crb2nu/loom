@@ -798,7 +798,7 @@ export class OnboardingPanel {
       case 4:
         return `
           <h2>Choose Server Profile</h2>
-          <p>Select the active loom-core tool profile. These options come directly from <code>loom profile list/show</code>.</p>
+          <p>Select the active loom-core tool profile. These options come from live loom-core profile metadata, with CLI fallback when needed.</p>
 
           ${
             this.profileLoadError
@@ -911,7 +911,7 @@ export class OnboardingPanel {
               <span class="profile-name">${escapeHtml(formatOnboardingProfileName(profile.name))}</span>
               ${recommended ? '<span class="badge recommended">Recommended</span>' : ""}
             </div>
-            <p class="profile-desc">${escapeHtml(profile.description ?? "Profile details loaded from loom-core")}</p>
+            <p class="profile-desc">${escapeHtml(profile.description ?? "Profile details loaded from live loom-core metadata")}</p>
             <ul class="profile-features">
               ${highlights.map((highlight) => `<li>${escapeHtml(highlight)}</li>`).join("")}
             </ul>
