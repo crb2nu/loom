@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-04-10
+
 ### Added
 
 - Added platform parity for OpenCode and Zed across settings, onboarding, platform metadata, and tests

@@ -96,10 +96,10 @@ npm install
 npm run package
 
 # Install in VS Code
-code --install-extension loom-0.7.0.vsix
+code --install-extension loom-1.0.0.vsix
 
 # Or in Antigravity
-antigravity --install-extension loom-0.7.0.vsix
+antigravity --install-extension loom-1.0.0.vsix
 ```
 
 ### Development
