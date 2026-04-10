@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 
 // Mock fs and os before importing module under test
 const mockExistsSync = vi.hoisted(() => vi.fn());
+const mockReadFileSync = vi.hoisted(() => vi.fn());
 const mockReadFile = vi.hoisted(() => vi.fn());
 const mockWriteFile = vi.hoisted(() => vi.fn());
 const mockMkdir = vi.hoisted(() => vi.fn());
@@ -10,6 +11,7 @@ const mockWatch = vi.hoisted(() => vi.fn());
 
 vi.mock("fs", () => ({
   existsSync: mockExistsSync,
+  readFileSync: mockReadFileSync,
   watch: mockWatch,
   promises: {
     readFile: mockReadFile,
@@ -38,6 +40,10 @@ describe("deriveHubSettings", () => {
     delete process.env.CF_Access_Client_Id;
     delete process.env.CF_ACCESS_CLIENT_SECRET;
     delete process.env.CF_Access_ClientSecret;
+    mockReadFileSync.mockReset();
+    mockReadFileSync.mockImplementation(() => {
+      throw new Error("missing");
+    });
   });
 
   it("should use VS Code config values when set", () => {
@@ -103,6 +109,56 @@ describe("deriveHubSettings", () => {
 
     expect(settings.cfAccessClientId).toBe("test-client-id");
     expect(settings.cfAccessClientSecret).toBe("test-secret");
+  });
+
+  it("should fallback to loom config file values", () => {
+    mockReadFileSync.mockReturnValue(`hub:
+  url: "wss://file.example.com/ws"
+  profile: "fileprofile"
+  cf_access_client_id: "file-client-id"
+  cf_access_client_secret: "file-secret"
+`);
+
+    const mockConfig = {
+      get: vi.fn(() => undefined),
+    };
+    vi.mocked(vscode.workspace.getConfiguration).mockReturnValue(
+      mockConfig as unknown as vscode.WorkspaceConfiguration
+    );
+
+    const settings = deriveHubSettings();
+
+    expect(settings.hubUrl).toBe("wss://file.example.com/ws");
+    expect(settings.profile).toBe("fileprofile");
+    expect(settings.cfAccessClientId).toBe("file-client-id");
+    expect(settings.cfAccessClientSecret).toBe("file-secret");
+  });
+
+  it("should prefer env values over loom config file values", () => {
+    process.env.MCP_HUB_URL = "wss://env.example.com/ws";
+    process.env.MCP_PROFILE = "envprofile";
+    process.env.CF_ACCESS_CLIENT_ID = "env-client-id";
+    process.env.CF_ACCESS_CLIENT_SECRET = "env-secret";
+    mockReadFileSync.mockReturnValue(`hub:
+  url: "wss://file.example.com/ws"
+  profile: "fileprofile"
+  cf_access_client_id: "file-client-id"
+  cf_access_client_secret: "file-secret"
+`);
+
+    const mockConfig = {
+      get: vi.fn(() => undefined),
+    };
+    vi.mocked(vscode.workspace.getConfiguration).mockReturnValue(
+      mockConfig as unknown as vscode.WorkspaceConfiguration
+    );
+
+    const settings = deriveHubSettings();
+
+    expect(settings.hubUrl).toBe("wss://env.example.com/ws");
+    expect(settings.profile).toBe("envprofile");
+    expect(settings.cfAccessClientId).toBe("env-client-id");
+    expect(settings.cfAccessClientSecret).toBe("env-secret");
   });
 });
 

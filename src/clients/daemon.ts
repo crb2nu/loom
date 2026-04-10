@@ -6,6 +6,7 @@ import * as vscode from "vscode";
 
 import { DaemonServerInfo, DaemonToolInfo, ToolInputSchema } from "../types";
 import { resolveLoomBinary } from "../utils/binary";
+import { findRegistryPath } from "../utils/config";
 import { Logger } from "../utils/logger";
 
 const execFileAsync = promisify(execFile);
@@ -94,6 +95,7 @@ export class DaemonClient {
 
   // Connection state tracking
   private _connectionState: DaemonConnectionState = "disconnected";
+  private daemonUnavailableNoticeShown = false;
   private readonly _onConnectionStateChange = new vscode.EventEmitter<DaemonConnectionState>();
   readonly onConnectionStateChange = this._onConnectionStateChange.event;
   private readonly _onToolExecution = new vscode.EventEmitter<ToolExecutionEvent>();
@@ -171,6 +173,9 @@ export class DaemonClient {
   private setConnectionState(state: DaemonConnectionState): void {
     if (state !== this._connectionState) {
       this._connectionState = state;
+      if (state === "connected") {
+        this.daemonUnavailableNoticeShown = false;
+      }
       this._onConnectionStateChange.fire(state);
     }
   }
@@ -245,6 +250,10 @@ export class DaemonClient {
    * Show a notification when daemon is unavailable with action to start it.
    */
   async showDaemonUnavailableNotification(): Promise<void> {
+    if (this.daemonUnavailableNoticeShown) {
+      return;
+    }
+    this.daemonUnavailableNoticeShown = true;
     const action = await vscode.window.showWarningMessage(
       "Loom daemon is not running. Some features will be unavailable.",
       "Start Daemon",
@@ -263,10 +272,11 @@ export class DaemonClient {
     try {
       const loomBinary = resolveLoomBinary(this.workspaceRoot);
       this.channel.appendLine(`[DaemonClient] Starting daemon...`);
+      const daemonArgs = this.getDaemonControlArgs("start");
 
       await this.withRetry(
         async () => {
-          await execFileAsync(loomBinary, ["daemon", "start"], {
+          await execFileAsync(loomBinary, daemonArgs, {
             cwd: this.workspaceRoot || os.homedir(),
             timeout: 10000,
           });
@@ -329,10 +339,11 @@ export class DaemonClient {
     try {
       const loomBinary = resolveLoomBinary(this.workspaceRoot);
       this.channel.appendLine(`[DaemonClient] Restarting daemon...`);
+      const daemonArgs = this.getDaemonControlArgs("restart");
 
       await this.withRetry(
         async () => {
-          await execFileAsync(loomBinary, ["daemon", "restart"], {
+          await execFileAsync(loomBinary, daemonArgs, {
             cwd: this.workspaceRoot || os.homedir(),
             timeout: 30000,
           });
@@ -422,14 +433,23 @@ export class DaemonClient {
   async isDaemonRunning(): Promise<boolean> {
     try {
       const loomBinary = resolveLoomBinary(this.workspaceRoot);
-      await execFileAsync(loomBinary, ["daemon", "status"], {
+      const { stdout } = await execFileAsync(loomBinary, ["daemon", "status"], {
         cwd: this.workspaceRoot || os.homedir(),
         timeout: 2000,
       });
-      return true;
+      return /Socket:\s+active\b/.test(stdout);
     } catch {
       return false;
     }
+  }
+
+  private getDaemonControlArgs(command: "start" | "restart"): string[] {
+    const args = ["daemon", command];
+    const registryPath = findRegistryPath(this.workspaceRoot);
+    if (registryPath) {
+      args.push("--registry", registryPath);
+    }
+    return args;
   }
 
   invalidateCache(): void {

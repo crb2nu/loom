@@ -4,6 +4,7 @@ import * as os from "os";
 import * as path from "path";
 
 import * as vscode from "vscode";
+import { parse as parseYaml } from "yaml";
 
 import { DEFAULT_HUB_URL } from "../constants";
 import { DaemonConfig, HubSettings, VscodeConfigSnapshot } from "../types";
@@ -13,15 +14,22 @@ import { DaemonConfig, HubSettings, VscodeConfigSnapshot } from "../types";
  */
 export function deriveHubSettings(): HubSettings {
   const configuration = vscode.workspace.getConfiguration("loom");
+  const fileSettings = readHubSettingsFromConfig();
   const configuredUrl = configuration.get<string>("hubUrl")?.trim();
   const configuredProfile = configuration.get<string>("hubProfile")?.trim();
-  const hubUrl = configuredUrl || process.env.MCP_HUB_URL || DEFAULT_HUB_URL;
-  const profile = configuredProfile || process.env.MCP_PROFILE || "codex";
+  const hubUrl = configuredUrl || process.env.MCP_HUB_URL || fileSettings.hubUrl || DEFAULT_HUB_URL;
+  const profile = configuredProfile || process.env.MCP_PROFILE || fileSettings.profile || "codex";
   const httpBaseUrl = convertHubUrlToHttpBase(hubUrl);
   const cfAccessClientId =
-    process.env.CF_ACCESS_CLIENT_ID || process.env.CF_Access_Client_Id || undefined;
+    process.env.CF_ACCESS_CLIENT_ID ||
+    process.env.CF_Access_Client_Id ||
+    fileSettings.cfAccessClientId ||
+    undefined;
   const cfAccessClientSecret =
-    process.env.CF_ACCESS_CLIENT_SECRET || process.env.CF_Access_ClientSecret || undefined;
+    process.env.CF_ACCESS_CLIENT_SECRET ||
+    process.env.CF_Access_ClientSecret ||
+    fileSettings.cfAccessClientSecret ||
+    undefined;
 
   return {
     hubUrl,
@@ -30,6 +38,36 @@ export function deriveHubSettings(): HubSettings {
     cfAccessClientId,
     cfAccessClientSecret,
   };
+}
+
+function readHubSettingsFromConfig(): Partial<HubSettings> {
+  const configPath = path.join(os.homedir(), ".config", "loom", "config.yaml");
+
+  try {
+    const raw = fs.readFileSync(configPath, "utf-8");
+    const parsed = parseYaml(raw) as {
+      hub?: {
+        url?: unknown;
+        profile?: unknown;
+        cf_access_client_id?: unknown;
+        cf_access_client_secret?: unknown;
+      };
+    } | null;
+    const hub = parsed?.hub;
+
+    return {
+      hubUrl: typeof hub?.url === "string" ? hub.url.trim() : undefined,
+      profile: typeof hub?.profile === "string" ? hub.profile.trim() : undefined,
+      cfAccessClientId:
+        typeof hub?.cf_access_client_id === "string" ? hub.cf_access_client_id.trim() : undefined,
+      cfAccessClientSecret:
+        typeof hub?.cf_access_client_secret === "string"
+          ? hub.cf_access_client_secret.trim()
+          : undefined,
+    };
+  } catch {
+    return {};
+  }
 }
 
 /**

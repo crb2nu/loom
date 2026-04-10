@@ -146,7 +146,9 @@ git       idle      Git operations`;
 
   describe("isDaemonRunning", () => {
     it("should return true when daemon is running", async () => {
-      mockExecFile("daemon running on pid 12345");
+      mockExecFile(
+        "Daemon status:\n  Lock:    held (PID 12345)\n  Socket:  active (/tmp/loom.sock)"
+      );
 
       const running = await client.isDaemonRunning();
 
@@ -443,7 +445,10 @@ prometheus__query             Query Prometheus metrics`;
       mockExecFileAsync
         .mockRejectedValueOnce(new Error("temporary start failure"))
         .mockResolvedValueOnce({ stdout: "", stderr: "" })
-        .mockResolvedValueOnce({ stdout: "running", stderr: "" });
+        .mockResolvedValueOnce({
+          stdout: "Daemon status:\n  Lock:    held (PID 12345)\n  Socket:  active (/tmp/loom.sock)",
+          stderr: "",
+        });
 
       const result = await client.startDaemon();
 
