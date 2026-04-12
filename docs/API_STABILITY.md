@@ -2,7 +2,7 @@
 
 This document defines compatibility expectations for the `services/loom` extension.
 
-Status: pre-`1.0.0` extension (`0.9.1` at time of writing).
+Status: shipped `1.0.0` extension line.
 
 ## Scope
 
@@ -29,9 +29,9 @@ Policy for stable surfaces:
 - add new commands/settings additively
 - if removal is necessary, keep an alias/compat path for at least one minor release
 
-### Best-Effort Stable (Pre-1.0)
+### Runtime Contract Surfaces
 
-These are intended to be stable but may evolve while the extension is `<1.0.0`:
+These are the primary extension-to-runtime contracts in the shipped `1.0.0` line:
 
 1. Loom runtime resources used by extension clients:
    - `loom://config`
@@ -41,11 +41,11 @@ These are intended to be stable but may evolve while the extension is `<1.0.0`:
 2. CLI invocation set used by extension clients:
    - `loom daemon start|stop|restart|status`
    - `loom servers --json` (primary) and `loom servers` (fallback)
-   - `loom tools list`
+   - `loom tools list --json` (primary) and text parsing fallback
    - `loom sync <platform> --regen`
-3. Parsed output shapes used by `src/clients/daemon.ts` and `src/clients/platformConfig.ts`.
+3. Parsed output shapes used by `src/clients/daemon.ts` and `src/clients/platformConfig.ts` when runtime resources or JSON output are unavailable.
 
-Policy for best-effort surfaces:
+Policy for runtime contract surfaces:
 - prefer additive changes
 - prefer resource-first and JSON-first adapters wherever available
 - treat human-readable CLI parsing as fallback behavior, not the primary contract
@@ -99,17 +99,18 @@ For command/view/setting changes:
 
 ## Sources
 
-- `package.json:46`
-- `package.json:265`
-- `package.json:301`
-- `package.json:346`
-- `src/clients/daemon.ts:196`
-- `src/clients/daemon.ts:299`
-- `src/clients/daemon.ts:315`
-- `src/clients/daemon.ts:380`
-- `src/clients/platformConfig.ts:365`
+- `package.json:5`
+- `package.json:461`
+- `package.json:466`
+- `src/managers/profileManager.ts:68`
+- `src/managers/profileManager.ts:235`
+- `src/managers/profileManager.ts:245`
+- `src/managers/profileManager.ts:273`
+- `src/managers/profileManager.ts:297`
+- `src/clients/daemon.ts:472`
+- `src/clients/platformConfig.ts:436`
 - `src/extension.ts:8`
 - `src/extension.ts:175`
-- `ROADMAP.md:95`
+- `ROADMAP.md:99`
 - `/Users/cblevins/workspace/services/loom-core/docs/API_STABILITY.md:17`
 - `/Users/cblevins/workspace/services/loom-core/docs/API_STABILITY.md:93`

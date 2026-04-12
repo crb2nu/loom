@@ -34,6 +34,54 @@
       ]
     },
     {
+      "name": "mobile_dashboard",
+      "source": "loom-core/internal/contracts/testdata/mobile_dashboard.golden",
+      "path": "mobile_dashboard.golden.json",
+      "required_paths": [
+        "active_agents",
+        "active_sessions",
+        "coordination.summary.active_namespaces",
+        "coordination.summary.shared_branches",
+        "coordination.attention_lanes",
+        "health.total_servers",
+        "updated_at"
+      ],
+      "required_non_empty_arrays": [
+        "coordination.attention_lanes"
+      ]
+    },
+    {
+      "name": "mobile_sessions",
+      "source": "loom-core/internal/contracts/testdata/mobile_sessions.golden",
+      "path": "mobile_sessions.golden.json",
+      "required_paths": [
+        "sessions",
+        "sessions.0.id",
+        "sessions.0.agent_id",
+        "sessions.0.status",
+        "sessions.0.started_at"
+      ],
+      "required_non_empty_arrays": [
+        "sessions"
+      ]
+    },
+    {
+      "name": "mobile_agents",
+      "source": "loom-core/internal/contracts/testdata/mobile_agents.golden",
+      "path": "mobile_agents.golden.json",
+      "required_paths": [
+        "agents",
+        "agents.0.agent_id",
+        "agents.0.status",
+        "summary.total_agents",
+        "summary.active_agents",
+        "summary.with_sessions"
+      ],
+      "required_non_empty_arrays": [
+        "agents"
+      ]
+    },
+    {
       "name": "dto_task_info",
       "source": "loom-core/internal/contracts/testdata/dto_task_info.golden",
       "path": "dto_task_info.golden.json",
@@ -59,6 +107,89 @@
       "required_non_empty_arrays": [
         "tags",
         "blocked_by"
+      ]
+    },
+    {
+      "name": "dto_session_info",
+      "source": "loom-core/internal/contracts/testdata/dto_session_info.golden",
+      "path": "dto_session_info.golden.json",
+      "required_paths": [
+        "id",
+        "agent_id",
+        "namespace",
+        "status",
+        "started_at",
+        "ended_at",
+        "description",
+        "pipeline_ref.id",
+        "pipeline_ref.project",
+        "pipeline_ref.ref",
+        "entry_count",
+        "total_tokens"
+      ]
+    },
+    {
+      "name": "dto_presence_info",
+      "source": "loom-core/internal/contracts/testdata/dto_presence_info.golden",
+      "path": "dto_presence_info.golden.json",
+      "required_paths": [
+        "agent_id",
+        "session_id",
+        "status",
+        "agent_type",
+        "description",
+        "current_task",
+        "active_files",
+        "branch",
+        "worktree_id",
+        "last_heartbeat",
+        "registered_at"
+      ],
+      "required_non_empty_arrays": [
+        "active_files"
+      ]
+    },
+    {
+      "name": "dto_heartbeat_request",
+      "source": "loom-core/internal/contracts/testdata/dto_heartbeat_request.golden",
+      "path": "dto_heartbeat_request.golden.json",
+      "required_paths": [
+        "agent_id",
+        "session_id",
+        "status",
+        "agent_type",
+        "description",
+        "current_task",
+        "active_files",
+        "branch"
+      ],
+      "required_non_empty_arrays": [
+        "active_files"
+      ]
+    },
+    {
+      "name": "dto_context_inspect_request",
+      "source": "loom-core/internal/contracts/testdata/dto_context_inspect_request.golden",
+      "path": "dto_context_inspect_request.golden.json",
+      "required_paths": [
+        "agent_id",
+        "session_id",
+        "detail",
+        "limit"
+      ]
+    },
+    {
+      "name": "dto_relation_info",
+      "source": "loom-core/internal/contracts/testdata/dto_relation_info.golden",
+      "path": "dto_relation_info.golden.json",
+      "required_paths": [
+        "id",
+        "source_id",
+        "source_name",
+        "target_id",
+        "target_name",
+        "type",
+        "relation_type"
       ]
     },
     {

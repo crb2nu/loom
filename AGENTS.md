@@ -16,19 +16,16 @@ VS Code extension for MCP (Model Context Protocol) context management. Provides 
 - Onboarding wizard for first-time setup
 - Deep search across connected MCP servers
 
-## Current Version: 0.9.0
+## Current Version: 1.0.0
 
-### What's New in v0.9.0
+### What's New in v1.0.0
 
-- **Onboarding wizard**: First-run setup flow guiding users through initial configuration
-- **Deep search**: Search across all connected MCP servers from a single query
-- **Skill recommendations**: Context-aware skill suggestions based on active file, diagnostics, and workspace context
-- **Server metrics**: Real-time health metrics, latency tracking, and history per server
-- **Usage analytics**: Track tool usage patterns with a generated report command
-- **Remote tunnels**: Managed `kubectl port-forward` commands for remote K8s MCP services
-- **loom-core profiles**: Tool-profile selection sourced from `loom profile list/show`
-- **Knowledge graph panel**: Visual exploration of agent context entities and relations
-- **Memory dashboard**: Tiered memory view (working / short-term / long-term)
+- **Contract-first adapters**: `loom-core` runtime and profile surfaces prefer resource/JSON-first paths, with text parsing retained only as fallback
+- **Downstream contract verification**: Selected `loom-core` golden fixtures are tracked alongside extension checks
+- **Parity overview**: Fleet, health, tasks, memory, presence, and stream are converging into one shell
+- **Search capability metadata**: Tool-family assumptions are being replaced with capability-driven metadata
+- **Webview hardening**: Release-critical panels are being tightened and simplified
+- **Release gates**: Docs, coverage, package, and publish checks stay aligned with the shipped surface
 
 ### What's New in v0.8.0
 
@@ -75,6 +72,7 @@ The extension uses the `loom` CLI for:
 - Platform sync operations
 - Server status queries
 - Agent context operations (sessions, tasks, annotations)
+- Profile selection via `loom-core` adapters; `loom.profiles` is deprecated and text parsing remains fallback-only
 
 ### Shared Conventions
 

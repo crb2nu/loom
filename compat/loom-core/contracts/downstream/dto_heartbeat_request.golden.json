@@ -1,0 +1,12 @@
+{
+  "agent_id": "claude-code-1",
+  "session_id": "sess_abc123",
+  "status": "active",
+  "agent_type": "claude-code",
+  "description": "Working on feature X",
+  "current_task": "Writing tests",
+  "active_files": [
+    "internal/contracts/golden_test.go"
+  ],
+  "branch": "feat/feature-x"
+}

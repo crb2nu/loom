@@ -2,7 +2,7 @@
 
 > Last Updated: April 2026
 
-## Current Status: v1.0.0 readiness
+## Current Status: v1.0.0 shipped
 
 Loom is a VS Code extension for MCP (Model Context Protocol) context management. It provides unified configuration sync across multiple AI coding assistant platforms.
 
@@ -15,7 +15,7 @@ Loom is a VS Code extension for MCP (Model Context Protocol) context management.
 - **Usage analytics**: Tool invocation tracking and report generation
 - **Remote tunnels**: Managed `kubectl` port-forward workflows for remote K8s MCP services
 
-The extension is now beyond the original `v0.9.0` baseline. The remaining work is about stabilizing contracts, aligning docs, and tightening release gates rather than adding another isolated feature tier.
+The extension is now on the `1.0.0` line. The remaining work is about stabilizing contracts, aligning docs, and tightening release gates rather than adding another isolated feature tier.
 
 ### v0.8.0 Highlights
 
@@ -100,7 +100,7 @@ The extension is now beyond the original `v0.9.0` baseline. The remaining work i
 
 Tracking issue: [#1](https://gitlab.flexinfer.ai/services/loom/-/issues/1)
 
-- [ ] **Contract-first profile/runtime adapters**: Prefer Loom resources and JSON-first paths where available.
+- [ ] **Contract-first profile/runtime adapters**: Prefer Loom resources and JSON-first paths where available; keep text parsing fallback-only.
 - [ ] **Downstream contract verification**: Track selected `loom-core` golden fixtures in CI.
 - [ ] **Parity overview**: Promote fleet, health, tasks, memory, presence, and stream into one shell.
 - [ ] **Search capability metadata**: Replace brittle hardcoded tool-family assumptions.

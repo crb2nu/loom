@@ -32,6 +32,19 @@ describe("status commands", () => {
     getStatus: ReturnType<typeof vi.fn>;
     getSettings: ReturnType<typeof vi.fn>;
   };
+  let mockPanel: {
+    reveal: ReturnType<typeof vi.fn>;
+    postMessage: ReturnType<typeof vi.fn>;
+    onDidDispose: ReturnType<typeof vi.fn>;
+    onDidReceiveMessage: ReturnType<typeof vi.fn>;
+    dispose: ReturnType<typeof vi.fn>;
+    webview: {
+      html: string;
+      cspSource: string;
+      postMessage: ReturnType<typeof vi.fn>;
+      onDidReceiveMessage: ReturnType<typeof vi.fn>;
+    };
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -74,13 +87,72 @@ describe("status commands", () => {
       localRouted: ["config-only"],
     });
 
+    mockPanel = {
+      reveal: vi.fn(),
+      postMessage: vi.fn(),
+      onDidDispose: vi.fn(),
+      onDidReceiveMessage: vi.fn(),
+      dispose: vi.fn(),
+      webview: {
+        html: "",
+        cspSource: "vscode-resource:",
+        postMessage: vi.fn(() => Promise.resolve(true)),
+        onDidReceiveMessage: vi.fn(),
+      },
+    };
+    vi.mocked(vscode.window.createWebviewPanel).mockReturnValue(mockPanel as never);
+
     ctx = {
       workspaceRoot: "/workspace",
+      pythonExecutable: "python3",
       loomChannel,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       hubStatusManager: mockHubStatusManager as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       registryProvider: mockRegistryProvider as any,
+      daemonClient: {
+        connectionState: "connected",
+        getServers: vi.fn(() => Promise.resolve([{ name: "alpha", running: true }])),
+      } as any,
+      serverProvider: {} as any,
+      toolProvider: {} as any,
+      secretsProvider: {} as any,
+      usageAnalyticsManager: {
+        getSnapshot: vi.fn(() => ({
+          totalCalls: 10,
+          successCalls: 8,
+          failureCalls: 2,
+          byServer: { alpha: 8 },
+          byTool: {},
+          byHour: {},
+          recent: [],
+        })),
+      } as any,
+      agentContextClient: {
+        listTasks: vi.fn(() =>
+          Promise.resolve([
+            { status: "blocked", priority: "high" },
+            { status: "in_progress", priority: "medium" },
+          ])
+        ),
+        getMemoryTiers: vi.fn(() =>
+          Promise.resolve([
+            { tier: "working", entry_count: 2, total_tokens: 40 },
+            { tier: "short_term", entry_count: 1, total_tokens: 20 },
+          ])
+        ),
+        listSessions: vi.fn(() =>
+          Promise.resolve([{ session_id: "sess-1" }, { session_id: "sess-2" }])
+        ),
+      } as any,
+      agentSessionManager: {
+        getSessionId: vi.fn(() => "sess-1"),
+      } as any,
+      remoteTunnelManager: {} as any,
+      configSyncManager: {} as any,
+      extensionContext: {
+        extensionUri: vscode.Uri.file("/extension"),
+      } as any,
     } as unknown as CommandContext;
   });
 
@@ -119,7 +191,7 @@ describe("status commands", () => {
     );
   });
 
-  it("writes a full mesh report with gap diagnostics", async () => {
+  it("opens the parity overview panel with a mesh snapshot", async () => {
     registerStatusCommands(ctx);
     const handler = getRegisteredCommandHandler("loom.showMeshReport");
 
@@ -127,79 +199,39 @@ describe("status commands", () => {
 
     expect(mockRegistryProvider.getRegistrySnapshot).toHaveBeenCalled();
     expect(mockLoadVscodeConfigSnapshot).toHaveBeenCalledWith("/workspace");
-    expect(loomChannel.clear).toHaveBeenCalled();
-    expect(loomChannel.appendLine).toHaveBeenCalledWith(expect.stringContaining("Hub status: ok"));
-    expect(loomChannel.appendLine).toHaveBeenCalledWith(
-      "Overview: 2 ready / 0 degraded / 4 unavailable"
+    expect(vscode.window.createWebviewPanel).toHaveBeenCalledWith(
+      "loomParityOverview",
+      "Loom Overview",
+      expect.anything(),
+      expect.objectContaining({
+        enableScripts: true,
+      })
     );
-    expect(loomChannel.appendLine).toHaveBeenCalledWith(
-      "Attention: Tasks, Memory, Stream, Presence"
+    expect(mockPanel.webview.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "updateSnapshot",
+        data: expect.objectContaining({
+          summary: {
+            ready: 6,
+            degraded: 0,
+            unavailable: 0,
+            attention: [],
+          },
+          fleet: expect.objectContaining({
+            registryCount: 2,
+            missingFromHub: ["beta"],
+            missingFromConfig: ["beta"],
+            hubOnly: ["hub-only"],
+            configOnly: ["config-only"],
+            localRouted: ["config-only"],
+          }),
+          health: expect.objectContaining({
+            hubStatus: "ok",
+            daemonRunningCount: 1,
+          }),
+        }),
+      })
     );
-    expect(loomChannel.appendLine).toHaveBeenCalledWith(
-      expect.stringContaining("Registry servers: 2")
-    );
-    expect(loomChannel.appendLine).toHaveBeenCalledWith(
-      expect.stringContaining("Registry → hub gaps: beta")
-    );
-    expect(loomChannel.appendLine).toHaveBeenCalledWith(
-      expect.stringContaining("Registry → VS Code gaps: beta")
-    );
-    expect(loomChannel.appendLine).toHaveBeenCalledWith(
-      expect.stringContaining("Hub-only servers: hub-only")
-    );
-    expect(loomChannel.appendLine).toHaveBeenCalledWith(
-      expect.stringContaining("VS Code-only servers: config-only")
-    );
-    expect(loomChannel.appendLine).toHaveBeenCalledWith(
-      expect.stringContaining("Local-mode servers: config-only")
-    );
-    expect(loomChannel.appendLine).toHaveBeenCalledWith("Domain readiness:");
-    expect(loomChannel.appendLine).toHaveBeenCalledWith(expect.stringContaining("- Fleet:"));
-    expect(loomChannel.appendLine).toHaveBeenCalledWith(expect.stringContaining("- Health:"));
-    expect(loomChannel.appendLine).toHaveBeenCalledWith(expect.stringContaining("- Tasks:"));
-    expect(loomChannel.appendLine).toHaveBeenCalledWith(expect.stringContaining("- Memory:"));
-    expect(loomChannel.appendLine).toHaveBeenCalledWith(expect.stringContaining("- Stream:"));
-    expect(loomChannel.appendLine).toHaveBeenCalledWith(expect.stringContaining("- Presence:"));
-    expect(loomChannel.show).toHaveBeenCalledWith(true);
-    expect(vscode.window.showInformationMessage).toHaveBeenCalledWith("Loom: mesh report ready");
-  });
-
-  it("handles mesh report when registry and config are missing", async () => {
-    mockRegistryProvider.getRegistrySnapshot.mockResolvedValueOnce(null);
-    mockLoadVscodeConfigSnapshot.mockResolvedValueOnce(null);
-    registerStatusCommands(ctx);
-    const handler = getRegisteredCommandHandler("loom.showMeshReport");
-
-    await handler();
-
-    expect(loomChannel.appendLine).toHaveBeenCalledWith("Registry: registry.yaml not found");
-    expect(loomChannel.appendLine).toHaveBeenCalledWith(
-      "VS Code config: not found (run sync to generate)"
-    );
-  });
-
-  it("reports no registry-to-hub/config gaps when sets are aligned", async () => {
-    mockRegistryProvider.getRegistrySnapshot.mockResolvedValueOnce({
-      servers: [{ name: "alpha" }],
-    });
-    mockHubStatusManager.getStatus.mockReturnValueOnce({
-      health: { status: "ok", sessions: 1 },
-      readiness: { ready: true },
-      error: undefined,
-      servers: [{ name: "alpha" }],
-    });
-    mockLoadVscodeConfigSnapshot.mockResolvedValueOnce({
-      source: "/workspace/.vscode/mcp.json",
-      serverNames: ["alpha"],
-      hubRouted: ["alpha"],
-      localRouted: [],
-    });
-
-    registerStatusCommands(ctx);
-    const handler = getRegisteredCommandHandler("loom.showMeshReport");
-    await handler();
-
-    expect(loomChannel.appendLine).toHaveBeenCalledWith("Registry → hub gaps: none");
-    expect(loomChannel.appendLine).toHaveBeenCalledWith("Registry → VS Code gaps: none");
+    expect(vscode.window.showInformationMessage).toHaveBeenCalledWith("Loom: overview ready");
   });
 });
