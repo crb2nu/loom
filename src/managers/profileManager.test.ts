@@ -28,6 +28,11 @@ import { ProfileManager } from "./profileManager";
 describe("ProfileManager", () => {
   let manager: ProfileManager;
   let doctorJsonAvailable: boolean;
+  let runtimeProfileState: {
+    active?: string;
+    available?: string[];
+    toolCount?: number;
+  } | null;
   let configStore: {
     activeProfile: string;
     enabledPlatforms: string[];
@@ -37,6 +42,7 @@ describe("ProfileManager", () => {
   let mockConfigManager: ConfigManager;
   let mockConfigSet: ReturnType<typeof vi.fn>;
   let mockDaemonClient: DaemonClient;
+  let mockGetRuntimeProfileState: ReturnType<typeof vi.fn>;
   let mockHubStatusManager: { getStatus: ReturnType<typeof vi.fn> };
   let mockChannel: vscode.OutputChannel;
 
@@ -51,6 +57,11 @@ describe("ProfileManager", () => {
       profiles: { legacy: { servers: ["shared"] } },
     };
     doctorJsonAvailable = true;
+    runtimeProfileState = {
+      active: "dev",
+      available: ["dev", "full", "research"],
+      toolCount: 52,
+    };
 
     mockConfigSet = vi.fn(async (key: string, value: unknown) => {
       configStore[key as keyof typeof configStore] = value as never;
@@ -61,11 +72,13 @@ describe("ProfileManager", () => {
       set: mockConfigSet,
     } as unknown as ConfigManager;
 
+    mockGetRuntimeProfileState = vi.fn(async () => runtimeProfileState);
     mockDaemonClient = {
       getServers: vi.fn(async () => [
         { name: "git", running: true },
         { name: "local-only", running: true },
       ]),
+      getRuntimeProfileState: mockGetRuntimeProfileState,
     } as unknown as DaemonClient;
 
     mockHubStatusManager = {
@@ -179,11 +192,24 @@ describe("ProfileManager", () => {
     );
   });
 
-  it("loads loom-core profiles and uses the configured active profile", async () => {
+  it("prefers runtime resource profile state over legacy text parsing", async () => {
     const profiles = await manager.getProfiles();
 
     expect(profiles.map((profile) => profile.name)).toEqual(["dev", "full", "research"]);
     expect(manager.getActiveProfileName()).toBe("dev");
+    expect(mockGetRuntimeProfileState).toHaveBeenCalled();
+    expect(
+      mockExecFile.mock.calls.some(
+        ([command, args]) =>
+          command === "/mock/bin/loom" && Array.isArray(args) && args.join(" ") === "doctor --json"
+      )
+    ).toBe(true);
+    expect(
+      mockExecFile.mock.calls.some(
+        ([command, args]) =>
+          command === "/mock/bin/loom" && Array.isArray(args) && args.join(" ") === "profile list"
+      )
+    ).toBe(false);
     await expect(manager.getActiveProfile()).resolves.toMatchObject({
       name: "dev",
       maxTools: 50,
@@ -216,6 +242,7 @@ describe("ProfileManager", () => {
   });
 
   it("falls back to loom profile list text output when doctor JSON is unavailable", async () => {
+    runtimeProfileState = null;
     doctorJsonAvailable = false;
 
     const fallbackManager = new ProfileManager(
@@ -230,6 +257,7 @@ describe("ProfileManager", () => {
     const profiles = await fallbackManager.getProfiles();
 
     expect(profiles.map((profile) => profile.name)).toEqual(["dev", "full", "research"]);
+    expect(mockGetRuntimeProfileState).toHaveBeenCalled();
     expect(mockExecFile).toHaveBeenCalledWith(
       "/mock/bin/loom",
       ["doctor", "--json"],
@@ -268,6 +296,7 @@ describe("ProfileManager", () => {
   });
 
   it("falls back to full when the configured profile does not exist", async () => {
+    runtimeProfileState = null;
     configStore.activeProfile = "missing";
 
     const fallbackManager = new ProfileManager(

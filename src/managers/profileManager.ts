@@ -5,6 +5,7 @@ import { promisify } from "util";
 import * as vscode from "vscode";
 
 import { DaemonClient } from "../clients/daemon";
+import type { LoomRuntimeProfileState } from "../clients/daemon";
 import { RoutingStatus, LoomCoreProfile, PlatformType } from "../types";
 import { resolveLoomBinary } from "../utils/binary";
 import { ConfigManager } from "../utils/configManager";
@@ -87,7 +88,14 @@ export class ProfileManager implements vscode.Disposable {
     }
 
     try {
-      const summaries = await this.loadProfileSummaries();
+      const runtimeState = this.getRuntimeProfileState();
+      const summaries = runtimeState?.available?.length
+        ? this.loadProfileSummariesFromNames(runtimeState.available)
+        : await this.loadProfileSummaries();
+      const resolvedActive = this.resolveActiveProfileName(
+        runtimeState?.active ?? this.activeProfile,
+        summaries.map((profile) => profile.name)
+      );
       const profiles = await Promise.all(
         summaries.map(async (summary) => ({
           ...summary,
@@ -98,10 +106,9 @@ export class ProfileManager implements vscode.Disposable {
       this.cachedProfiles = profiles;
       this.lastProfilesLoadAt = now;
 
-      const profileNames = profiles.map((profile) => profile.name);
-      if (!profileNames.includes(this.activeProfile)) {
-        this.activeProfile = "full";
-        await this.persistActiveProfile("full");
+      if (resolvedActive !== this.activeProfile) {
+        this.activeProfile = resolvedActive;
+        await this.persistActiveProfile(resolvedActive);
       }
 
       return this.cachedProfiles;
@@ -223,6 +230,16 @@ export class ProfileManager implements vscode.Disposable {
       .update("activeProfile", profileName, vscode.ConfigurationTarget.Global);
   }
 
+  private getRuntimeProfileState(): LoomRuntimeProfileState | null {
+    try {
+      return this.daemonClient.getRuntimeProfileState();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.info(`Falling back to legacy profile discovery: ${message}`);
+      return null;
+    }
+  }
+
   private async runLoom(args: string[]): Promise<string> {
     const loomBinary = resolveLoomBinary(this.workspaceRoot);
     const { stdout } = await execFileAsync(loomBinary, args, {
@@ -240,6 +257,24 @@ export class ProfileManager implements vscode.Disposable {
       this.logger.info(`Falling back to loom profile list text parsing: ${message}`);
       return this.loadProfileSummariesFromCli();
     }
+  }
+
+  private loadProfileSummariesFromNames(profileNames: string[]): LoomCoreProfile[] {
+    const profiles = new Map<string, LoomCoreProfile>();
+
+    for (const rawName of profileNames) {
+      const name = rawName.trim();
+      if (!name) {
+        continue;
+      }
+
+      profiles.set(name, {
+        name,
+        servers: "*",
+      });
+    }
+
+    return [...profiles.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   private async loadProfileDetails(profileName: string): Promise<Partial<LoomCoreProfile>> {
@@ -361,5 +396,20 @@ export class ProfileManager implements vscode.Disposable {
 
     const normalized = candidate.slice(4).replace(/-/g, "_");
     return normalized === serverName;
+  }
+
+  private resolveActiveProfileName(
+    preferred: string | undefined,
+    availableNames: string[]
+  ): string {
+    const candidates = [preferred, this.activeProfile, "full"];
+    for (const candidate of candidates) {
+      const normalized = candidate?.trim();
+      if (normalized && availableNames.includes(normalized)) {
+        return normalized;
+      }
+    }
+
+    return availableNames[0] ?? "full";
   }
 }

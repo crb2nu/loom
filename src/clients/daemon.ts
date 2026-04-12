@@ -1,4 +1,4 @@
-import { execFile } from "child_process";
+import { execFile, spawnSync } from "child_process";
 import * as os from "os";
 import { promisify } from "util";
 
@@ -59,6 +59,12 @@ interface LoomToolsListResponse {
   total_tools?: number;
 }
 
+export interface LoomRuntimeProfileState {
+  active?: string;
+  available?: string[];
+  toolCount?: number;
+}
+
 interface ToolCallErrorEnvelope {
   message?: string;
   data?: {
@@ -84,6 +90,7 @@ const DEFAULT_RETRY_CONFIG: RetryConfig = {
 
 export class DaemonClient {
   private static readonly TOOLS_PAGE_SIZE = 200;
+  private static readonly PROXY_PROTOCOL_VERSION = "2025-06-18";
   private readonly workspaceRoot: string;
   private readonly channel: vscode.OutputChannel;
   private readonly logger: Logger;
@@ -92,6 +99,8 @@ export class DaemonClient {
   private readonly cacheTimeoutMs = 5000;
   private cachedTools: DaemonToolInfo[] = [];
   private lastToolFetch: Date | null = null;
+  private cachedRuntimeProfileState: LoomRuntimeProfileState | null = null;
+  private lastRuntimeProfileFetch: Date | null = null;
 
   // Connection state tracking
   private _connectionState: DaemonConnectionState = "disconnected";
@@ -430,6 +439,31 @@ export class DaemonClient {
     }
   }
 
+  getRuntimeProfileState(forceRefresh = false): LoomRuntimeProfileState | null {
+    const now = new Date();
+    if (
+      !forceRefresh &&
+      this.lastRuntimeProfileFetch &&
+      now.getTime() - this.lastRuntimeProfileFetch.getTime() < this.cacheTimeoutMs
+    ) {
+      return this.cachedRuntimeProfileState;
+    }
+
+    try {
+      const runtimeProfileState = this.readRuntimeProfileStateFromProxy();
+      this.cachedRuntimeProfileState = runtimeProfileState;
+      this.lastRuntimeProfileFetch = now;
+      return runtimeProfileState;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.channel.appendLine(
+        `[DaemonClient] runtime profile state unavailable, falling back to CLI parsing: ${message}`
+      );
+      this.logger.info(`Runtime profile state unavailable: ${message}`);
+      return this.cachedRuntimeProfileState;
+    }
+  }
+
   async isDaemonRunning(): Promise<boolean> {
     try {
       const loomBinary = resolveLoomBinary(this.workspaceRoot);
@@ -457,6 +491,8 @@ export class DaemonClient {
     this.cachedServers = [];
     this.cachedTools = [];
     this.lastToolFetch = null;
+    this.cachedRuntimeProfileState = null;
+    this.lastRuntimeProfileFetch = null;
   }
 
   async getTools(forceRefresh = false): Promise<DaemonToolInfo[]> {
@@ -579,6 +615,235 @@ export class DaemonClient {
       }
     }
     return tools;
+  }
+
+  private readRuntimeProfileStateFromProxy(): LoomRuntimeProfileState {
+    const loomBinary = resolveLoomBinary(this.workspaceRoot);
+    const cwd = this.workspaceRoot || os.homedir();
+    const input = [
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: DaemonClient.PROXY_PROTOCOL_VERSION,
+          capabilities: {},
+          clientInfo: {
+            name: "loom-profile-manager",
+            version: "1.0.0",
+          },
+        },
+      },
+      {
+        jsonrpc: "2.0",
+        method: "notifications/initialized",
+      },
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "resources/read",
+        params: {
+          uri: "loom://config",
+        },
+      },
+    ]
+      .map((message) => JSON.stringify(message))
+      .join("\n")
+      .concat("\n");
+
+    const result = spawnSync(loomBinary, ["proxy"], {
+      cwd,
+      input,
+      encoding: "utf-8",
+      timeout: 15_000,
+      maxBuffer: 2 * 1024 * 1024,
+    });
+
+    if (result.error) {
+      throw result.error;
+    }
+
+    const stderr = typeof result.stderr === "string" ? result.stderr : String(result.stderr ?? "");
+    if (result.status !== 0) {
+      throw new Error(
+        `loom proxy exited with status ${result.status ?? "unknown"}${stderr ? `: ${stderr.trim()}` : ""}`
+      );
+    }
+
+    const response = this.extractProxyResponse(
+      typeof result.stdout === "string" ? result.stdout : String(result.stdout ?? ""),
+      2
+    );
+    if (!response) {
+      throw new Error("loom proxy did not return a resources/read response");
+    }
+    if (response.error) {
+      throw new Error(response.error.message ?? "loom proxy returned an error");
+    }
+
+    return this.parseRuntimeProfileState(response.result as Record<string, unknown> | undefined);
+  }
+
+  private extractProxyResponse(
+    stdout: string,
+    id: number
+  ): { result?: unknown; error?: { message?: string } } | null {
+    for (const rawLine of stdout.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line.startsWith("{")) {
+        continue;
+      }
+
+      let message: { id?: unknown; result?: unknown; error?: { message?: string } };
+      try {
+        message = JSON.parse(line) as {
+          id?: unknown;
+          result?: unknown;
+          error?: { message?: string };
+        };
+      } catch {
+        continue;
+      }
+
+      if (message.id !== id) {
+        continue;
+      }
+
+      return {
+        result: message.result,
+        error: message.error,
+      };
+    }
+
+    return null;
+  }
+
+  private parseRuntimeProfileState(
+    result: Record<string, unknown> | undefined
+  ): LoomRuntimeProfileState {
+    if (!result) {
+      throw new Error("loom://config response was empty");
+    }
+
+    const contents = Array.isArray(result.contents) ? result.contents : [];
+    const firstContent = contents.find((item): item is Record<string, unknown> => {
+      if (!this.isRecord(item)) {
+        return false;
+      }
+      return typeof item.text === "string";
+    });
+    const rawText = firstContent?.text;
+
+    if (typeof rawText !== "string" || rawText.trim() === "") {
+      throw new Error("loom://config response did not include text content");
+    }
+
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(rawText) as Record<string, unknown>;
+    } catch {
+      throw new Error("loom://config response was not valid JSON");
+    }
+
+    const profilePayload = this.pickRecord(parsed, "loom/profile", "profile", "loom.profile");
+    const configHashPayload = this.pickRecord(
+      parsed,
+      "loom/config-hash",
+      "config-hash",
+      "configHash",
+      "loom.configHash"
+    );
+
+    const active = this.pickString(profilePayload, parsed, "active", "activeProfile");
+    const available = this.normalizeStringArray(
+      this.pickValue(profilePayload, parsed, "available", "availableProfiles")
+    );
+    const toolCount = this.pickNumber(configHashPayload, parsed, "toolCount");
+
+    return {
+      active,
+      available: available.length > 0 ? available : active ? [active] : [],
+      toolCount,
+    };
+  }
+
+  private pickRecord(
+    primary: Record<string, unknown>,
+    ...keys: string[]
+  ): Record<string, unknown> | undefined {
+    for (const key of keys) {
+      const value = primary[key];
+      if (this.isRecord(value)) {
+        return value;
+      }
+    }
+    return undefined;
+  }
+
+  private pickValue(
+    primary: Record<string, unknown> | undefined,
+    fallback: Record<string, unknown>,
+    ...keys: string[]
+  ): unknown {
+    for (const key of keys) {
+      if (primary && key in primary) {
+        return primary[key];
+      }
+      if (key in fallback) {
+        return fallback[key];
+      }
+    }
+    return undefined;
+  }
+
+  private pickString(
+    primary: Record<string, unknown> | undefined,
+    fallback: Record<string, unknown>,
+    ...keys: string[]
+  ): string | undefined {
+    const value = this.pickValue(primary, fallback, ...keys);
+    return typeof value === "string" && value.trim() ? value.trim() : undefined;
+  }
+
+  private pickNumber(
+    primary: Record<string, unknown> | undefined,
+    fallback: Record<string, unknown>,
+    ...keys: string[]
+  ): number | undefined {
+    const value = this.pickValue(primary, fallback, ...keys);
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string" && value.trim() !== "") {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+    return undefined;
+  }
+
+  private normalizeStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    const names = new Set<string>();
+    for (const item of value) {
+      if (typeof item === "string" && item.trim()) {
+        names.add(item.trim());
+        continue;
+      }
+
+      if (this.isRecord(item) && typeof item.name === "string" && item.name.trim()) {
+        names.add(item.name.trim());
+      }
+    }
+    return [...names];
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 
   private normalizeToolInputSchema(value: unknown): ToolInputSchema | undefined {
