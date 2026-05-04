@@ -38,6 +38,7 @@ import {
   AgentContextProvider,
   TasksProvider,
   PlatformsProvider,
+  MillsTreeProvider,
 } from "./providers";
 import { HubStatusSnapshot } from "./types";
 import {
@@ -164,20 +165,31 @@ function registerMillsIntegration(
   loomChannel: vscode.OutputChannel,
   logger: Logger,
   context: vscode.ExtensionContext
-): MillsStatusManager {
+): { millsStatusManager: MillsStatusManager; millsTreeProvider: MillsTreeProvider } {
   const millsLogger = logger.child("Mills");
   const initial = deriveMillsConfig();
-  const manager = new MillsStatusManager(
-    {
-      hudBaseUrl: initial.hudBaseUrl,
-      cfAccessClientId: initial.cfAccessClientId,
-      cfAccessClientSecret: initial.cfAccessClientSecret,
-    },
-    initial.refreshIntervalMs,
-    loomChannel
-  );
+  const settings = {
+    hudBaseUrl: initial.hudBaseUrl,
+    cfAccessClientId: initial.cfAccessClientId,
+    cfAccessClientSecret: initial.cfAccessClientSecret,
+  };
+  const manager = new MillsStatusManager(settings, initial.refreshIntervalMs, loomChannel);
   context.subscriptions.push(manager);
   manager.start();
+
+  const treeProvider = new MillsTreeProvider(settings, loomChannel);
+  const treeView = vscode.window.createTreeView("loomMills", {
+    treeDataProvider: treeProvider,
+  });
+  context.subscriptions.push(treeView);
+
+  // Refresh tree whenever the status manager learns of a change
+  // (paused → ok, regression count moved, etc.).
+  context.subscriptions.push(
+    manager.onDidChange(() => {
+      treeProvider.refresh();
+    })
+  );
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((event) => {
@@ -186,14 +198,13 @@ function registerMillsIntegration(
         event.affectsConfiguration("loom.mills.refreshIntervalMs")
       ) {
         const next = deriveMillsConfig();
-        manager.updateSettings(
-          {
-            hudBaseUrl: next.hudBaseUrl,
-            cfAccessClientId: next.cfAccessClientId,
-            cfAccessClientSecret: next.cfAccessClientSecret,
-          },
-          next.refreshIntervalMs
-        );
+        const nextSettings = {
+          hudBaseUrl: next.hudBaseUrl,
+          cfAccessClientId: next.cfAccessClientId,
+          cfAccessClientSecret: next.cfAccessClientSecret,
+        };
+        manager.updateSettings(nextSettings, next.refreshIntervalMs);
+        treeProvider.updateSettings(nextSettings);
         millsLogger.info(
           `Mills settings updated (hudBaseUrl=${next.hudBaseUrl || "<empty>"}, refreshMs=${next.refreshIntervalMs})`
         );
@@ -201,7 +212,7 @@ function registerMillsIntegration(
     })
   );
 
-  return manager;
+  return { millsStatusManager: manager, millsTreeProvider: treeProvider };
 }
 
 function registerRegistryAndServers(
@@ -561,7 +572,7 @@ function registerCoreCommands(
     | "remoteTunnelManager"
     | "agentContextClient"
     | "agentSessionManager"
-  > & { millsStatusManager?: MillsStatusManager },
+  > & { millsStatusManager?: MillsStatusManager; millsTreeProvider?: MillsTreeProvider },
   context: vscode.ExtensionContext
 ): void {
   // Create command context with all dependencies
@@ -571,6 +582,7 @@ function registerCoreCommands(
     loomChannel: env.loomChannel,
     hubStatusManager: env.hubStatusManager,
     millsStatusManager: env.millsStatusManager,
+    millsTreeProvider: env.millsTreeProvider,
     configSyncManager: env.configSyncManager,
     daemonClient: env.daemonClient,
     registryProvider: env.registryProvider,
@@ -866,7 +878,11 @@ export async function activate(context: vscode.ExtensionContext) {
   const base = initializeEnvironment(context);
 
   const hubStatusManager = registerHubIntegration(base.loomChannel, base.logger, context);
-  const millsStatusManager = registerMillsIntegration(base.loomChannel, base.logger, context);
+  const { millsStatusManager, millsTreeProvider } = registerMillsIntegration(
+    base.loomChannel,
+    base.logger,
+    context
+  );
 
   const { registryProvider, serverProvider, toolProvider, daemonClient } =
     registerRegistryAndServers({ ...base, hubStatusManager }, context);
@@ -907,6 +923,7 @@ export async function activate(context: vscode.ExtensionContext) {
       ...base,
       hubStatusManager,
       millsStatusManager,
+      millsTreeProvider,
       configSyncManager,
       daemonClient,
       registryProvider,

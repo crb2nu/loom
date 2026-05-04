@@ -7,7 +7,7 @@ vi.mock("../utils/http", () => ({
   requestJson: mockRequestJson,
 }));
 
-import { MillsClient, MillsSettings, deriveHealth } from "./mills";
+import { MillsClient, MillsSettings, coerceList, deriveHealth } from "./mills";
 
 function makeChannel(): vscode.OutputChannel {
   return {
@@ -192,6 +192,98 @@ describe("MillsClient", () => {
       expect(snapshot.health).toBe("unreachable");
       expect(snapshot.error).toContain("ECONNREFUSED");
     });
+  });
+});
+
+describe("MillsClient list endpoints", () => {
+  let channel: vscode.OutputChannel;
+  let client: MillsClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRequestJson.mockReset();
+    channel = makeChannel();
+    client = new MillsClient({ hudBaseUrl: "https://hud.example.com" }, channel);
+  });
+
+  it("fetchBacklog hits /api/mills/backlog and returns array", async () => {
+    mockRequestJson.mockResolvedValue([{ ID: "MILLS-1", Title: "x" }]);
+    const items = await client.fetchBacklog();
+    expect(items).toEqual([{ ID: "MILLS-1", Title: "x" }]);
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/backlog",
+      {}
+    );
+  });
+
+  it("fetchBacklog unwraps {items: [...]} envelope", async () => {
+    mockRequestJson.mockResolvedValue({ items: [{ ID: "MILLS-2" }] });
+    const items = await client.fetchBacklog();
+    expect(items).toHaveLength(1);
+    expect(items[0].ID).toBe("MILLS-2");
+  });
+
+  it("fetchPipelineRuns hits /api/mills/pipeline/runs", async () => {
+    mockRequestJson.mockResolvedValue([]);
+    await client.fetchPipelineRuns();
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/pipeline/runs",
+      {}
+    );
+  });
+
+  it("fetchCouncilRuns hits /api/mills/council/runs", async () => {
+    mockRequestJson.mockResolvedValue([]);
+    await client.fetchCouncilRuns();
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/council/runs",
+      {}
+    );
+  });
+
+  it("fetchSquads hits /api/mills/squads", async () => {
+    mockRequestJson.mockResolvedValue([]);
+    await client.fetchSquads();
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/squads",
+      {}
+    );
+  });
+
+  it("fetchAuditFindings hits /api/mills/audit/findings", async () => {
+    mockRequestJson.mockResolvedValue([]);
+    await client.fetchAuditFindings();
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/audit/findings",
+      {}
+    );
+  });
+
+  it("returns [] when payload is unknown shape", async () => {
+    mockRequestJson.mockResolvedValue({ unrelated: 42 });
+    const items = await client.fetchBacklog();
+    expect(items).toEqual([]);
+  });
+});
+
+describe("coerceList", () => {
+  it("returns array unchanged", () => {
+    expect(coerceList([{ a: 1 }])).toEqual([{ a: 1 }]);
+  });
+
+  it("unwraps `items`, `runs`, `findings`, `squads`, `backlog` keys", () => {
+    expect(coerceList({ items: [1] })).toEqual([1]);
+    expect(coerceList({ runs: [2] })).toEqual([2]);
+    expect(coerceList({ findings: [3] })).toEqual([3]);
+    expect(coerceList({ squads: [4] })).toEqual([4]);
+    expect(coerceList({ backlog: [5] })).toEqual([5]);
+  });
+
+  it("returns [] for null, undefined, or unknown shape", () => {
+    expect(coerceList(null)).toEqual([]);
+    expect(coerceList(undefined)).toEqual([]);
+    expect(coerceList({ other: [1] })).toEqual([]);
+    expect(coerceList(42)).toEqual([]);
   });
 });
 

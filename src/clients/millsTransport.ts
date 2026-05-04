@@ -11,6 +11,11 @@ export const MILLS_REST_PATHS = {
   status: `${MILLS_REST_BASE}/status`,
   kpis: `${MILLS_REST_BASE}/kpis`,
   policy: `${MILLS_REST_BASE}/policy`,
+  backlog: `${MILLS_REST_BASE}/backlog`,
+  pipelineRuns: `${MILLS_REST_BASE}/pipeline/runs`,
+  councilRuns: `${MILLS_REST_BASE}/council/runs`,
+  squads: `${MILLS_REST_BASE}/squads`,
+  auditFindings: `${MILLS_REST_BASE}/audit/findings`,
 } as const;
 
 export const MILLS_PROMETHEUS_PREFIX = "loom_mills_";

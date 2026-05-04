@@ -9,7 +9,13 @@ import {
   RemoteTunnelManager,
   UsageAnalyticsManager,
 } from "../managers";
-import { RegistryProvider, SecretsProvider, ServerProvider, ToolProvider } from "../providers";
+import {
+  MillsTreeProvider,
+  RegistryProvider,
+  SecretsProvider,
+  ServerProvider,
+  ToolProvider,
+} from "../providers";
 
 /**
  * Shared context passed to all command handlers.
@@ -32,6 +38,7 @@ export interface CommandContext {
   agentContextClient?: AgentContextClient;
   agentSessionManager?: AgentSessionManager;
   millsStatusManager?: MillsStatusManager;
+  millsTreeProvider?: MillsTreeProvider;
 }
 
 /**

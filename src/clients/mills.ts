@@ -42,6 +42,69 @@ export interface MillsPolicyResponse {
   [key: string]: unknown;
 }
 
+/**
+ * Loom-core types are marshaled with default Go encoding/json
+ * (PascalCase field names). Types are permissive — we only depend on
+ * the fields the extension surfaces today.
+ */
+export interface MillsBacklogItem {
+  ID: string;
+  Title?: string;
+  State?: string;
+  Priority?: string;
+  Labels?: string[];
+  GitLabIssueIID?: number | null;
+  CreatedAt?: string;
+  UpdatedAt?: string;
+  [key: string]: unknown;
+}
+
+export interface MillsPipelineRun {
+  ID: string;
+  BacklogID?: string;
+  Template?: string;
+  State?: string;
+  CurrentStage?: string;
+  Attempts?: number;
+  MRIID?: number | null;
+  StartedAt?: string;
+  EndedAt?: string | null;
+  CostUSD?: number;
+  [key: string]: unknown;
+}
+
+export interface MillsCouncilRun {
+  ID: string;
+  Trigger?: string;
+  Outcome?: string;
+  StartedAt?: string;
+  EndedAt?: string | null;
+  CostFrontierUSD?: number;
+  CostLocalUSD?: number;
+  BranchName?: string;
+  [key: string]: unknown;
+}
+
+export interface MillsSquad {
+  Name?: string;
+  name?: string;
+  Description?: string;
+  description?: string;
+  [key: string]: unknown;
+}
+
+export interface MillsAuditFinding {
+  ID: number;
+  SubjectKind?: string;
+  SubjectID?: string;
+  Severity?: string;
+  RubricID?: string;
+  SurvivalScore?: number;
+  CostUSD?: number;
+  CreatedAt?: string;
+  [key: string]: unknown;
+}
+
 export type MillsHealth = "ok" | "paused" | "degraded" | "unreachable" | "unconfigured";
 
 export interface MillsStatusSnapshot {
@@ -82,6 +145,26 @@ export class MillsClient {
     return this.getJson<MillsPolicyResponse>(MILLS_REST_PATHS.policy);
   }
 
+  async fetchBacklog(): Promise<MillsBacklogItem[]> {
+    return this.getJsonList<MillsBacklogItem>(MILLS_REST_PATHS.backlog);
+  }
+
+  async fetchPipelineRuns(): Promise<MillsPipelineRun[]> {
+    return this.getJsonList<MillsPipelineRun>(MILLS_REST_PATHS.pipelineRuns);
+  }
+
+  async fetchCouncilRuns(): Promise<MillsCouncilRun[]> {
+    return this.getJsonList<MillsCouncilRun>(MILLS_REST_PATHS.councilRuns);
+  }
+
+  async fetchSquads(): Promise<MillsSquad[]> {
+    return this.getJsonList<MillsSquad>(MILLS_REST_PATHS.squads);
+  }
+
+  async fetchAuditFindings(): Promise<MillsAuditFinding[]> {
+    return this.getJsonList<MillsAuditFinding>(MILLS_REST_PATHS.auditFindings);
+  }
+
   /**
    * Build a snapshot suitable for the status bar.
    * Returns `unconfigured` when no HUD URL is set; never throws.
@@ -117,6 +200,16 @@ export class MillsClient {
     return requestJson<T>(target.toString(), this.buildHeaders());
   }
 
+  /**
+   * Fetch a list endpoint; loom-core may return either a bare array
+   * or an object with an `items`/`runs`/`findings` key. We unwrap the
+   * common shapes and return a plain array; unknown shapes return [].
+   */
+  private async getJsonList<T>(pathName: string): Promise<T[]> {
+    const raw = await this.getJson<unknown>(pathName);
+    return coerceList<T>(raw);
+  }
+
   private buildHeaders(): Record<string, string> {
     const headers: Record<string, string> = {};
     if (this.settings.cfAccessClientId && this.settings.cfAccessClientSecret) {
@@ -138,4 +231,22 @@ export function deriveHealth(
     return "degraded";
   }
   return "ok";
+}
+
+const LIST_WRAPPER_KEYS = ["items", "runs", "findings", "squads", "backlog"] as const;
+
+export function coerceList<T>(raw: unknown): T[] {
+  if (Array.isArray(raw)) {
+    return raw as T[];
+  }
+  if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    for (const key of LIST_WRAPPER_KEYS) {
+      const candidate = obj[key];
+      if (Array.isArray(candidate)) {
+        return candidate as T[];
+      }
+    }
+  }
+  return [];
 }

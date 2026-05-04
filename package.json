@@ -63,6 +63,11 @@
         "title": "Loom: Show Mills Status"
       },
       {
+        "command": "loom.refreshMills",
+        "title": "Loom: Refresh Mills",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "loom.syncConfigs",
         "title": "Loom: Sync MCP Configs"
       },
@@ -344,6 +349,19 @@
         {
           "id": "loomPlatforms",
           "name": "Loom Platforms"
+        },
+        {
+          "id": "loomMills",
+          "name": "Loom Mills"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "loom.refreshMills",
+          "when": "view == loomMills",
+          "group": "navigation"
         }
       ]
     },

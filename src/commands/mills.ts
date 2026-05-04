@@ -2,18 +2,30 @@ import * as vscode from "vscode";
 
 import { MillsStatusSnapshot } from "../clients/mills";
 import { MillsStatusManager } from "../managers/millsStatus";
+import { MillsTreeProvider } from "../providers/mills";
 
 export interface MillsCommandContext {
   millsStatusManager: MillsStatusManager;
+  millsTreeProvider?: MillsTreeProvider;
 }
 
 /**
  * Register Mills-related commands.
  */
 export function registerMillsCommands(ctx: MillsCommandContext): vscode.Disposable[] {
-  return [
+  const disposables: vscode.Disposable[] = [
     vscode.commands.registerCommand("loom.showMillsStatus", () => showMillsStatus(ctx)),
   ];
+  if (ctx.millsTreeProvider) {
+    const tree = ctx.millsTreeProvider;
+    disposables.push(
+      vscode.commands.registerCommand("loom.refreshMills", () => {
+        tree.refresh();
+        void ctx.millsStatusManager.refresh();
+      })
+    );
+  }
+  return disposables;
 }
 
 async function showMillsStatus(ctx: MillsCommandContext): Promise<void> {

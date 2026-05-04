@@ -33,7 +33,12 @@ export function registerAllCommands(ctx: CommandContext): vscode.Disposable[] {
     ...registerStatusCommands(ctx),
   ];
   if (ctx.millsStatusManager) {
-    baseCommands.push(...registerMillsCommands({ millsStatusManager: ctx.millsStatusManager }));
+    baseCommands.push(
+      ...registerMillsCommands({
+        millsStatusManager: ctx.millsStatusManager,
+        millsTreeProvider: ctx.millsTreeProvider,
+      })
+    );
   }
   return baseCommands;
 }
