@@ -12,12 +12,7 @@ import {
 } from "../clients/mills";
 import { Logger } from "../utils/logger";
 
-export type MillsSubjectKind =
-  | "backlog"
-  | "council"
-  | "pipeline"
-  | "audit"
-  | "policy-proposal";
+export type MillsSubjectKind = "backlog" | "council" | "pipeline" | "audit" | "policy-proposal";
 
 export interface MillsSubjectRef {
   kind: MillsSubjectKind;
@@ -155,10 +150,7 @@ export class MillsTreeProvider implements vscode.TreeDataProvider<MillsTreeNode>
 
   getTreeItem(node: MillsTreeNode): vscode.TreeItem {
     if (node.kind === "section") {
-      const item = new vscode.TreeItem(
-        node.label,
-        vscode.TreeItemCollapsibleState.Collapsed
-      );
+      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Collapsed);
       item.id = `mills.section.${node.sectionId}`;
       item.contextValue = `mills.section.${node.sectionId}`;
       if (node.error) {
@@ -465,8 +457,7 @@ function councilTooltip(item: MillsCouncilRun): string {
   if (item.Trigger) lines.push(`Trigger: ${item.Trigger}`);
   if (item.Outcome) lines.push(`Outcome: ${item.Outcome}`);
   if (item.BranchName) lines.push(`Branch: ${item.BranchName}`);
-  const totalCost =
-    (item.CostFrontierUSD ?? 0) + (item.CostLocalUSD ?? 0);
+  const totalCost = (item.CostFrontierUSD ?? 0) + (item.CostLocalUSD ?? 0);
   if (totalCost > 0) lines.push(`Cost: $${totalCost.toFixed(2)}`);
   return lines.join("\n");
 }
@@ -482,4 +473,3 @@ function auditTooltip(item: MillsAuditFinding): string {
   }
   return lines.join("\n");
 }
-

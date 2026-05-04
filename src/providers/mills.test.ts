@@ -42,31 +42,16 @@ describe("MillsTreeProvider", () => {
   });
 
   it("returns six sections at root when configured", async () => {
-    const provider = new MillsTreeProvider(
-      { hudBaseUrl: "https://hud.example.com" },
-      channel
-    );
+    const provider = new MillsTreeProvider({ hudBaseUrl: "https://hud.example.com" }, channel);
     const children = await provider.getChildren();
     expect(children).toHaveLength(6);
     const ids = children.map((n) => (n.kind === "section" ? n.sectionId : null));
-    expect(ids).toEqual([
-      "backlog",
-      "pipelines",
-      "council",
-      "squads",
-      "audit",
-      "proposals",
-    ]);
+    expect(ids).toEqual(["backlog", "pipelines", "council", "squads", "audit", "proposals"]);
   });
 
   it("attaches an open-detail command to actionable leaves", async () => {
-    mockRequestJson.mockResolvedValue([
-      { ID: "MILLS-1", Title: "x", State: "queued" },
-    ]);
-    const provider = new MillsTreeProvider(
-      { hudBaseUrl: "https://hud.example.com" },
-      channel
-    );
+    mockRequestJson.mockResolvedValue([{ ID: "MILLS-1", Title: "x", State: "queued" }]);
+    const provider = new MillsTreeProvider({ hudBaseUrl: "https://hud.example.com" }, channel);
     const sections = await provider.getChildren();
     const backlog = sections.find((s) => s.kind === "section" && s.sectionId === "backlog");
     const leaves = await provider.getChildren(backlog);
@@ -78,10 +63,7 @@ describe("MillsTreeProvider", () => {
 
   it("does not attach a command to squad leaves (no detail endpoint)", async () => {
     mockRequestJson.mockResolvedValue([{ Name: "alpha" }]);
-    const provider = new MillsTreeProvider(
-      { hudBaseUrl: "https://hud.example.com" },
-      channel
-    );
+    const provider = new MillsTreeProvider({ hudBaseUrl: "https://hud.example.com" }, channel);
     const sections = await provider.getChildren();
     const squads = sections.find((s) => s.kind === "section" && s.sectionId === "squads");
     const leaves = await provider.getChildren(squads);
@@ -90,10 +72,7 @@ describe("MillsTreeProvider", () => {
   });
 
   it("each section's getTreeItem returns a Collapsed item", async () => {
-    const provider = new MillsTreeProvider(
-      { hudBaseUrl: "https://hud.example.com" },
-      channel
-    );
+    const provider = new MillsTreeProvider({ hudBaseUrl: "https://hud.example.com" }, channel);
     const sections = await provider.getChildren();
     for (const node of sections) {
       const item = provider.getTreeItem(node);
@@ -106,10 +85,7 @@ describe("MillsTreeProvider", () => {
       { ID: "MILLS-1", Title: "First", State: "queued", Priority: "P2" },
       { ID: "MILLS-2", Title: "Second", State: "running" },
     ]);
-    const provider = new MillsTreeProvider(
-      { hudBaseUrl: "https://hud.example.com" },
-      channel
-    );
+    const provider = new MillsTreeProvider({ hudBaseUrl: "https://hud.example.com" }, channel);
 
     const sections = await provider.getChildren();
     const backlogSection = sections.find((s) => s.kind === "section" && s.sectionId === "backlog");
@@ -132,10 +108,7 @@ describe("MillsTreeProvider", () => {
 
   it("renders an info placeholder for empty sections", async () => {
     mockRequestJson.mockResolvedValue([]);
-    const provider = new MillsTreeProvider(
-      { hudBaseUrl: "https://hud.example.com" },
-      channel
-    );
+    const provider = new MillsTreeProvider({ hudBaseUrl: "https://hud.example.com" }, channel);
     const sections = await provider.getChildren();
     const audit = sections.find((s) => s.kind === "section" && s.sectionId === "audit");
     const leaves = await provider.getChildren(audit);
@@ -148,10 +121,7 @@ describe("MillsTreeProvider", () => {
 
   it("renders an error placeholder when fetch fails", async () => {
     mockRequestJson.mockRejectedValue(new Error("ECONNREFUSED"));
-    const provider = new MillsTreeProvider(
-      { hudBaseUrl: "https://hud.example.com" },
-      channel
-    );
+    const provider = new MillsTreeProvider({ hudBaseUrl: "https://hud.example.com" }, channel);
     const sections = await provider.getChildren();
     const pipelines = sections.find((s) => s.kind === "section" && s.sectionId === "pipelines");
     const leaves = await provider.getChildren(pipelines);
@@ -165,10 +135,7 @@ describe("MillsTreeProvider", () => {
 
   it("refresh() invalidates cached state and triggers re-fetch", async () => {
     mockRequestJson.mockResolvedValue([{ ID: "MILLS-1" }]);
-    const provider = new MillsTreeProvider(
-      { hudBaseUrl: "https://hud.example.com" },
-      channel
-    );
+    const provider = new MillsTreeProvider({ hudBaseUrl: "https://hud.example.com" }, channel);
     const sections = await provider.getChildren();
     const backlog = sections.find((s) => s.kind === "section" && s.sectionId === "backlog");
     await provider.getChildren(backlog);
@@ -186,10 +153,7 @@ describe("MillsTreeProvider", () => {
 
   it("updateSettings switches HUD URL and clears cache", async () => {
     mockRequestJson.mockResolvedValue([{ ID: "MILLS-1" }]);
-    const provider = new MillsTreeProvider(
-      { hudBaseUrl: "https://hud-old.example.com" },
-      channel
-    );
+    const provider = new MillsTreeProvider({ hudBaseUrl: "https://hud-old.example.com" }, channel);
     let sections = await provider.getChildren();
     const backlog = sections.find((s) => s.kind === "section" && s.sectionId === "backlog");
     await provider.getChildren(backlog);

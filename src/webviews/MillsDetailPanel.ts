@@ -245,8 +245,7 @@ function renderBacklog(item: MillsBacklogItem): string {
 }
 
 function renderCouncil(item: MillsCouncilRun): string {
-  const cost =
-    (item.CostFrontierUSD ?? 0) + (item.CostLocalUSD ?? 0);
+  const cost = (item.CostFrontierUSD ?? 0) + (item.CostLocalUSD ?? 0);
   return fieldList([
     ["Run ID", item.ID],
     ["Trigger", item.Trigger],
@@ -254,7 +253,10 @@ function renderCouncil(item: MillsCouncilRun): string {
     ["Branch", item.BranchName],
     ["Started at", item.StartedAt],
     ["Ended at", item.EndedAt ?? undefined],
-    ["Cost (frontier)", item.CostFrontierUSD != null ? `$${item.CostFrontierUSD.toFixed(2)}` : undefined],
+    [
+      "Cost (frontier)",
+      item.CostFrontierUSD != null ? `$${item.CostFrontierUSD.toFixed(2)}` : undefined,
+    ],
     ["Cost (local)", item.CostLocalUSD != null ? `$${item.CostLocalUSD.toFixed(2)}` : undefined],
     ["Cost (total)", cost > 0 ? `$${cost.toFixed(2)}` : undefined],
   ]);

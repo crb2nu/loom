@@ -37,9 +37,7 @@ export function registerMillsCommands(ctx: MillsCommandContext): vscode.Disposab
 function openMillsDetail(ctx: MillsCommandContext, raw: unknown): void {
   const subject = parseSubject(raw);
   if (!subject) {
-    void vscode.window.showWarningMessage(
-      "Loom: invalid Mills subject (expected {kind, id})."
-    );
+    void vscode.window.showWarningMessage("Loom: invalid Mills subject (expected {kind, id}).");
     return;
   }
   MillsDetailPanel.render(
@@ -76,10 +74,7 @@ async function showMillsStatus(ctx: MillsCommandContext): Promise<void> {
       "Open Settings"
     );
     if (choice === "Open Settings") {
-      void vscode.commands.executeCommand(
-        "workbench.action.openSettings",
-        "loom.mills.hudBaseUrl"
-      );
+      void vscode.commands.executeCommand("workbench.action.openSettings", "loom.mills.hudBaseUrl");
     }
     return;
   }

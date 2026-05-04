@@ -53,10 +53,7 @@ describe("MillsClient", () => {
       const result = await client.fetchStatus();
 
       expect(result).toEqual({ enabled: true, stage: "prod" });
-      expect(mockRequestJson).toHaveBeenCalledWith(
-        "https://hud.example.com/api/mills/status",
-        {}
-      );
+      expect(mockRequestJson).toHaveBeenCalledWith("https://hud.example.com/api/mills/status", {});
     });
 
     it("throws when HUD URL is missing", async () => {
@@ -72,10 +69,7 @@ describe("MillsClient", () => {
 
       await client.fetchKpis();
 
-      expect(mockRequestJson).toHaveBeenCalledWith(
-        "https://hud.example.com/api/mills/kpis",
-        {}
-      );
+      expect(mockRequestJson).toHaveBeenCalledWith("https://hud.example.com/api/mills/kpis", {});
     });
   });
 
@@ -86,10 +80,7 @@ describe("MillsClient", () => {
 
       await client.fetchPolicy();
 
-      expect(mockRequestJson).toHaveBeenCalledWith(
-        "https://hud.example.com/api/mills/policy",
-        {}
-      );
+      expect(mockRequestJson).toHaveBeenCalledWith("https://hud.example.com/api/mills/policy", {});
     });
   });
 
@@ -210,10 +201,7 @@ describe("MillsClient list endpoints", () => {
     mockRequestJson.mockResolvedValue([{ ID: "MILLS-1", Title: "x" }]);
     const items = await client.fetchBacklog();
     expect(items).toEqual([{ ID: "MILLS-1", Title: "x" }]);
-    expect(mockRequestJson).toHaveBeenCalledWith(
-      "https://hud.example.com/api/mills/backlog",
-      {}
-    );
+    expect(mockRequestJson).toHaveBeenCalledWith("https://hud.example.com/api/mills/backlog", {});
   });
 
   it("fetchBacklog unwraps {items: [...]} envelope", async () => {
@@ -244,10 +232,7 @@ describe("MillsClient list endpoints", () => {
   it("fetchSquads hits /api/mills/squads", async () => {
     mockRequestJson.mockResolvedValue([]);
     await client.fetchSquads();
-    expect(mockRequestJson).toHaveBeenCalledWith(
-      "https://hud.example.com/api/mills/squads",
-      {}
-    );
+    expect(mockRequestJson).toHaveBeenCalledWith("https://hud.example.com/api/mills/squads", {});
   });
 
   it("fetchAuditFindings hits /api/mills/audit/findings", async () => {

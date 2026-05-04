@@ -262,10 +262,7 @@ export class MillsClient {
   }
 }
 
-export function deriveHealth(
-  status: MillsStatusResponse,
-  kpis: MillsKpisResponse
-): MillsHealth {
+export function deriveHealth(status: MillsStatusResponse, kpis: MillsKpisResponse): MillsHealth {
   if (status.enabled === false || status.paused === true) {
     return "paused";
   }

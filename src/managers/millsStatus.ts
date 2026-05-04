@@ -22,11 +22,7 @@ export class MillsStatusManager implements vscode.Disposable {
 
   readonly onDidChange = this.emitter.event;
 
-  constructor(
-    settings: MillsSettings,
-    refreshIntervalMs: number,
-    channel: vscode.OutputChannel
-  ) {
+  constructor(settings: MillsSettings, refreshIntervalMs: number, channel: vscode.OutputChannel) {
     this.settings = settings;
     this.refreshIntervalMs = Math.max(refreshIntervalMs, 5_000);
     this.channel = channel;
@@ -88,8 +84,7 @@ export class MillsStatusManager implements vscode.Disposable {
   }
 
   private applySnapshot(next: MillsStatusSnapshot): void {
-    const changed =
-      next.health !== this.snapshot.health || next.error !== this.snapshot.error;
+    const changed = next.health !== this.snapshot.health || next.error !== this.snapshot.error;
     this.snapshot = next;
     this.renderStatusBar();
     if (changed) {
