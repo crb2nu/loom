@@ -16,7 +16,28 @@ export const MILLS_REST_PATHS = {
   councilRuns: `${MILLS_REST_BASE}/council/runs`,
   squads: `${MILLS_REST_BASE}/squads`,
   auditFindings: `${MILLS_REST_BASE}/audit/findings`,
+  policyProposals: `${MILLS_REST_BASE}/policy/proposals`,
 } as const;
+
+/**
+ * Detail-endpoint path builders. Loom-core mounts each as
+ * `${list}/{id}` so we share the construction logic.
+ */
+export function millsBacklogItemPath(id: string): string {
+  return `${MILLS_REST_PATHS.backlog}/${encodeURIComponent(id)}`;
+}
+
+export function millsCouncilRunPath(id: string): string {
+  return `${MILLS_REST_PATHS.councilRuns}/${encodeURIComponent(id)}`;
+}
+
+export function millsPipelineRunPath(id: string): string {
+  return `${MILLS_REST_PATHS.pipelineRuns}/${encodeURIComponent(id)}`;
+}
+
+export function millsAuditFindingPath(id: string): string {
+  return `${MILLS_REST_PATHS.auditFindings}/${encodeURIComponent(id)}`;
+}
 
 export const MILLS_PROMETHEUS_PREFIX = "loom_mills_";
 

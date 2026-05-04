@@ -2,7 +2,13 @@ import * as vscode from "vscode";
 
 import { requestJson } from "../utils/http";
 
-import { MILLS_REST_PATHS } from "./millsTransport";
+import {
+  MILLS_REST_PATHS,
+  millsAuditFindingPath,
+  millsBacklogItemPath,
+  millsCouncilRunPath,
+  millsPipelineRunPath,
+} from "./millsTransport";
 
 /**
  * Settings for the Mills HUD client.
@@ -102,6 +108,22 @@ export interface MillsAuditFinding {
   SurvivalScore?: number;
   CostUSD?: number;
   CreatedAt?: string;
+  Findings?: Array<Record<string, unknown>>;
+  AuditorPool?: Array<Record<string, unknown>>;
+  [key: string]: unknown;
+}
+
+/**
+ * Adaptive policy proposal (Phase 7 slice 7.2). Loom-core stores these
+ * as proposed diffs against the live policy ConfigMap; in v1 the
+ * extension is read-only — apply/reject lands in slice 4.
+ */
+export interface MillsPolicyProposal {
+  ID: string;
+  Status?: string;
+  Reason?: string;
+  CreatedAt?: string;
+  Diff?: string;
   [key: string]: unknown;
 }
 
@@ -163,6 +185,26 @@ export class MillsClient {
 
   async fetchAuditFindings(): Promise<MillsAuditFinding[]> {
     return this.getJsonList<MillsAuditFinding>(MILLS_REST_PATHS.auditFindings);
+  }
+
+  async fetchPolicyProposals(): Promise<MillsPolicyProposal[]> {
+    return this.getJsonList<MillsPolicyProposal>(MILLS_REST_PATHS.policyProposals);
+  }
+
+  async fetchBacklogItem(id: string): Promise<MillsBacklogItem> {
+    return this.getJson<MillsBacklogItem>(millsBacklogItemPath(id));
+  }
+
+  async fetchCouncilRun(id: string): Promise<MillsCouncilRun> {
+    return this.getJson<MillsCouncilRun>(millsCouncilRunPath(id));
+  }
+
+  async fetchPipelineRun(id: string): Promise<MillsPipelineRun> {
+    return this.getJson<MillsPipelineRun>(millsPipelineRunPath(id));
+  }
+
+  async fetchAuditFinding(id: string): Promise<MillsAuditFinding> {
+    return this.getJson<MillsAuditFinding>(millsAuditFindingPath(id));
   }
 
   /**

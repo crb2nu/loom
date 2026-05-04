@@ -68,6 +68,10 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "loom.openMillsDetail",
+        "title": "Loom: Open Mills Detail"
+      },
+      {
         "command": "loom.syncConfigs",
         "title": "Loom: Sync MCP Configs"
       },

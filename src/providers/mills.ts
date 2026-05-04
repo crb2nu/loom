@@ -6,12 +6,25 @@ import {
   MillsClient,
   MillsCouncilRun,
   MillsPipelineRun,
+  MillsPolicyProposal,
   MillsSettings,
   MillsSquad,
 } from "../clients/mills";
 import { Logger } from "../utils/logger";
 
-type SectionId = "backlog" | "pipelines" | "council" | "squads" | "audit";
+export type MillsSubjectKind =
+  | "backlog"
+  | "council"
+  | "pipeline"
+  | "audit"
+  | "policy-proposal";
+
+export interface MillsSubjectRef {
+  kind: MillsSubjectKind;
+  id: string;
+}
+
+type SectionId = "backlog" | "pipelines" | "council" | "squads" | "audit" | "proposals";
 
 interface SectionDefinition {
   id: SectionId;
@@ -57,6 +70,13 @@ const SECTIONS: SectionDefinition[] = [
     fetch: (c) => c.fetchAuditFindings(),
     toLeaf: (raw) => auditLeaf(raw as MillsAuditFinding),
   },
+  {
+    id: "proposals",
+    label: "Policy Proposals",
+    emptyText: "No policy proposals",
+    fetch: (c) => c.fetchPolicyProposals(),
+    toLeaf: (raw) => policyProposalLeaf(raw as MillsPolicyProposal),
+  },
 ];
 
 interface MillsLeafItem {
@@ -65,6 +85,7 @@ interface MillsLeafItem {
   tooltip?: string;
   iconId: string;
   iconColor?: string;
+  subject?: MillsSubjectRef;
 }
 
 type MillsTreeNode =
@@ -111,6 +132,7 @@ export class MillsTreeProvider implements vscode.TreeDataProvider<MillsTreeNode>
     council: emptyState(),
     squads: emptyState(),
     audit: emptyState(),
+    proposals: emptyState(),
   };
 
   constructor(initial: MillsSettings, channel: vscode.OutputChannel) {
@@ -165,6 +187,13 @@ export class MillsTreeProvider implements vscode.TreeDataProvider<MillsTreeNode>
       ? new vscode.ThemeIcon(leaf.iconId, new vscode.ThemeColor(leaf.iconColor))
       : new vscode.ThemeIcon(leaf.iconId);
     item.contextValue = `mills.leaf.${node.sectionId}`;
+    if (leaf.subject) {
+      item.command = {
+        command: "loom.openMillsDetail",
+        title: "Open Mills Detail",
+        arguments: [leaf.subject],
+      };
+    }
     return item;
   }
 
@@ -273,6 +302,8 @@ function sectionIcon(id: SectionId): string {
       return "people";
     case "audit":
       return "shield";
+    case "proposals":
+      return "lightbulb";
   }
 }
 
@@ -283,6 +314,7 @@ function backlogLeaf(item: MillsBacklogItem): MillsLeafItem {
     description: `${priority}${item.State ?? ""}${item.Title ? " — " + item.Title : ""}`.trim(),
     tooltip: backlogTooltip(item),
     iconId: stateIcon(item.State),
+    subject: { kind: "backlog", id: item.ID },
   };
 }
 
@@ -294,6 +326,7 @@ function pipelineLeaf(item: MillsPipelineRun): MillsLeafItem {
     description: `${item.State ?? ""}${stage}${backlog}`.trim(),
     tooltip: pipelineTooltip(item),
     iconId: pipelineIcon(item.State),
+    subject: { kind: "pipeline", id: item.ID },
   };
 }
 
@@ -304,6 +337,7 @@ function councilLeaf(item: MillsCouncilRun): MillsLeafItem {
     description: `${trigger}${item.Outcome ?? "in-flight"}`.trim(),
     tooltip: councilTooltip(item),
     iconId: councilIcon(item.Outcome),
+    subject: { kind: "council", id: item.ID },
   };
 }
 
@@ -325,7 +359,29 @@ function auditLeaf(item: MillsAuditFinding): MillsLeafItem {
     tooltip: auditTooltip(item),
     iconId: severityIcon(item.Severity),
     iconColor: severityColor(item.Severity),
+    subject: { kind: "audit", id: String(item.ID) },
   };
+}
+
+function policyProposalLeaf(item: MillsPolicyProposal): MillsLeafItem {
+  return {
+    label: item.ID,
+    description: `${item.Status ?? "pending"}${item.Reason ? " — " + item.Reason : ""}`.trim(),
+    tooltip: item.Reason,
+    iconId: proposalIcon(item.Status),
+    subject: { kind: "policy-proposal", id: item.ID },
+  };
+}
+
+function proposalIcon(status?: string): string {
+  switch (status) {
+    case "applied":
+      return "check";
+    case "rejected":
+      return "x";
+    default:
+      return "lightbulb";
+  }
 }
 
 function stateIcon(state?: string): string {

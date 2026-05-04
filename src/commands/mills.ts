@@ -2,9 +2,12 @@ import * as vscode from "vscode";
 
 import { MillsStatusSnapshot } from "../clients/mills";
 import { MillsStatusManager } from "../managers/millsStatus";
-import { MillsTreeProvider } from "../providers/mills";
+import { MillsSubjectRef, MillsTreeProvider } from "../providers/mills";
+import { MillsDetailPanel } from "../webviews/MillsDetailPanel";
 
 export interface MillsCommandContext {
+  extensionUri: vscode.Uri;
+  loomChannel: vscode.OutputChannel;
   millsStatusManager: MillsStatusManager;
   millsTreeProvider?: MillsTreeProvider;
 }
@@ -15,6 +18,9 @@ export interface MillsCommandContext {
 export function registerMillsCommands(ctx: MillsCommandContext): vscode.Disposable[] {
   const disposables: vscode.Disposable[] = [
     vscode.commands.registerCommand("loom.showMillsStatus", () => showMillsStatus(ctx)),
+    vscode.commands.registerCommand("loom.openMillsDetail", (subject: unknown) =>
+      openMillsDetail(ctx, subject)
+    ),
   ];
   if (ctx.millsTreeProvider) {
     const tree = ctx.millsTreeProvider;
@@ -26,6 +32,40 @@ export function registerMillsCommands(ctx: MillsCommandContext): vscode.Disposab
     );
   }
   return disposables;
+}
+
+function openMillsDetail(ctx: MillsCommandContext, raw: unknown): void {
+  const subject = parseSubject(raw);
+  if (!subject) {
+    void vscode.window.showWarningMessage(
+      "Loom: invalid Mills subject (expected {kind, id})."
+    );
+    return;
+  }
+  MillsDetailPanel.render(
+    ctx.extensionUri,
+    ctx.millsStatusManager.getSettings(),
+    ctx.loomChannel,
+    subject
+  );
+}
+
+function parseSubject(raw: unknown): MillsSubjectRef | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const obj = raw as Record<string, unknown>;
+  const kind = obj.kind;
+  const id = obj.id;
+  if (typeof id !== "string" || id.length === 0) return undefined;
+  if (
+    kind !== "backlog" &&
+    kind !== "council" &&
+    kind !== "pipeline" &&
+    kind !== "audit" &&
+    kind !== "policy-proposal"
+  ) {
+    return undefined;
+  }
+  return { kind, id };
 }
 
 async function showMillsStatus(ctx: MillsCommandContext): Promise<void> {

@@ -266,6 +266,63 @@ describe("MillsClient list endpoints", () => {
   });
 });
 
+describe("MillsClient detail endpoints", () => {
+  let channel: vscode.OutputChannel;
+  let client: MillsClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRequestJson.mockReset();
+    channel = makeChannel();
+    client = new MillsClient({ hudBaseUrl: "https://hud.example.com" }, channel);
+  });
+
+  it("fetchBacklogItem hits /api/mills/backlog/{id} with URL-encoding", async () => {
+    mockRequestJson.mockResolvedValue({ ID: "MILLS A/1" });
+    await client.fetchBacklogItem("MILLS A/1");
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/backlog/MILLS%20A%2F1",
+      {}
+    );
+  });
+
+  it("fetchCouncilRun hits /api/mills/council/runs/{id}", async () => {
+    mockRequestJson.mockResolvedValue({ ID: "abc" });
+    await client.fetchCouncilRun("abc");
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/council/runs/abc",
+      {}
+    );
+  });
+
+  it("fetchPipelineRun hits /api/mills/pipeline/runs/{id}", async () => {
+    mockRequestJson.mockResolvedValue({ ID: "p1" });
+    await client.fetchPipelineRun("p1");
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/pipeline/runs/p1",
+      {}
+    );
+  });
+
+  it("fetchAuditFinding hits /api/mills/audit/findings/{id}", async () => {
+    mockRequestJson.mockResolvedValue({ ID: 7 });
+    await client.fetchAuditFinding("7");
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/audit/findings/7",
+      {}
+    );
+  });
+
+  it("fetchPolicyProposals hits /api/mills/policy/proposals", async () => {
+    mockRequestJson.mockResolvedValue([]);
+    await client.fetchPolicyProposals();
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/policy/proposals",
+      {}
+    );
+  });
+});
+
 describe("coerceList", () => {
   it("returns array unchanged", () => {
     expect(coerceList([{ a: 1 }])).toEqual([{ a: 1 }]);

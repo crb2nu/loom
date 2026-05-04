@@ -41,15 +41,52 @@ describe("MillsTreeProvider", () => {
     }
   });
 
-  it("returns five sections at root when configured", async () => {
+  it("returns six sections at root when configured", async () => {
     const provider = new MillsTreeProvider(
       { hudBaseUrl: "https://hud.example.com" },
       channel
     );
     const children = await provider.getChildren();
-    expect(children).toHaveLength(5);
+    expect(children).toHaveLength(6);
     const ids = children.map((n) => (n.kind === "section" ? n.sectionId : null));
-    expect(ids).toEqual(["backlog", "pipelines", "council", "squads", "audit"]);
+    expect(ids).toEqual([
+      "backlog",
+      "pipelines",
+      "council",
+      "squads",
+      "audit",
+      "proposals",
+    ]);
+  });
+
+  it("attaches an open-detail command to actionable leaves", async () => {
+    mockRequestJson.mockResolvedValue([
+      { ID: "MILLS-1", Title: "x", State: "queued" },
+    ]);
+    const provider = new MillsTreeProvider(
+      { hudBaseUrl: "https://hud.example.com" },
+      channel
+    );
+    const sections = await provider.getChildren();
+    const backlog = sections.find((s) => s.kind === "section" && s.sectionId === "backlog");
+    const leaves = await provider.getChildren(backlog);
+    const item = provider.getTreeItem(leaves[0]);
+    expect(item.command).toBeDefined();
+    expect(item.command?.command).toBe("loom.openMillsDetail");
+    expect(item.command?.arguments).toEqual([{ kind: "backlog", id: "MILLS-1" }]);
+  });
+
+  it("does not attach a command to squad leaves (no detail endpoint)", async () => {
+    mockRequestJson.mockResolvedValue([{ Name: "alpha" }]);
+    const provider = new MillsTreeProvider(
+      { hudBaseUrl: "https://hud.example.com" },
+      channel
+    );
+    const sections = await provider.getChildren();
+    const squads = sections.find((s) => s.kind === "section" && s.sectionId === "squads");
+    const leaves = await provider.getChildren(squads);
+    const item = provider.getTreeItem(leaves[0]);
+    expect(item.command).toBeUndefined();
   });
 
   it("each section's getTreeItem returns a Collapsed item", async () => {
