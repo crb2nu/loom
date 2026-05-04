@@ -59,6 +59,10 @@
         "title": "Loom: Show MCP Mesh Report"
       },
       {
+        "command": "loom.showMillsStatus",
+        "title": "Loom: Show Mills Status"
+      },
+      {
         "command": "loom.syncConfigs",
         "title": "Loom: Sync MCP Configs"
       },
@@ -521,6 +525,17 @@
           "default": 60000,
           "minimum": 0,
           "description": "Interval (ms) for polling platform sync status. Set to 0 to disable."
+        },
+        "loom.mills.hudBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL of the Mills HUD (e.g. https://hud.loom.flexinfer.ai). Empty disables Mills surface in the extension."
+        },
+        "loom.mills.refreshIntervalMs": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 5000,
+          "description": "Interval (ms) for refreshing Mills status. Used by the Mills status bar item."
         }
       }
     }

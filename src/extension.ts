@@ -18,6 +18,7 @@ import { HUB_REFRESH_INTERVAL_MS } from "./constants";
 import {
   ConfigSyncManager,
   HubStatusManager,
+  MillsStatusManager,
   AgentSessionManager,
   AnnotationDecorationManager,
   ServerMetricsManager,
@@ -41,6 +42,7 @@ import {
 import { HubStatusSnapshot } from "./types";
 import {
   deriveHubSettings,
+  deriveMillsConfig,
   findRegistryPath,
   watchRegistry,
   writeDaemonConfig,
@@ -156,6 +158,50 @@ function registerHubIntegration(
   );
 
   return hubStatusManager;
+}
+
+function registerMillsIntegration(
+  loomChannel: vscode.OutputChannel,
+  logger: Logger,
+  context: vscode.ExtensionContext
+): MillsStatusManager {
+  const millsLogger = logger.child("Mills");
+  const initial = deriveMillsConfig();
+  const manager = new MillsStatusManager(
+    {
+      hudBaseUrl: initial.hudBaseUrl,
+      cfAccessClientId: initial.cfAccessClientId,
+      cfAccessClientSecret: initial.cfAccessClientSecret,
+    },
+    initial.refreshIntervalMs,
+    loomChannel
+  );
+  context.subscriptions.push(manager);
+  manager.start();
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (
+        event.affectsConfiguration("loom.mills.hudBaseUrl") ||
+        event.affectsConfiguration("loom.mills.refreshIntervalMs")
+      ) {
+        const next = deriveMillsConfig();
+        manager.updateSettings(
+          {
+            hudBaseUrl: next.hudBaseUrl,
+            cfAccessClientId: next.cfAccessClientId,
+            cfAccessClientSecret: next.cfAccessClientSecret,
+          },
+          next.refreshIntervalMs
+        );
+        millsLogger.info(
+          `Mills settings updated (hudBaseUrl=${next.hudBaseUrl || "<empty>"}, refreshMs=${next.refreshIntervalMs})`
+        );
+      }
+    })
+  );
+
+  return manager;
 }
 
 function registerRegistryAndServers(
@@ -515,7 +561,7 @@ function registerCoreCommands(
     | "remoteTunnelManager"
     | "agentContextClient"
     | "agentSessionManager"
-  >,
+  > & { millsStatusManager?: MillsStatusManager },
   context: vscode.ExtensionContext
 ): void {
   // Create command context with all dependencies
@@ -524,6 +570,7 @@ function registerCoreCommands(
     pythonExecutable: env.pythonExecutable,
     loomChannel: env.loomChannel,
     hubStatusManager: env.hubStatusManager,
+    millsStatusManager: env.millsStatusManager,
     configSyncManager: env.configSyncManager,
     daemonClient: env.daemonClient,
     registryProvider: env.registryProvider,
@@ -819,6 +866,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const base = initializeEnvironment(context);
 
   const hubStatusManager = registerHubIntegration(base.loomChannel, base.logger, context);
+  const millsStatusManager = registerMillsIntegration(base.loomChannel, base.logger, context);
 
   const { registryProvider, serverProvider, toolProvider, daemonClient } =
     registerRegistryAndServers({ ...base, hubStatusManager }, context);
@@ -858,6 +906,7 @@ export async function activate(context: vscode.ExtensionContext) {
     {
       ...base,
       hubStatusManager,
+      millsStatusManager,
       configSyncManager,
       daemonClient,
       registryProvider,

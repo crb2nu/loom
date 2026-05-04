@@ -5,6 +5,7 @@ import {
   AgentSessionManager,
   ConfigSyncManager,
   HubStatusManager,
+  MillsStatusManager,
   RemoteTunnelManager,
   UsageAnalyticsManager,
 } from "../managers";
@@ -30,6 +31,7 @@ export interface CommandContext {
   extensionContext: vscode.ExtensionContext;
   agentContextClient?: AgentContextClient;
   agentSessionManager?: AgentSessionManager;
+  millsStatusManager?: MillsStatusManager;
 }
 
 /**
