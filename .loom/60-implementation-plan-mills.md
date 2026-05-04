@@ -62,14 +62,17 @@ Centralize all wire-format strings in `src/clients/millsTransport.ts`.
 - Audit finding detail.
 - Policy proposal diff viewer (adaptive, view-only in v1).
 
-### v1.1 — Mutations (next release)
+### v1 — Mutations (shipped together with read-only slices)
 
-**Slice 4 — Admin-token-gated actions**
-- `mills.council.dryrun` / `mills.council.run`
-- `mills.pipeline.pause` / `resume` / `escalate`
-- `mills.policy.proposal.apply` / `reject`
-- Backlog submit
-- Confirmation modals for every mutation.
+**Slice 4 — Admin-token-gated actions** (delivered in the same MR as slices 1–3)
+- `loom.mills.councilDryrun` / `councilRun`
+- `loom.mills.pipelinePause` / `pipelineResume` / `pipelineEscalate`
+- `loom.mills.proposalApply` / `proposalReject`
+- `loom.mills.backlogSubmit`
+- `loom.mills.setAdminToken` / `clearAdminToken` (SecretStorage-backed)
+- Modal confirmations on every mutation; on-demand token prompt that stores the answer.
+
+### v1.1 — Polish
 
 **Slice 5 — Notifications + onboarding**
 - Toast on new audit finding / regression spike.
