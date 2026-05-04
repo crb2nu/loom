@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-04
+
+### Added
+
+- Mills (formerly hive in loom-core) read-only support: `MillsClient` over the HUD proxy at `/api/mills/*`, status manager with auto-hiding status bar item, and `Loom: Show Mills Status` command
+- "Loom Mills" tree view in the explorer with sections for Backlog, Pipeline Runs, Council Runs, Squads, Audit Findings, and Policy Proposals — lazy-loaded with empty/error placeholders and a refresh icon
+- `MillsDetailPanel` webview reused across five subjects (backlog item, council run, pipeline run, audit finding, policy proposal); tree leaves carry a typed `MillsSubjectRef` and a click command
+- `MillsAdminClient` with admin-token-gated mutations: council dryrun/run, pipeline pause/resume/escalate, policy proposal apply/reject, backlog submit
+- `MillsTokenStore` wraps `SecretStorage` so the HUD admin token never lives in settings; commands prompt on demand and gate every mutation on a modal confirmation
+- Wire-format strings (REST paths, env names, Prometheus prefix, namespace) centralized in `src/clients/millsTransport.ts`
+- `loom.mills.hudBaseUrl` and `loom.mills.refreshIntervalMs` settings; `loom.mills.setAdminToken` / `clearAdminToken` commands
+
+### Coordination
+
+- Wire format matches loom-core's hive→mills rename. Requires the corresponding `platform/gitops` cluster reconcile (namespace `loom-mills`, ConfigMaps, secrets, PVC migration) to be live before the extension can talk to a HUD.
+
 ## [1.0.0] - 2026-04-10
 
 ### Added
