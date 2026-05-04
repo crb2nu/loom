@@ -5,10 +5,18 @@ import {
   AgentSessionManager,
   ConfigSyncManager,
   HubStatusManager,
+  MillsStatusManager,
   RemoteTunnelManager,
   UsageAnalyticsManager,
 } from "../managers";
-import { RegistryProvider, SecretsProvider, ServerProvider, ToolProvider } from "../providers";
+import {
+  MillsTreeProvider,
+  RegistryProvider,
+  SecretsProvider,
+  ServerProvider,
+  ToolProvider,
+} from "../providers";
+import { MillsTokenStore } from "../utils/millsToken";
 
 /**
  * Shared context passed to all command handlers.
@@ -30,6 +38,9 @@ export interface CommandContext {
   extensionContext: vscode.ExtensionContext;
   agentContextClient?: AgentContextClient;
   agentSessionManager?: AgentSessionManager;
+  millsStatusManager?: MillsStatusManager;
+  millsTreeProvider?: MillsTreeProvider;
+  millsTokenStore?: MillsTokenStore;
 }
 
 /**

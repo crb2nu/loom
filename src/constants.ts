@@ -17,3 +17,6 @@ export const DAEMON_CACHE_TTL_MS = 5_000;
 
 /** Default HTTP request timeout (in milliseconds) */
 export const DEFAULT_HTTP_TIMEOUT_MS = 5_000;
+
+/** Default interval for refreshing Mills status (in milliseconds) */
+export const MILLS_REFRESH_INTERVAL_MS = 60_000;

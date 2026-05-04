@@ -94,6 +94,31 @@ export function convertHubUrlToHttpBase(urlText: string): string | undefined {
 }
 
 /**
+ * Settings for the Mills HUD client and refresh cadence, derived from VS Code config.
+ */
+export interface MillsConfig {
+  hudBaseUrl: string;
+  refreshIntervalMs: number;
+  cfAccessClientId?: string;
+  cfAccessClientSecret?: string;
+}
+
+/**
+ * Derive Mills settings from VS Code configuration.
+ * CF Access credentials are reused from the same env vars as the hub.
+ */
+export function deriveMillsConfig(): MillsConfig {
+  const configuration = vscode.workspace.getConfiguration("loom.mills");
+  const hudBaseUrl = (configuration.get<string>("hudBaseUrl") ?? "").trim();
+  const refreshIntervalMs = configuration.get<number>("refreshIntervalMs") ?? 60_000;
+  const cfAccessClientId =
+    process.env.CF_ACCESS_CLIENT_ID || process.env.CF_Access_Client_Id || undefined;
+  const cfAccessClientSecret =
+    process.env.CF_ACCESS_CLIENT_SECRET || process.env.CF_Access_ClientSecret || undefined;
+  return { hudBaseUrl, refreshIntervalMs, cfAccessClientId, cfAccessClientSecret };
+}
+
+/**
  * Write the daemon configuration file.
  */
 export async function writeDaemonConfig(settings: HubSettings): Promise<void> {

@@ -59,6 +59,59 @@
         "title": "Loom: Show MCP Mesh Report"
       },
       {
+        "command": "loom.showMillsStatus",
+        "title": "Loom: Show Mills Status"
+      },
+      {
+        "command": "loom.refreshMills",
+        "title": "Loom: Refresh Mills",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "loom.openMillsDetail",
+        "title": "Loom: Open Mills Detail"
+      },
+      {
+        "command": "loom.mills.setAdminToken",
+        "title": "Loom: Mills — Set Admin Token"
+      },
+      {
+        "command": "loom.mills.clearAdminToken",
+        "title": "Loom: Mills — Clear Admin Token"
+      },
+      {
+        "command": "loom.mills.councilDryrun",
+        "title": "Loom: Mills — Council Dryrun"
+      },
+      {
+        "command": "loom.mills.councilRun",
+        "title": "Loom: Mills — Council Run"
+      },
+      {
+        "command": "loom.mills.pipelinePause",
+        "title": "Loom: Mills — Pipeline Pause"
+      },
+      {
+        "command": "loom.mills.pipelineResume",
+        "title": "Loom: Mills — Pipeline Resume"
+      },
+      {
+        "command": "loom.mills.pipelineEscalate",
+        "title": "Loom: Mills — Pipeline Force-Escalate"
+      },
+      {
+        "command": "loom.mills.proposalApply",
+        "title": "Loom: Mills — Apply Policy Proposal"
+      },
+      {
+        "command": "loom.mills.proposalReject",
+        "title": "Loom: Mills — Reject Policy Proposal"
+      },
+      {
+        "command": "loom.mills.backlogSubmit",
+        "title": "Loom: Mills — Submit Backlog Item"
+      },
+      {
         "command": "loom.syncConfigs",
         "title": "Loom: Sync MCP Configs"
       },
@@ -340,6 +393,19 @@
         {
           "id": "loomPlatforms",
           "name": "Loom Platforms"
+        },
+        {
+          "id": "loomMills",
+          "name": "Loom Mills"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "loom.refreshMills",
+          "when": "view == loomMills",
+          "group": "navigation"
         }
       ]
     },
@@ -521,6 +587,17 @@
           "default": 60000,
           "minimum": 0,
           "description": "Interval (ms) for polling platform sync status. Set to 0 to disable."
+        },
+        "loom.mills.hudBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL of the Mills HUD (e.g. https://hud.loom.flexinfer.ai). Empty disables Mills surface in the extension."
+        },
+        "loom.mills.refreshIntervalMs": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 5000,
+          "description": "Interval (ms) for refreshing Mills status. Used by the Mills status bar item."
         }
       }
     }
