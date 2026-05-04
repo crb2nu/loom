@@ -72,6 +72,46 @@
         "title": "Loom: Open Mills Detail"
       },
       {
+        "command": "loom.mills.setAdminToken",
+        "title": "Loom: Mills — Set Admin Token"
+      },
+      {
+        "command": "loom.mills.clearAdminToken",
+        "title": "Loom: Mills — Clear Admin Token"
+      },
+      {
+        "command": "loom.mills.councilDryrun",
+        "title": "Loom: Mills — Council Dryrun"
+      },
+      {
+        "command": "loom.mills.councilRun",
+        "title": "Loom: Mills — Council Run"
+      },
+      {
+        "command": "loom.mills.pipelinePause",
+        "title": "Loom: Mills — Pipeline Pause"
+      },
+      {
+        "command": "loom.mills.pipelineResume",
+        "title": "Loom: Mills — Pipeline Resume"
+      },
+      {
+        "command": "loom.mills.pipelineEscalate",
+        "title": "Loom: Mills — Pipeline Force-Escalate"
+      },
+      {
+        "command": "loom.mills.proposalApply",
+        "title": "Loom: Mills — Apply Policy Proposal"
+      },
+      {
+        "command": "loom.mills.proposalReject",
+        "title": "Loom: Mills — Reject Policy Proposal"
+      },
+      {
+        "command": "loom.mills.backlogSubmit",
+        "title": "Loom: Mills — Submit Backlog Item"
+      },
+      {
         "command": "loom.syncConfigs",
         "title": "Loom: Sync MCP Configs"
       },

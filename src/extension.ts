@@ -51,6 +51,7 @@ import {
 import { ConfigManager } from "./utils/configManager";
 import { getPythonExecutable } from "./utils/helpers";
 import { Logger } from "./utils/logger";
+import { MillsTokenStore } from "./utils/millsToken";
 import { detectPlatform, getPlatformStatusText } from "./utils/platform";
 import { ContextGraphPanel } from "./webviews/ContextGraphPanel";
 import { KnowledgeGraphPanel } from "./webviews/KnowledgeGraphPanel";
@@ -572,7 +573,11 @@ function registerCoreCommands(
     | "remoteTunnelManager"
     | "agentContextClient"
     | "agentSessionManager"
-  > & { millsStatusManager?: MillsStatusManager; millsTreeProvider?: MillsTreeProvider },
+  > & {
+    millsStatusManager?: MillsStatusManager;
+    millsTreeProvider?: MillsTreeProvider;
+    millsTokenStore?: MillsTokenStore;
+  },
   context: vscode.ExtensionContext
 ): void {
   // Create command context with all dependencies
@@ -583,6 +588,7 @@ function registerCoreCommands(
     hubStatusManager: env.hubStatusManager,
     millsStatusManager: env.millsStatusManager,
     millsTreeProvider: env.millsTreeProvider,
+    millsTokenStore: env.millsTokenStore,
     configSyncManager: env.configSyncManager,
     daemonClient: env.daemonClient,
     registryProvider: env.registryProvider,
@@ -883,6 +889,7 @@ export async function activate(context: vscode.ExtensionContext) {
     base.logger,
     context
   );
+  const millsTokenStore = new MillsTokenStore(context.secrets);
 
   const { registryProvider, serverProvider, toolProvider, daemonClient } =
     registerRegistryAndServers({ ...base, hubStatusManager }, context);
@@ -924,6 +931,7 @@ export async function activate(context: vscode.ExtensionContext) {
       hubStatusManager,
       millsStatusManager,
       millsTreeProvider,
+      millsTokenStore,
       configSyncManager,
       daemonClient,
       registryProvider,

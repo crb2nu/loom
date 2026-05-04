@@ -32,13 +32,14 @@ export function registerAllCommands(ctx: CommandContext): vscode.Disposable[] {
     ...registerContextCommands(ctx),
     ...registerStatusCommands(ctx),
   ];
-  if (ctx.millsStatusManager) {
+  if (ctx.millsStatusManager && ctx.millsTokenStore) {
     baseCommands.push(
       ...registerMillsCommands({
         extensionUri: ctx.extensionContext.extensionUri,
         loomChannel: ctx.loomChannel,
         millsStatusManager: ctx.millsStatusManager,
         millsTreeProvider: ctx.millsTreeProvider,
+        millsTokenStore: ctx.millsTokenStore,
       })
     );
   }

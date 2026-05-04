@@ -39,6 +39,33 @@ export function millsAuditFindingPath(id: string): string {
   return `${MILLS_REST_PATHS.auditFindings}/${encodeURIComponent(id)}`;
 }
 
+/** Mutation endpoints (slice 4). All require the HUD admin token. */
+export const MILLS_REST_MUTATIONS = {
+  councilDryrun: `${MILLS_REST_BASE}/council/dryrun`,
+  councilRun: `${MILLS_REST_BASE}/council/run`,
+  backlogCreate: `${MILLS_REST_BASE}/backlog`,
+} as const;
+
+export function millsPipelinePausePath(id: string): string {
+  return `${MILLS_REST_PATHS.pipelineRuns}/${encodeURIComponent(id)}/pause`;
+}
+
+export function millsPipelineResumePath(id: string): string {
+  return `${MILLS_REST_PATHS.pipelineRuns}/${encodeURIComponent(id)}/resume`;
+}
+
+export function millsPipelineEscalatePath(id: string): string {
+  return `${MILLS_REST_PATHS.pipelineRuns}/${encodeURIComponent(id)}/escalate`;
+}
+
+export function millsPolicyProposalApplyPath(id: string): string {
+  return `${MILLS_REST_PATHS.policyProposals}/${encodeURIComponent(id)}/apply`;
+}
+
+export function millsPolicyProposalRejectPath(id: string): string {
+  return `${MILLS_REST_PATHS.policyProposals}/${encodeURIComponent(id)}/reject`;
+}
+
 export const MILLS_PROMETHEUS_PREFIX = "loom_mills_";
 
 export const MILLS_HUD_ADMIN_TOKEN_ENV = {
