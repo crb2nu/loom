@@ -1,6 +1,12 @@
 import * as vscode from "vscode";
 
-import { MillsClient, MillsSettings, MillsStatusSnapshot } from "../clients/mills";
+import {
+  MILLS_METRIC_KEYS,
+  MillsClient,
+  MillsSettings,
+  MillsStatusSnapshot,
+  readMetric,
+} from "../clients/mills";
 import { Logger } from "../utils/logger";
 
 /**
@@ -117,20 +123,25 @@ interface HealthDescription {
 }
 
 function describeHealth(snapshot: MillsStatusSnapshot): HealthDescription {
-  const regressions = snapshot.kpis?.regression_count;
-  const stage = snapshot.status?.stage;
+  const regressions = readMetric(snapshot.kpis, MILLS_METRIC_KEYS.regressionCount);
+  const queueDepth = snapshot.status?.queue_depth;
+  const activeRuns = snapshot.status?.active_pipeline_runs;
   switch (snapshot.health) {
-    case "ok":
+    case "ok": {
+      const parts: string[] = ["Mills running"];
+      if (typeof queueDepth === "number") parts.push(`queue=${queueDepth}`);
+      if (typeof activeRuns === "number") parts.push(`active=${activeRuns}`);
       return {
         icon: "check",
         label: "Mills",
-        tooltip: stage ? `Mills running (stage: ${stage})` : "Mills running",
+        tooltip: parts.join(", "),
       };
+    }
     case "paused":
       return {
         icon: "debug-pause",
         label: "Mills paused",
-        tooltip: "Mills autonomy is paused (kill switch engaged)",
+        tooltip: "Mills autonomy is paused (policy_enabled=false)",
         background: new vscode.ThemeColor("statusBarItem.warningBackground"),
       };
     case "degraded":

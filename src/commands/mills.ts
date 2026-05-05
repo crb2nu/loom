@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 
-import { MillsStatusSnapshot } from "../clients/mills";
+import { MILLS_METRIC_KEYS, MillsStatusSnapshot, readMetric } from "../clients/mills";
 import { MillsAdminClient } from "../clients/millsAdmin";
 import { MillsStatusManager } from "../managers/millsStatus";
 import { MillsSubjectRef, MillsTreeProvider } from "../providers/mills";
@@ -326,13 +326,13 @@ function formatSnapshotMessage(snapshot: MillsStatusSnapshot): string {
     return "Loom: Mills HUD not configured.";
   }
   const parts: string[] = [`health=${snapshot.health}`];
-  const stage = snapshot.status?.stage;
-  if (stage) parts.push(`stage=${stage}`);
-  const regressions = snapshot.kpis?.regression_count;
+  const policyVersion = snapshot.status?.policy_version;
+  if (policyVersion) parts.push(`policy=${policyVersion}`);
+  const queueDepth = snapshot.status?.queue_depth;
+  if (queueDepth !== undefined) parts.push(`queue=${queueDepth}`);
+  const activeRuns = snapshot.status?.active_pipeline_runs;
+  if (activeRuns !== undefined) parts.push(`active_runs=${activeRuns}`);
+  const regressions = readMetric(snapshot.kpis, MILLS_METRIC_KEYS.regressionCount);
   if (regressions !== undefined) parts.push(`regressions=${regressions}`);
-  const council = snapshot.kpis?.council_runs_total;
-  if (council !== undefined) parts.push(`council_runs=${council}`);
-  const pipeline = snapshot.kpis?.pipeline_runs_total;
-  if (pipeline !== undefined) parts.push(`pipeline_runs=${pipeline}`);
   return `Loom Mills: ${parts.join(", ")}`;
 }

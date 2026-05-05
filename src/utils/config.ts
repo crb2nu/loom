@@ -99,6 +99,7 @@ export function convertHubUrlToHttpBase(urlText: string): string | undefined {
 export interface MillsConfig {
   hudBaseUrl: string;
   refreshIntervalMs: number;
+  alertingIntervalMs: number;
   cfAccessClientId?: string;
   cfAccessClientSecret?: string;
 }
@@ -111,11 +112,18 @@ export function deriveMillsConfig(): MillsConfig {
   const configuration = vscode.workspace.getConfiguration("loom.mills");
   const hudBaseUrl = (configuration.get<string>("hudBaseUrl") ?? "").trim();
   const refreshIntervalMs = configuration.get<number>("refreshIntervalMs") ?? 60_000;
+  const alertingIntervalMs = configuration.get<number>("alertingIntervalMs") ?? 120_000;
   const cfAccessClientId =
     process.env.CF_ACCESS_CLIENT_ID || process.env.CF_Access_Client_Id || undefined;
   const cfAccessClientSecret =
     process.env.CF_ACCESS_CLIENT_SECRET || process.env.CF_Access_ClientSecret || undefined;
-  return { hudBaseUrl, refreshIntervalMs, cfAccessClientId, cfAccessClientSecret };
+  return {
+    hudBaseUrl,
+    refreshIntervalMs,
+    alertingIntervalMs,
+    cfAccessClientId,
+    cfAccessClientSecret,
+  };
 }
 
 /**
