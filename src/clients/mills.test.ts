@@ -129,49 +129,47 @@ describe("MillsClient", () => {
       expect(mockRequestJson).not.toHaveBeenCalled();
     });
 
-    it("returns ok when status enabled and no regressions", async () => {
+    it("returns ok when policy enabled and no regressions", async () => {
       mockRequestJson
-        .mockResolvedValueOnce({ enabled: true, stage: "prod" })
-        .mockResolvedValueOnce({ regression_count: 0, council_runs_total: 12 });
+        .mockResolvedValueOnce({ policy_enabled: true, queue_depth: 4 })
+        .mockResolvedValueOnce({ Metrics: { regression_count: 0 } });
       const client = new MillsClient(settings, channel);
 
       const snapshot = await client.fetchSnapshot();
 
       expect(snapshot.health).toBe("ok");
-      expect(snapshot.status?.stage).toBe("prod");
-      expect(snapshot.kpis?.council_runs_total).toBe(12);
+      expect(snapshot.status?.queue_depth).toBe(4);
       expect(snapshot.lastUpdated).toBeInstanceOf(Date);
     });
 
-    it("returns paused when status.paused is true", async () => {
+    it("returns paused when status.policy_enabled is false", async () => {
       mockRequestJson
-        .mockResolvedValueOnce({ enabled: true, paused: true })
-        .mockResolvedValueOnce({ regression_count: 0 });
+        .mockResolvedValueOnce({ policy_enabled: false })
+        .mockResolvedValueOnce({ Metrics: { regression_count: 0 } });
       const client = new MillsClient(settings, channel);
 
       const snapshot = await client.fetchSnapshot();
       expect(snapshot.health).toBe("paused");
     });
 
-    it("returns paused when status.enabled is false", async () => {
+    it("returns degraded when regression metric > 0", async () => {
       mockRequestJson
-        .mockResolvedValueOnce({ enabled: false })
-        .mockResolvedValueOnce({ regression_count: 0 });
-      const client = new MillsClient(settings, channel);
-
-      const snapshot = await client.fetchSnapshot();
-      expect(snapshot.health).toBe("paused");
-    });
-
-    it("returns degraded when regression_count > 0", async () => {
-      mockRequestJson
-        .mockResolvedValueOnce({ enabled: true })
-        .mockResolvedValueOnce({ regression_count: 3 });
+        .mockResolvedValueOnce({ policy_enabled: true })
+        .mockResolvedValueOnce({ Metrics: { regression_count: 3 } });
       const client = new MillsClient(settings, channel);
 
       const snapshot = await client.fetchSnapshot();
       expect(snapshot.health).toBe("degraded");
-      expect(snapshot.kpis?.regression_count).toBe(3);
+    });
+
+    it("tolerates KPI metrics under alternate keys", async () => {
+      mockRequestJson.mockResolvedValueOnce({ policy_enabled: true }).mockResolvedValueOnce({
+        Metrics: { loom_mills_regression_count_total: 2 },
+      });
+      const client = new MillsClient(settings, channel);
+
+      const snapshot = await client.fetchSnapshot();
+      expect(snapshot.health).toBe("degraded");
     });
 
     it("returns unreachable on network error and does not throw", async () => {
@@ -331,15 +329,19 @@ describe("coerceList", () => {
 
 describe("deriveHealth", () => {
   it("paused beats degraded when both signals fire", () => {
-    expect(deriveHealth({ paused: true }, { regression_count: 5 })).toBe("paused");
+    expect(deriveHealth({ policy_enabled: false }, { Metrics: { regression_count: 5 } })).toBe(
+      "paused"
+    );
   });
 
-  it("degraded when regression_count > 0 and not paused", () => {
-    expect(deriveHealth({ enabled: true }, { regression_count: 1 })).toBe("degraded");
+  it("degraded when regression metric > 0 and not paused", () => {
+    expect(deriveHealth({ policy_enabled: true }, { Metrics: { regression_count: 1 } })).toBe(
+      "degraded"
+    );
   });
 
   it("ok when no signals", () => {
-    expect(deriveHealth({ enabled: true }, {})).toBe("ok");
-    expect(deriveHealth({}, { regression_count: 0 })).toBe("ok");
+    expect(deriveHealth({ policy_enabled: true }, {})).toBe("ok");
+    expect(deriveHealth({}, { Metrics: { regression_count: 0 } })).toBe("ok");
   });
 });

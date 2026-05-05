@@ -1,5 +1,6 @@
 export * from "./hubStatus";
 export * from "./millsStatus";
+export * from "./millsAlerts";
 export * from "./configSync";
 export * from "./agentSession";
 export * from "./annotationDecoration";

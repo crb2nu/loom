@@ -409,6 +409,42 @@
         }
       ]
     },
+    "walkthroughs": [
+      {
+        "id": "loom.mills.gettingStarted",
+        "title": "Get started with Loom Mills",
+        "description": "Connect the extension to a running Mills HUD, explore the tree, and enable admin actions.",
+        "steps": [
+          {
+            "id": "loom.mills.gettingStarted.connect",
+            "title": "Connect to your Mills HUD",
+            "description": "Set 'loom.mills.hudBaseUrl' in settings to point at a running Mills HUD.\n[Open Settings](command:workbench.action.openSettings?%22loom.mills.hudBaseUrl%22)",
+            "media": {
+              "markdown": "assets/walkthroughs/mills/connect.md"
+            },
+            "completionEvents": ["onSettingChanged:loom.mills.hudBaseUrl"]
+          },
+          {
+            "id": "loom.mills.gettingStarted.explore",
+            "title": "Explore the Mills tree",
+            "description": "Open the Loom Mills view and expand any section.\n[Show Mills Status](command:loom.showMillsStatus)",
+            "media": {
+              "markdown": "assets/walkthroughs/mills/explore.md"
+            },
+            "completionEvents": ["onCommand:loom.refreshMills"]
+          },
+          {
+            "id": "loom.mills.gettingStarted.admin",
+            "title": "Enable admin actions",
+            "description": "Store the HUD admin token in SecretStorage to unlock mutations.\n[Set Admin Token](command:loom.mills.setAdminToken)",
+            "media": {
+              "markdown": "assets/walkthroughs/mills/admin.md"
+            },
+            "completionEvents": ["onCommand:loom.mills.setAdminToken"]
+          }
+        ]
+      }
+    ],
     "configuration": {
       "title": "Loom",
       "properties": {
@@ -598,6 +634,12 @@
           "default": 60000,
           "minimum": 5000,
           "description": "Interval (ms) for refreshing Mills status. Used by the Mills status bar item."
+        },
+        "loom.mills.alertingIntervalMs": {
+          "type": "number",
+          "default": 120000,
+          "minimum": 30000,
+          "description": "Interval (ms) for the Mills alerting poll (audit findings count delta)."
         }
       }
     }

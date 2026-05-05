@@ -19,6 +19,7 @@ import {
   ConfigSyncManager,
   HubStatusManager,
   MillsStatusManager,
+  MillsAlertingManager,
   AgentSessionManager,
   AnnotationDecorationManager,
   ServerMetricsManager,
@@ -166,7 +167,11 @@ function registerMillsIntegration(
   loomChannel: vscode.OutputChannel,
   logger: Logger,
   context: vscode.ExtensionContext
-): { millsStatusManager: MillsStatusManager; millsTreeProvider: MillsTreeProvider } {
+): {
+  millsStatusManager: MillsStatusManager;
+  millsTreeProvider: MillsTreeProvider;
+  millsAlertingManager: MillsAlertingManager;
+} {
   const millsLogger = logger.child("Mills");
   const initial = deriveMillsConfig();
   const settings = {
@@ -184,6 +189,15 @@ function registerMillsIntegration(
   });
   context.subscriptions.push(treeView);
 
+  const alertingManager = new MillsAlertingManager(
+    settings,
+    initial.alertingIntervalMs,
+    manager,
+    loomChannel
+  );
+  context.subscriptions.push(alertingManager);
+  alertingManager.start();
+
   // Refresh tree whenever the status manager learns of a change
   // (paused → ok, regression count moved, etc.).
   context.subscriptions.push(
@@ -196,7 +210,8 @@ function registerMillsIntegration(
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (
         event.affectsConfiguration("loom.mills.hudBaseUrl") ||
-        event.affectsConfiguration("loom.mills.refreshIntervalMs")
+        event.affectsConfiguration("loom.mills.refreshIntervalMs") ||
+        event.affectsConfiguration("loom.mills.alertingIntervalMs")
       ) {
         const next = deriveMillsConfig();
         const nextSettings = {
@@ -206,14 +221,19 @@ function registerMillsIntegration(
         };
         manager.updateSettings(nextSettings, next.refreshIntervalMs);
         treeProvider.updateSettings(nextSettings);
+        alertingManager.updateSettings(nextSettings, next.alertingIntervalMs);
         millsLogger.info(
-          `Mills settings updated (hudBaseUrl=${next.hudBaseUrl || "<empty>"}, refreshMs=${next.refreshIntervalMs})`
+          `Mills settings updated (hudBaseUrl=${next.hudBaseUrl || "<empty>"}, refreshMs=${next.refreshIntervalMs}, alertMs=${next.alertingIntervalMs})`
         );
       }
     })
   );
 
-  return { millsStatusManager: manager, millsTreeProvider: treeProvider };
+  return {
+    millsStatusManager: manager,
+    millsTreeProvider: treeProvider,
+    millsAlertingManager: alertingManager,
+  };
 }
 
 function registerRegistryAndServers(

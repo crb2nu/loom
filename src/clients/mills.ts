@@ -23,22 +23,32 @@ export interface MillsSettings {
 }
 
 /**
- * Subset of the loom-mills `/api/mills/status` response we surface in the extension.
- * Loom-core may return additional fields; we keep the type permissive.
+ * Loom-mills `/api/mills/status` response shape (per
+ * cmd/loom-mills-operator/handlers_status.go).
+ * Permissive on unknown keys.
  */
 export interface MillsStatusResponse {
-  enabled?: boolean;
-  paused?: boolean;
-  stage?: string;
+  db_ok?: boolean;
+  policy_enabled?: boolean;
   policy_version?: string;
+  queue_depth?: number;
+  active_pipeline_runs?: number;
+  last_council_at?: string | null;
+  slice?: string;
   [key: string]: unknown;
 }
 
+/**
+ * Loom-mills `/api/mills/kpis` response is a `KPISnapshot` with
+ * an open-ended `Metrics` map. The metric keys are a moving target
+ * across loom-core slices, so we keep the map untyped and let
+ * consumers (alerting, status bar) read by string key with fallbacks.
+ */
 export interface MillsKpisResponse {
-  regression_count?: number;
-  council_runs_total?: number;
-  pipeline_runs_total?: number;
-  budget_remaining_usd?: number;
+  ID?: number;
+  SnapshotAt?: string;
+  WindowSeconds?: number;
+  Metrics?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -262,11 +272,35 @@ export class MillsClient {
   }
 }
 
+/**
+ * Common metric keys we read out of `KPISnapshot.Metrics` when present.
+ * Loom-core hasn't fixed a contract yet — these are best-effort and the
+ * function tolerates missing keys.
+ */
+export const MILLS_METRIC_KEYS = {
+  regressionCount: ["regression_count", "regressions_total", "loom_mills_regression_count_total"],
+  auditFindingsTotal: ["audit_findings_total", "loom_mills_audit_findings_total"],
+} as const;
+
+export function readMetric(
+  kpis: MillsKpisResponse | undefined,
+  candidates: readonly string[]
+): number | undefined {
+  const metrics = kpis?.Metrics;
+  if (!metrics) return undefined;
+  for (const key of candidates) {
+    const v = metrics[key];
+    if (typeof v === "number") return v;
+  }
+  return undefined;
+}
+
 export function deriveHealth(status: MillsStatusResponse, kpis: MillsKpisResponse): MillsHealth {
-  if (status.enabled === false || status.paused === true) {
+  if (status.policy_enabled === false) {
     return "paused";
   }
-  if ((kpis.regression_count ?? 0) > 0) {
+  const regressions = readMetric(kpis, MILLS_METRIC_KEYS.regressionCount);
+  if ((regressions ?? 0) > 0) {
     return "degraded";
   }
   return "ok";
