@@ -41,6 +41,7 @@ import {
   PlatformsProvider,
   MillsTreeProvider,
 } from "./providers";
+import { WeaverTreeProvider } from "./providers/weaver";
 import { HubStatusSnapshot } from "./types";
 import {
   deriveHubSettings,
@@ -161,6 +162,43 @@ function registerHubIntegration(
   );
 
   return hubStatusManager;
+}
+
+function registerWeaverIntegration(
+  loomChannel: vscode.OutputChannel,
+  logger: Logger,
+  context: vscode.ExtensionContext
+): WeaverTreeProvider {
+  const weaverLogger = logger.child("Weaver");
+  const initial = deriveMillsConfig();
+  const settings = {
+    hudBaseUrl: initial.hudBaseUrl,
+    cfAccessClientId: initial.cfAccessClientId,
+    cfAccessClientSecret: initial.cfAccessClientSecret,
+  };
+  const provider = new WeaverTreeProvider(settings, weaverLogger);
+  const treeView = vscode.window.createTreeView("loomWeaver", {
+    treeDataProvider: provider,
+  });
+  context.subscriptions.push(treeView);
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (
+        event.affectsConfiguration("loom.mills.hudBaseUrl") ||
+        event.affectsConfiguration("loom.mills.cfAccessClientId") ||
+        event.affectsConfiguration("loom.mills.cfAccessClientSecret")
+      ) {
+        // Reuse the Mills HUD config for now — both surfaces hit the
+        // same daemon-embedded HUD. A future slice can break them out
+        // if a user wants to point Weaver at a different HUD.
+        weaverLogger.info("Weaver settings changed; refreshing");
+        void provider.refresh();
+      }
+    })
+  );
+
+  return provider;
 }
 
 function registerMillsIntegration(
@@ -597,6 +635,7 @@ function registerCoreCommands(
     millsStatusManager?: MillsStatusManager;
     millsTreeProvider?: MillsTreeProvider;
     millsTokenStore?: MillsTokenStore;
+    weaverTreeProvider?: WeaverTreeProvider;
   },
   context: vscode.ExtensionContext
 ): void {
@@ -609,6 +648,7 @@ function registerCoreCommands(
     millsStatusManager: env.millsStatusManager,
     millsTreeProvider: env.millsTreeProvider,
     millsTokenStore: env.millsTokenStore,
+    weaverTreeProvider: env.weaverTreeProvider,
     configSyncManager: env.configSyncManager,
     daemonClient: env.daemonClient,
     registryProvider: env.registryProvider,
@@ -910,6 +950,7 @@ export async function activate(context: vscode.ExtensionContext) {
     context
   );
   const millsTokenStore = new MillsTokenStore(context.secrets);
+  const weaverTreeProvider = registerWeaverIntegration(base.loomChannel, base.logger, context);
 
   const { registryProvider, serverProvider, toolProvider, daemonClient } =
     registerRegistryAndServers({ ...base, hubStatusManager }, context);
@@ -952,6 +993,7 @@ export async function activate(context: vscode.ExtensionContext) {
       millsStatusManager,
       millsTreeProvider,
       millsTokenStore,
+      weaverTreeProvider,
       configSyncManager,
       daemonClient,
       registryProvider,
