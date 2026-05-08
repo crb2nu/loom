@@ -16,6 +16,7 @@ import {
   ServerProvider,
   ToolProvider,
 } from "../providers";
+import { WeaverTreeProvider } from "../providers/weaver";
 import { MillsTokenStore } from "../utils/millsToken";
 
 /**
@@ -41,6 +42,7 @@ export interface CommandContext {
   millsStatusManager?: MillsStatusManager;
   millsTreeProvider?: MillsTreeProvider;
   millsTokenStore?: MillsTokenStore;
+  weaverTreeProvider?: WeaverTreeProvider;
 }
 
 /**
