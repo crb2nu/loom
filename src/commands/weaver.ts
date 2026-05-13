@@ -58,6 +58,6 @@ async function runQuery(ctx: WeaverCommandContext): Promise<void> {
     "[weaver] direct query execution requires the daemon socket; the read-only HUD endpoints used by the tree do not support submission."
   );
   ctx.loomChannel.appendLine(
-    "[weaver] for now, run queries via your terminal: `loom mcp call weaver weaver__query '{\"query\":\"...\"}'` or via Claude / Codex / Gemini in this workspace."
+    '[weaver] for now, run queries via your terminal: `loom mcp call weaver weaver__query \'{"query":"..."}\'` or via Claude / Codex / Gemini in this workspace.'
   );
 }

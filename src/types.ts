@@ -33,11 +33,18 @@ export interface HubHealthResponse {
   status?: string;
   timestamp?: string;
   sessions?: number;
+  servers?: Record<string, unknown>;
+  divergence?: unknown[];
+  cacheBackend?: string;
 }
 
 export interface HubReadyResponse {
   ready?: boolean;
+  running?: boolean;
   servers?: number;
+  activeConns?: number;
+  idleConns?: number;
+  processes?: unknown[];
   error?: string;
 }
 

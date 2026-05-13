@@ -3,9 +3,11 @@ import * as vscode from "vscode";
 
 // Mock the HTTP utility
 const mockRequestJson = vi.hoisted(() => vi.fn());
+const mockRequestText = vi.hoisted(() => vi.fn());
 
 vi.mock("../utils/http", () => ({
   requestJson: mockRequestJson,
+  requestText: mockRequestText,
 }));
 
 import { HubSettings } from "../types";
@@ -20,6 +22,7 @@ describe("HubClient", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRequestJson.mockReset();
+    mockRequestText.mockReset();
 
     mockChannel = {
       name: "Test",
@@ -30,7 +33,7 @@ describe("HubClient", () => {
       hide: vi.fn(),
       dispose: vi.fn(),
       replace: vi.fn(),
-    } as unknown as vscode.OutputChannel;
+    };
 
     defaultSettings = {
       hubUrl: "wss://mcp.example.com/ws",
@@ -114,8 +117,59 @@ describe("HubClient", () => {
 
       const result = await client.fetchHealth();
 
-      expect(result).toEqual(health);
+      expect(result).toEqual(expect.objectContaining(health));
       expect(client.getConnectionStatus()).toBe("connected");
+      expect(mockRequestJson).toHaveBeenCalledWith(
+        "https://mcp.example.com/api/health",
+        expect.any(Object)
+      );
+    });
+
+    it("should normalize current loom-core health payloads", async () => {
+      mockRequestJson.mockResolvedValue({
+        servers: {
+          github: { local: { healthy: true } },
+          tavily: { hub: { healthy: true } },
+        },
+        cache_backend: "memory",
+      });
+
+      const result = await client.fetchHealth();
+
+      expect(result.status).toBe("ok");
+      expect(result.cacheBackend).toBe("memory");
+      expect(result.servers).toHaveProperty("github");
+      expect(result.servers).toHaveProperty("tavily");
+    });
+
+    it("should mark current loom-core health degraded when a server is unhealthy", async () => {
+      mockRequestJson.mockResolvedValue({
+        servers: {
+          github: { local: { healthy: false } },
+        },
+      });
+
+      const result = await client.fetchHealth();
+
+      expect(result.status).toBe("degraded");
+    });
+
+    it("should fall back to plain gateway health when current API is unavailable", async () => {
+      mockRequestJson.mockRejectedValueOnce(new Error("HTTP 404"));
+      mockRequestText.mockResolvedValueOnce("OK");
+
+      const result = await client.fetchHealth();
+
+      expect(result.status).toBe("ok");
+      expect(mockRequestJson).toHaveBeenNthCalledWith(
+        1,
+        "https://mcp.example.com/api/health",
+        expect.any(Object)
+      );
+      expect(mockRequestText).toHaveBeenCalledWith(
+        "https://mcp.example.com/health",
+        expect.any(Object)
+      );
     });
 
     it("should throw and track failure on error", async () => {
@@ -128,12 +182,34 @@ describe("HubClient", () => {
 
   describe("fetchReady", () => {
     it("should return readiness response", async () => {
-      const ready = { ready: true, servers: 3 };
+      const ready = { running: true, servers: 3 };
       mockRequestJson.mockResolvedValue(ready);
 
       const result = await client.fetchReady();
 
-      expect(result).toEqual(ready);
+      expect(result).toEqual({ ready: true, running: true, servers: 3 });
+      expect(mockRequestJson).toHaveBeenCalledWith(
+        "https://mcp.example.com/api/status",
+        expect.any(Object)
+      );
+    });
+
+    it("should fall back to plain gateway readiness when current status API is unavailable", async () => {
+      mockRequestJson.mockRejectedValueOnce(new Error("HTTP 404"));
+      mockRequestText.mockResolvedValueOnce("ready");
+
+      const result = await client.fetchReady();
+
+      expect(result).toEqual({ ready: true });
+      expect(mockRequestJson).toHaveBeenNthCalledWith(
+        1,
+        "https://mcp.example.com/api/status",
+        expect.any(Object)
+      );
+      expect(mockRequestText).toHaveBeenCalledWith(
+        "https://mcp.example.com/ready",
+        expect.any(Object)
+      );
     });
   });
 
@@ -155,6 +231,15 @@ describe("HubClient", () => {
       const servers = await client.fetchServers();
 
       expect(servers).toEqual([]);
+    });
+
+    it("should treat missing optional server API as empty for gateway-only hubs", async () => {
+      mockRequestJson.mockRejectedValue(new Error("HTTP 404"));
+
+      const servers = await client.fetchServers();
+
+      expect(servers).toEqual([]);
+      expect(client.getConnectionStatus()).toBe("unknown");
     });
   });
 

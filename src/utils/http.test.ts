@@ -13,7 +13,7 @@ vi.mock("https", () => ({
   request: mockHttpsRequest,
 }));
 
-import { requestJson } from "./http";
+import { requestJson, requestText } from "./http";
 
 type RequestHarness = {
   responseCallback?: (response: EventEmitter & { statusCode?: number }) => void;
@@ -170,5 +170,36 @@ describe("requestJson", () => {
 
     await expect(promise).rejects.toThrow("Hub request timed out");
     expect(harness.destroy).toHaveBeenCalled();
+  });
+});
+
+describe("requestText", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("uses http.request for http URLs and returns text response", async () => {
+    const harness = wireRequestMock(mockHttpRequest);
+    const promise = requestText("http://localhost:8080/health", { x: "1" });
+
+    const response = createResponse(200);
+    harness.responseCallback?.(response);
+    response.emit("data", "OK");
+    response.emit("end");
+
+    await expect(promise).resolves.toBe("OK");
+    expect(mockHttpsRequest).not.toHaveBeenCalled();
+  });
+
+  it("rejects when response status is an error with body", async () => {
+    const harness = wireRequestMock(mockHttpRequest);
+    const promise = requestText("http://localhost:8080/fail");
+
+    const response = createResponse(503);
+    harness.responseCallback?.(response);
+    response.emit("data", "not ready");
+    response.emit("end");
+
+    await expect(promise).rejects.toThrow("503 not ready");
   });
 });

@@ -98,10 +98,7 @@ export class WeaverTreeProvider implements vscode.TreeDataProvider<WeaverTreeIte
     const status = this.status!;
     const statusChildren: WeaverTreeItem[] = [];
     statusChildren.push(
-      new MessageItem(
-        `enabled: ${status.enabled ? "yes" : "no"}`,
-        status.enabled ? "ok" : "muted"
-      )
+      new MessageItem(`enabled: ${status.enabled ? "yes" : "no"}`, status.enabled ? "ok" : "muted")
     );
     if (status.router_model) {
       statusChildren.push(new MessageItem(`router: ${status.router_model}`, "muted"));
