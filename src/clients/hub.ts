@@ -286,6 +286,6 @@ function isOptionalApiUnavailable(error: unknown): boolean {
     return false;
   }
   return (
-    error.message.startsWith("HTTP 404") || error.message.includes("Failed to parse hub response")
+    /^(HTTP )?404\b/.test(error.message) || error.message.includes("Failed to parse hub response")
   );
 }
