@@ -241,6 +241,15 @@ describe("HubClient", () => {
       expect(servers).toEqual([]);
       expect(client.getConnectionStatus()).toBe("unknown");
     });
+
+    it("should treat plain 404 errors as empty for gateway-only hubs", async () => {
+      mockRequestJson.mockRejectedValue(new Error("404 404 page not found"));
+
+      const servers = await client.fetchServers();
+
+      expect(servers).toEqual([]);
+      expect(client.getConnectionStatus()).toBe("unknown");
+    });
   });
 
   describe("without httpBaseUrl", () => {
