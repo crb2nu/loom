@@ -27,6 +27,10 @@ export interface HubSettings {
   profile: string;
   cfAccessClientId?: string;
   cfAccessClientSecret?: string;
+  // preferHub: when true (default), the daemon routes every hub-capable
+  // server through the deployed hub instead of spawning local stdio
+  // processes. Persisted as `hub.prefer_hub` in ~/.config/loom/config.yaml.
+  preferHub?: boolean;
 }
 
 export interface HubHealthResponse {
@@ -117,6 +121,7 @@ export interface DaemonConfig {
     url: string;
     enabled: boolean;
     profile: string;
+    prefer_hub?: boolean;
     cf_access_client_id?: string;
     cf_access_client_secret?: string;
   };

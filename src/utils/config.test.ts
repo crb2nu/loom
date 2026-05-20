@@ -30,7 +30,9 @@ import {
   findRegistryPath,
   isHubRoutedConfig,
   loadVscodeConfigSnapshot,
+  writeDaemonConfig,
 } from "./config";
+import { parse as parseYaml } from "yaml";
 
 describe("deriveHubSettings", () => {
   beforeEach(() => {
@@ -292,5 +294,158 @@ describe("loadVscodeConfigSnapshot", () => {
     const result = await loadVscodeConfigSnapshot("/workspace");
 
     expect(result).toBeNull();
+  });
+});
+
+describe("writeDaemonConfig", () => {
+  beforeEach(() => {
+    mockReadFile.mockReset();
+    mockWriteFile.mockReset();
+    mockMkdir.mockReset();
+    mockMkdir.mockResolvedValue(undefined);
+    mockWriteFile.mockResolvedValue(undefined);
+  });
+
+  function lastWrittenYaml(): Record<string, unknown> {
+    expect(mockWriteFile).toHaveBeenCalledTimes(1);
+    const call = mockWriteFile.mock.calls[0];
+    return parseYaml(call[1] as string) as Record<string, unknown>;
+  }
+
+  it("writes hub.prefer_hub when preferHub=true (the new default)", async () => {
+    mockReadFile.mockRejectedValue(new Error("missing"));
+
+    await writeDaemonConfig({
+      hubUrl: "wss://mcp.flexinfer.ai/ws",
+      profile: "codex",
+      preferHub: true,
+    });
+
+    const written = lastWrittenYaml();
+    const hub = written.hub as Record<string, unknown>;
+    expect(hub.prefer_hub).toBe(true);
+    expect(hub.url).toBe("wss://mcp.flexinfer.ai/ws");
+    expect(hub.enabled).toBe(true);
+    expect(hub.profile).toBe("codex");
+  });
+
+  it("preserves unknown top-level keys across regens (routing, audit, health)", async () => {
+    // Simulates a user who hand-added routing.preferences and audit.* and
+    // expects the extension to leave them alone — the bug this fix
+    // addresses is that the prior writer wiped them on every activation.
+    mockReadFile.mockResolvedValue(`
+repo_root: /home/u/workspace
+hub:
+  url: wss://old.example/ws
+  enabled: true
+  profile: codex
+routing:
+  preferences:
+    agent_context: prefer-hub
+    weaver: hub-only
+audit:
+  enabled: true
+  log_path: /var/log/loom/audit.jsonl
+health:
+  check_interval_seconds: 45
+debug: false
+`);
+
+    await writeDaemonConfig({
+      hubUrl: "wss://mcp.flexinfer.ai/ws",
+      profile: "codex",
+      preferHub: true,
+    });
+
+    const written = lastWrittenYaml();
+    expect(written.repo_root).toBe("/home/u/workspace");
+    expect(written.routing).toEqual({
+      preferences: { agent_context: "prefer-hub", weaver: "hub-only" },
+    });
+    expect(written.audit).toEqual({
+      enabled: true,
+      log_path: "/var/log/loom/audit.jsonl",
+    });
+    expect(written.health).toEqual({ check_interval_seconds: 45 });
+    expect(written.debug).toBe(false);
+    const hub = written.hub as Record<string, unknown>;
+    expect(hub.url).toBe("wss://mcp.flexinfer.ai/ws");
+    expect(hub.prefer_hub).toBe(true);
+  });
+
+  it("preserves unknown hub.* sibling keys", async () => {
+    mockReadFile.mockResolvedValue(`
+hub:
+  url: wss://old.example/ws
+  enabled: true
+  profile: codex
+  ping_interval_seconds: 15
+  max_retries: 5
+  reconnect_interval_seconds: 7
+debug: false
+`);
+
+    await writeDaemonConfig({
+      hubUrl: "wss://mcp.flexinfer.ai/ws",
+      profile: "codex",
+      preferHub: true,
+    });
+
+    const hub = lastWrittenYaml().hub as Record<string, unknown>;
+    // extension-owned: rewritten
+    expect(hub.url).toBe("wss://mcp.flexinfer.ai/ws");
+    expect(hub.profile).toBe("codex");
+    // user-owned: preserved verbatim
+    expect(hub.ping_interval_seconds).toBe(15);
+    expect(hub.max_retries).toBe(5);
+    expect(hub.reconnect_interval_seconds).toBe(7);
+  });
+
+  it("honors preferHub=false override", async () => {
+    mockReadFile.mockRejectedValue(new Error("missing"));
+
+    await writeDaemonConfig({
+      hubUrl: "wss://mcp.flexinfer.ai/ws",
+      profile: "codex",
+      preferHub: false,
+    });
+
+    expect((lastWrittenYaml().hub as Record<string, unknown>).prefer_hub).toBe(false);
+  });
+
+  it("clears CF Access creds when not provided in settings", async () => {
+    mockReadFile.mockResolvedValue(`
+hub:
+  url: wss://old.example/ws
+  enabled: true
+  profile: codex
+  cf_access_client_id: stale-id
+  cf_access_client_secret: stale-secret
+`);
+
+    await writeDaemonConfig({
+      hubUrl: "wss://mcp.flexinfer.ai/ws",
+      profile: "codex",
+      preferHub: true,
+    });
+
+    const hub = lastWrittenYaml().hub as Record<string, unknown>;
+    expect(hub.cf_access_client_id).toBeUndefined();
+    expect(hub.cf_access_client_secret).toBeUndefined();
+  });
+
+  it("survives a corrupted existing config (degrades to empty merge)", async () => {
+    mockReadFile.mockResolvedValue("::: not valid yaml :::");
+
+    await writeDaemonConfig({
+      hubUrl: "wss://mcp.flexinfer.ai/ws",
+      profile: "codex",
+      preferHub: true,
+    });
+
+    const written = lastWrittenYaml();
+    const hub = written.hub as Record<string, unknown>;
+    expect(hub.url).toBe("wss://mcp.flexinfer.ai/ws");
+    expect(hub.prefer_hub).toBe(true);
   });
 });
