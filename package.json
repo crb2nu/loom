@@ -476,6 +476,11 @@
           "default": "codex",
           "description": "Profile sent to the MCP hub (codex, kilocode, vscode, etc.)."
         },
+        "loom.hubPreferHub": {
+          "type": "boolean",
+          "default": true,
+          "description": "Route MCP traffic through the deployed hub instead of spawning local stdio servers. Persists as hub.prefer_hub in ~/.config/loom/config.yaml; survives extension regens."
+        },
         "loom.autoSyncOnDrift": {
           "type": "string",
           "enum": [
