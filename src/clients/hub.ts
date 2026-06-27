@@ -5,24 +5,82 @@ import { requestJson, requestText } from "../utils/http";
 
 export type HubConnectionStatus = "connected" | "disconnected" | "unknown";
 
+/**
+ * Number of consecutive health-probe failures (`consecFails`) at or above
+ * which a server endpoint is treated as degraded even if `healthy` is still
+ * reported true. Mirrors the daemon's own 3-failure offline threshold.
+ */
+const DEGRADED_CONSEC_FAILS_THRESHOLD = 3;
+
+/**
+ * One endpoint's health, mirroring loom-core's
+ * `internal/visibility/contracts/health.HealthEntry`.
+ */
+export interface HubHealthEntry {
+  healthy?: boolean;
+  consecFails?: number;
+  avgLatencyMs?: number;
+  errorMessage?: string;
+}
+
+/**
+ * Per-server divergence between the health monitor and the router, mirroring
+ * loom-core's `health.HealthDivergence`.
+ */
+export interface HubHealthDivergence {
+  monitor_healthy?: boolean;
+  router_available?: boolean;
+  reason?: string;
+}
+
+/**
+ * Top-level divergence summary entry, mirroring loom-core's
+ * `health.HealthDivergenceEntry` (one per disagreeing server).
+ */
+export interface HubHealthDivergenceEntry {
+  server?: string;
+  reason?: string;
+}
+
+/**
+ * One server's consolidated health, mirroring loom-core's
+ * `health.ServerHealth`. `monitor` and `divergence` are optional and absent
+ * on older daemons — both must parse to `undefined` without error.
+ */
+export interface HubServerHealth {
+  local?: HubHealthEntry;
+  hub?: HubHealthEntry;
+  monitor?: HubHealthEntry;
+  target?: string;
+  transport?: string;
+  divergence?: HubHealthDivergence;
+}
+
 type HubApiHealthPayload = {
   status?: string;
   timestamp?: string;
   sessions?: number;
-  servers?: Record<string, HubApiServerHealth>;
-  divergence?: unknown[];
+  servers?: Record<string, HubServerHealth>;
+  divergence?: HubHealthDivergenceEntry[];
   cache_backend?: string;
   cacheBackend?: string;
 };
 
-type HubApiServerHealth = {
-  healthy?: boolean;
-  local?: HubApiHealthEntry;
-  hub?: HubApiHealthEntry;
-};
+/**
+ * Boot-time HUD config, mirroring loom-core's `GET /api/hud/config` response.
+ * `allowed_views`/`allowed_sub_views` are null/absent when the HUD reports the
+ * full (unrestricted) surface; populated only for the operator subset.
+ */
+export interface HubConfig {
+  subset: string;
+  allowedViews?: string[];
+  allowedSubViews?: Record<string, string[]>;
+}
 
-type HubApiHealthEntry = {
-  healthy?: boolean;
+type HubApiConfigPayload = {
+  subset?: string;
+  allowed_views?: string[] | null;
+  allowed_sub_views?: Record<string, string[]> | null;
 };
 
 type HubApiStatusPayload = {
@@ -134,6 +192,38 @@ export class HubClient {
   }
 
   /**
+   * Fetch the HUD's boot-time config (`GET /api/hud/config`).
+   *
+   * Returns the view-restriction allowlist the HUD applies when running as an
+   * operator subset. When the endpoint is unavailable (older / gateway-only
+   * hubs that 404), resolves to the unrestricted `{ subset: "full" }` default
+   * rather than throwing, so callers can treat "no config" as "no restriction".
+   */
+  async fetchHudConfig(): Promise<HubConfig> {
+    try {
+      const payload = await this.getJson<HubApiConfigPayload>("/api/hud/config");
+      this.connectionStatus = "connected";
+      this.consecutiveFailures = 0;
+      return normalizeHudConfig(payload);
+    } catch (error) {
+      if (isOptionalApiUnavailable(error)) {
+        return { subset: "full" };
+      }
+      this.handleConnectionError(error);
+      throw error;
+    }
+  }
+
+  /**
+   * Return the list of allowed top-level view ids when the HUD reports an
+   * operator subset, or `undefined` when there is no restriction (full HUD).
+   */
+  async fetchAllowedViews(): Promise<string[] | undefined> {
+    const config = await this.fetchHudConfig();
+    return allowedViewsFromConfig(config);
+  }
+
+  /**
    * Get the last successful health check time.
    */
   getLastHealthCheck(): Date | null {
@@ -219,9 +309,8 @@ export class HubClient {
 function normalizeHealthPayload(payload: HubApiHealthPayload): HubHealthResponse {
   const divergence = payload.divergence ?? [];
   const servers = payload.servers ?? {};
-  const healthStates = Object.values(servers).map(isServerHealthy);
-  const hasUnhealthyServer = healthStates.some((healthy) => healthy === false);
-  const status = normalizeHealthStatus(payload.status, hasUnhealthyServer, divergence.length > 0);
+  const hasDegradedServer = Object.values(servers).some(isServerDegraded);
+  const status = normalizeHealthStatus(payload.status, hasDegradedServer, divergence.length > 0);
 
   return {
     status,
@@ -231,6 +320,70 @@ function normalizeHealthPayload(payload: HubApiHealthPayload): HubHealthResponse
     divergence,
     cacheBackend: payload.cacheBackend ?? payload.cache_backend,
   };
+}
+
+/**
+ * Resolve the allowed top-level view ids from a parsed HUD config. Returns
+ * `undefined` when the HUD reports no restriction (full subset).
+ */
+export function allowedViewsFromConfig(config: HubConfig): string[] | undefined {
+  if (config.allowedViews && config.allowedViews.length > 0) {
+    return config.allowedViews;
+  }
+  return undefined;
+}
+
+/**
+ * Report whether a given view id is allowed under the supplied HUD config.
+ * When the HUD reports no restriction (full subset), every view is allowed.
+ */
+export function isViewAllowed(config: HubConfig, viewId: string): boolean {
+  const allowed = allowedViewsFromConfig(config);
+  if (!allowed) {
+    return true;
+  }
+  return allowed.includes(viewId);
+}
+
+/**
+ * Report whether a sub-view is allowed under the supplied HUD config. An
+ * allowed parent view with no sub-view entry (or an empty list) permits all of
+ * its sub-views, matching loom-core's "empty list ⇒ all sub-views allowed".
+ */
+export function isSubViewAllowed(config: HubConfig, viewId: string, subViewId: string): boolean {
+  if (!isViewAllowed(config, viewId)) {
+    return false;
+  }
+  const subViews = config.allowedSubViews?.[viewId];
+  if (!subViews || subViews.length === 0) {
+    return true;
+  }
+  return subViews.includes(subViewId);
+}
+
+/**
+ * Derive a degraded state for a single server entry. A server is degraded when
+ * any of its endpoints is explicitly unhealthy, has crossed the consecutive-
+ * failure threshold, or the daemon reports a monitor/router divergence.
+ * Old payloads (no monitor/divergence) degrade purely on local/hub health.
+ */
+export function isServerDegraded(server: HubServerHealth): boolean {
+  if (server.divergence) {
+    return true;
+  }
+  const entries = [server.local, server.hub, server.monitor];
+  for (const entry of entries) {
+    if (!entry) {
+      continue;
+    }
+    if (entry.healthy === false) {
+      return true;
+    }
+    if ((entry.consecFails ?? 0) >= DEGRADED_CONSEC_FAILS_THRESHOLD) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function normalizePlainHealth(body: string): HubHealthResponse {
@@ -259,10 +412,10 @@ function normalizePlainReady(body: string): HubReadyResponse {
 
 function normalizeHealthStatus(
   status: string | undefined,
-  hasUnhealthyServer: boolean,
+  hasDegradedServer: boolean,
   hasDivergence: boolean
 ): string {
-  if (hasDivergence || hasUnhealthyServer) {
+  if (hasDivergence || hasDegradedServer) {
     return "degraded";
   }
   if (!status) {
@@ -271,14 +424,16 @@ function normalizeHealthStatus(
   return status === "healthy" ? "ok" : status;
 }
 
-function isServerHealthy(server: HubApiServerHealth): boolean | undefined {
-  const states = [server.healthy, server.local?.healthy, server.hub?.healthy].filter(
-    (value): value is boolean => typeof value === "boolean"
-  );
-  if (states.length === 0) {
-    return undefined;
+function normalizeHudConfig(payload: HubApiConfigPayload): HubConfig {
+  const subset = payload.subset && payload.subset.trim() !== "" ? payload.subset : "full";
+  const config: HubConfig = { subset };
+  if (payload.allowed_views) {
+    config.allowedViews = payload.allowed_views;
   }
-  return states.every(Boolean);
+  if (payload.allowed_sub_views) {
+    config.allowedSubViews = payload.allowed_sub_views;
+  }
+  return config;
 }
 
 function isOptionalApiUnavailable(error: unknown): boolean {
