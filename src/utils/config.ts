@@ -7,7 +7,7 @@ import * as vscode from "vscode";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { DEFAULT_HUB_URL } from "../constants";
-import { DaemonConfig, HubSettings, VscodeConfigSnapshot } from "../types";
+import { HubSettings, VscodeConfigSnapshot } from "../types";
 
 /**
  * Derive hub settings from VS Code configuration and environment variables.
@@ -164,7 +164,7 @@ export async function writeDaemonConfig(settings: HubSettings): Promise<void> {
   let existing: Record<string, unknown> = {};
   try {
     const raw = await fsp.readFile(configPath, "utf-8");
-    const parsed = parseYaml(raw);
+    const parsed: unknown = parseYaml(raw);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       existing = parsed as Record<string, unknown>;
     }

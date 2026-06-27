@@ -1,7 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as vscode from "vscode";
+import { parse as parseYaml } from "yaml";
 
-// Mock fs and os before importing module under test
+import {
+  deriveHubSettings,
+  convertHubUrlToHttpBase,
+  findRegistryPath,
+  isHubRoutedConfig,
+  loadVscodeConfigSnapshot,
+  writeDaemonConfig,
+} from "./config";
+
+// Mock fs and os before importing module under test. `vi.hoisted`/`vi.mock`
+// are lifted above the imports by vitest's transform, so the mocks still apply
+// to the module under test even though they are declared below the imports.
 const mockExistsSync = vi.hoisted(() => vi.fn());
 const mockReadFileSync = vi.hoisted(() => vi.fn());
 const mockReadFile = vi.hoisted(() => vi.fn());
@@ -23,16 +35,6 @@ vi.mock("fs", () => ({
 vi.mock("os", () => ({
   homedir: () => "/home/testuser",
 }));
-
-import {
-  deriveHubSettings,
-  convertHubUrlToHttpBase,
-  findRegistryPath,
-  isHubRoutedConfig,
-  loadVscodeConfigSnapshot,
-  writeDaemonConfig,
-} from "./config";
-import { parse as parseYaml } from "yaml";
 
 describe("deriveHubSettings", () => {
   beforeEach(() => {
