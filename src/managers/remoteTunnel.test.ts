@@ -64,7 +64,7 @@ describe("RemoteTunnelManager", () => {
       hide: vi.fn(),
       dispose: vi.fn(),
       replace: vi.fn(),
-    } as unknown as vscode.OutputChannel;
+    };
 
     spawnMock = vi.fn<SpawnLike>();
   });

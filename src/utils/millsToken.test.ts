@@ -16,8 +16,8 @@ function makeSecrets(): vscode.SecretStorage {
       return Promise.resolve();
     }),
     keys: vi.fn(() => Promise.resolve(Array.from(store.keys()))),
-    onDidChange: vi.fn() as unknown as vscode.Event<vscode.SecretStorageChangeEvent>,
-  } as unknown as vscode.SecretStorage;
+    onDidChange: vi.fn(),
+  };
 }
 
 describe("MillsTokenStore", () => {

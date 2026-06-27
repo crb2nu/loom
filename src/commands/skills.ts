@@ -5,7 +5,7 @@ import * as vscode from "vscode";
 
 import { SkillsClient } from "../clients/skills";
 import { SkillsProvider } from "../providers/skills";
-import { SkillDefinition, PlatformType } from "../types";
+import { SkillDefinition } from "../types";
 import { ConfigManager } from "../utils/configManager";
 import { Logger } from "../utils/logger";
 import { PLATFORMS, getSupportedPlatforms } from "../utils/platform";
@@ -298,7 +298,7 @@ export function registerSkillsCommands(ctx: SkillsCommandContext): vscode.Dispos
         ...platforms.map((p) => ({
           label: PLATFORMS[p].displayName,
           description: currentFilter === p ? "(current)" : PLATFORMS[p].description,
-          platform: p as PlatformType,
+          platform: p,
         })),
       ];
 

@@ -61,7 +61,7 @@ describe("sync commands", () => {
     resolveSync = undefined;
     mockAccess.mockRejectedValue(new Error("ENOENT"));
     vi.mocked(vscode.window.withProgress).mockImplementation(async (_options, task) =>
-      task({ report: vi.fn() } as vscode.Progress<unknown>, {} as vscode.CancellationToken)
+      task({ report: vi.fn() }, {} as vscode.CancellationToken)
     );
 
     loomChannel = {
@@ -73,7 +73,7 @@ describe("sync commands", () => {
       hide: vi.fn(),
       dispose: vi.fn(),
       replace: vi.fn(),
-    } as unknown as vscode.OutputChannel;
+    };
 
     ctx = {
       workspaceRoot: "/workspace",

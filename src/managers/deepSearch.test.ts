@@ -25,7 +25,7 @@ describe("DeepSearchManager", () => {
       hide: vi.fn(),
       dispose: vi.fn(),
       replace: vi.fn(),
-    } as unknown as vscode.OutputChannel;
+    };
 
     tools = [];
     daemonClient = {

@@ -51,7 +51,7 @@ describe("AgentContextClient", () => {
       hide: vi.fn(),
       dispose: vi.fn(),
       replace: vi.fn(),
-    } as unknown as vscode.OutputChannel;
+    };
 
     client = new AgentContextClient("/workspace", mockChannel, "test-agent");
   });

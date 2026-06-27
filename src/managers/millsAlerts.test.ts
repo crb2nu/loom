@@ -23,7 +23,7 @@ function makeChannel(): vscode.OutputChannel {
     hide: vi.fn(),
     dispose: vi.fn(),
     replace: vi.fn(),
-  } as unknown as vscode.OutputChannel;
+  };
 }
 
 class FakeStatusManager {

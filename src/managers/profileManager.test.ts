@@ -97,7 +97,7 @@ describe("ProfileManager", () => {
       hide: vi.fn(),
       dispose: vi.fn(),
       replace: vi.fn(),
-    } as unknown as vscode.OutputChannel;
+    };
 
     mockExecFile.mockImplementation(
       (_: string, args: string[], __: unknown, cb: ExecFileCallback) => {

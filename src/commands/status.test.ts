@@ -58,7 +58,7 @@ describe("status commands", () => {
       hide: vi.fn(),
       dispose: vi.fn(),
       replace: vi.fn(),
-    } as unknown as vscode.OutputChannel;
+    };
 
     mockRegistryProvider = {
       getSummary: vi.fn(async () => "Loom summary"),
@@ -153,7 +153,7 @@ describe("status commands", () => {
       extensionContext: {
         extensionUri: vscode.Uri.file("/extension"),
       } as any,
-    } as unknown as CommandContext;
+    };
   });
 
   it("registers showStatus and showMeshReport commands", () => {

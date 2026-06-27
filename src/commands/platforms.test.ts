@@ -28,7 +28,7 @@ describe("platform commands", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(vscode.window.withProgress).mockImplementation(async (_options, task) =>
-      task({ report: vi.fn() } as vscode.Progress<unknown>, {} as vscode.CancellationToken)
+      task({ report: vi.fn() }, {} as vscode.CancellationToken)
     );
     vi.mocked(vscode.workspace.openTextDocument).mockResolvedValue({
       uri: vscode.Uri.parse("untitled:doctor.md"),
@@ -81,7 +81,7 @@ describe("platform commands", () => {
         hide: vi.fn(),
         dispose: vi.fn(),
         replace: vi.fn(),
-      } as unknown as vscode.OutputChannel,
+      },
       platformConfigClient:
         platformConfigClient as unknown as PlatformCommandContext["platformConfigClient"],
       platformsProvider:

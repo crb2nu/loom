@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 import { MILLS_METRIC_KEYS, MillsStatusSnapshot, readMetric } from "../clients/mills";
 import { MillsAdminClient } from "../clients/millsAdmin";
 import { MillsStatusManager } from "../managers/millsStatus";
-import { MillsSubjectRef, MillsTreeProvider } from "../providers/mills";
+import { MillsSubjectKind, MillsSubjectRef, MillsTreeProvider } from "../providers/mills";
 import { MillsTokenStore } from "../utils/millsToken";
 import { MillsDetailPanel } from "../webviews/MillsDetailPanel";
 
@@ -71,22 +71,32 @@ function openMillsDetail(ctx: MillsCommandContext, raw: unknown): void {
   );
 }
 
+// All Mills detail subject kinds the detail panel can render. Kept in sync with
+// MillsSubjectKind in providers/mills.ts; the panel fetches + renders each.
+const MILLS_SUBJECT_KINDS: readonly MillsSubjectKind[] = [
+  "backlog",
+  "council",
+  "pipeline",
+  "audit",
+  "policy-proposal",
+  "cross-repo",
+  "workflow",
+  "eval",
+  "cost-preview",
+  "squad-memory",
+  "squad-outcomes",
+];
+
 function parseSubject(raw: unknown): MillsSubjectRef | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const obj = raw as Record<string, unknown>;
   const kind = obj.kind;
   const id = obj.id;
   if (typeof id !== "string" || id.length === 0) return undefined;
-  if (
-    kind !== "backlog" &&
-    kind !== "council" &&
-    kind !== "pipeline" &&
-    kind !== "audit" &&
-    kind !== "policy-proposal"
-  ) {
+  if (typeof kind !== "string" || !MILLS_SUBJECT_KINDS.includes(kind as MillsSubjectKind)) {
     return undefined;
   }
-  return { kind, id };
+  return { kind: kind as MillsSubjectKind, id };
 }
 
 async function showMillsStatus(ctx: MillsCommandContext): Promise<void> {

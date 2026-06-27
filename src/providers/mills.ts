@@ -5,21 +5,44 @@ import {
   MillsBacklogItem,
   MillsClient,
   MillsCouncilRun,
+  MillsCrossRepoRun,
+  MillsEvalScore,
   MillsPipelineRun,
   MillsPolicyProposal,
   MillsSettings,
   MillsSquad,
+  MillsWorkflowRun,
 } from "../clients/mills";
 import { Logger } from "../utils/logger";
 
-export type MillsSubjectKind = "backlog" | "council" | "pipeline" | "audit" | "policy-proposal";
+export type MillsSubjectKind =
+  | "backlog"
+  | "council"
+  | "pipeline"
+  | "audit"
+  | "policy-proposal"
+  | "cross-repo"
+  | "workflow"
+  | "eval"
+  | "cost-preview"
+  | "squad-memory"
+  | "squad-outcomes";
 
 export interface MillsSubjectRef {
   kind: MillsSubjectKind;
   id: string;
 }
 
-type SectionId = "backlog" | "pipelines" | "council" | "squads" | "audit" | "proposals";
+type SectionId =
+  | "backlog"
+  | "pipelines"
+  | "council"
+  | "squads"
+  | "audit"
+  | "proposals"
+  | "crossRepo"
+  | "workflows"
+  | "evalScores";
 
 interface SectionDefinition {
   id: SectionId;
@@ -52,6 +75,27 @@ const SECTIONS: SectionDefinition[] = [
     toLeaf: (raw) => councilLeaf(raw as MillsCouncilRun),
   },
   {
+    id: "crossRepo",
+    label: "Cross-Repo Runs",
+    emptyText: "No cross-repo runs",
+    fetch: (c) => c.fetchCrossRepoRuns(),
+    toLeaf: (raw) => crossRepoLeaf(raw as MillsCrossRepoRun),
+  },
+  {
+    id: "workflows",
+    label: "Workflow Runs",
+    emptyText: "No workflow runs",
+    fetch: (c) => c.fetchWorkflowRuns(),
+    toLeaf: (raw) => workflowLeaf(raw as MillsWorkflowRun),
+  },
+  {
+    id: "evalScores",
+    label: "Eval Scores",
+    emptyText: "No eval scores recorded",
+    fetch: (c) => c.fetchEvalScores(),
+    toLeaf: (raw) => evalLeaf(raw as MillsEvalScore),
+  },
+  {
     id: "squads",
     label: "Squads",
     emptyText: "No squads configured",
@@ -81,6 +125,18 @@ interface MillsLeafItem {
   iconId: string;
   iconColor?: string;
   subject?: MillsSubjectRef;
+  /**
+   * When set, the leaf is expandable and exposes the per-squad
+   * Memory/Outcomes child rows for this squad name (instead of opening a
+   * detail directly). Used only by squad leaves.
+   */
+  squadName?: string;
+  /**
+   * When set, the leaf is expandable and exposes a "Cost Preview" child
+   * row for this backlog id. The leaf itself still opens its own detail
+   * via `subject`. Used only by backlog leaves.
+   */
+  costPreviewBacklogId?: string;
 }
 
 type MillsTreeNode =
@@ -95,6 +151,12 @@ type MillsTreeNode =
       kind: "leaf";
       sectionId: SectionId;
       leaf: MillsLeafItem;
+    }
+  | {
+      kind: "squad-child";
+      label: string;
+      iconId: string;
+      subject: MillsSubjectRef;
     }
   | {
       kind: "placeholder";
@@ -125,6 +187,9 @@ export class MillsTreeProvider implements vscode.TreeDataProvider<MillsTreeNode>
     backlog: emptyState(),
     pipelines: emptyState(),
     council: emptyState(),
+    crossRepo: emptyState(),
+    workflows: emptyState(),
+    evalScores: emptyState(),
     squads: emptyState(),
     audit: emptyState(),
     proposals: emptyState(),
@@ -171,8 +236,26 @@ export class MillsTreeProvider implements vscode.TreeDataProvider<MillsTreeNode>
       item.iconPath = new vscode.ThemeIcon(node.iconId);
       return item;
     }
+    if (node.kind === "squad-child") {
+      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
+      item.iconPath = new vscode.ThemeIcon(node.iconId);
+      item.contextValue = `mills.squad-child.${node.subject.kind}`;
+      item.command = {
+        command: "loom.openMillsDetail",
+        title: "Open Mills Detail",
+        arguments: [node.subject],
+      };
+      return item;
+    }
     const leaf = node.leaf;
-    const item = new vscode.TreeItem(leaf.label, vscode.TreeItemCollapsibleState.None);
+    // Squad leaves expand into Memory / Outcomes; backlog leaves expand
+    // into a Cost Preview child while staying directly clickable.
+    // Everything else is a flat clickable leaf.
+    const expandable = Boolean(leaf.squadName) || Boolean(leaf.costPreviewBacklogId);
+    const collapsible = expandable
+      ? vscode.TreeItemCollapsibleState.Collapsed
+      : vscode.TreeItemCollapsibleState.None;
+    const item = new vscode.TreeItem(leaf.label, collapsible);
     item.description = leaf.description;
     item.tooltip = leaf.tooltip;
     item.iconPath = leaf.iconColor
@@ -210,6 +293,40 @@ export class MillsTreeProvider implements vscode.TreeDataProvider<MillsTreeNode>
         count: this.state[def.id].items.length,
         error: this.state[def.id].error,
       }));
+    }
+
+    // A squad leaf expands into its Memory / Outcomes child rows; each
+    // child opens the read-only detail panel for that squad.
+    if (node.kind === "leaf" && node.leaf.squadName) {
+      const name = node.leaf.squadName;
+      return [
+        {
+          kind: "squad-child",
+          label: "Memory",
+          iconId: "history",
+          subject: { kind: "squad-memory", id: name },
+        },
+        {
+          kind: "squad-child",
+          label: "Outcomes",
+          iconId: "graph",
+          subject: { kind: "squad-outcomes", id: name },
+        },
+      ];
+    }
+
+    // A backlog leaf expands into a Cost Preview child row that opens the
+    // read-only estimate detail for that backlog id.
+    if (node.kind === "leaf" && node.leaf.costPreviewBacklogId) {
+      const id = node.leaf.costPreviewBacklogId;
+      return [
+        {
+          kind: "squad-child",
+          label: "Cost Preview",
+          iconId: "credit-card",
+          subject: { kind: "cost-preview", id },
+        },
+      ];
     }
 
     if (node.kind !== "section") {
@@ -290,6 +407,12 @@ function sectionIcon(id: SectionId): string {
       return "rocket";
     case "council":
       return "organization";
+    case "crossRepo":
+      return "repo-forked";
+    case "workflows":
+      return "list-tree";
+    case "evalScores":
+      return "dashboard";
     case "squads":
       return "people";
     case "audit":
@@ -307,6 +430,7 @@ function backlogLeaf(item: MillsBacklogItem): MillsLeafItem {
     tooltip: backlogTooltip(item),
     iconId: stateIcon(item.State),
     subject: { kind: "backlog", id: item.ID },
+    costPreviewBacklogId: item.ID,
   };
 }
 
@@ -336,10 +460,51 @@ function councilLeaf(item: MillsCouncilRun): MillsLeafItem {
 function squadLeaf(item: MillsSquad): MillsLeafItem {
   const name = item.Name ?? item.name ?? "(unnamed)";
   const description = item.Description ?? item.description ?? "";
+  // Squad leaves expand into Memory / Outcomes child rows (squadName set)
+  // rather than opening a detail panel directly. An unnamed squad stays
+  // a flat leaf — there's no name to key the memory/outcomes reads on.
+  const squadName = name !== "(unnamed)" ? name : undefined;
   return {
     label: name,
     description: typeof description === "string" ? description : "",
     iconId: "person",
+    squadName,
+  };
+}
+
+function crossRepoLeaf(item: MillsCrossRepoRun): MillsLeafItem {
+  const backlog = item.backlog_item_id ? ` ${item.backlog_item_id}` : "";
+  const repoCount = item.repos?.length ?? 0;
+  return {
+    label: item.id,
+    description:
+      `${item.state ?? "?"}${backlog} (${repoCount} repo${repoCount === 1 ? "" : "s"})`.trim(),
+    tooltip: crossRepoTooltip(item),
+    iconId: crossRepoIcon(item.state),
+    subject: { kind: "cross-repo", id: item.id },
+  };
+}
+
+function workflowLeaf(item: MillsWorkflowRun): MillsLeafItem {
+  const engine = item.engine ? `[${item.engine}] ` : "";
+  const steps = item.step_count != null ? ` ${item.step_count} steps` : "";
+  return {
+    label: item.id,
+    description: `${engine}${item.state ?? "?"}${steps}`.trim(),
+    tooltip: workflowTooltip(item),
+    iconId: workflowIcon(item.state),
+    subject: { kind: "workflow", id: item.id },
+  };
+}
+
+function evalLeaf(item: MillsEvalScore): MillsLeafItem {
+  const score = typeof item.Score === "number" ? item.Score.toFixed(2) : "—";
+  return {
+    label: `${item.SubjectKind ?? "eval"}/${item.SubjectID ?? item.ID ?? "?"}`,
+    description: `${item.Rubric ?? ""} score=${score}`.trim(),
+    tooltip: evalTooltip(item),
+    iconId: "symbol-number",
+    subject: { kind: "eval", id: String(item.ID ?? "") },
   };
 }
 
@@ -407,6 +572,38 @@ function councilIcon(outcome?: string): string {
   return "error";
 }
 
+function crossRepoIcon(state?: string): string {
+  switch (state) {
+    case "merged":
+      return "check";
+    case "reverted":
+    case "failed":
+      return "error";
+    case "planning":
+      return "circle-outline";
+    default:
+      return "sync~spin";
+  }
+}
+
+function workflowIcon(state?: string): string {
+  switch (state) {
+    case "succeeded":
+    case "completed":
+      return "check";
+    case "failed":
+    case "errored":
+      return "error";
+    case "quarantined":
+      return "warning";
+    case "pending":
+    case "queued":
+      return "circle-outline";
+    default:
+      return "sync~spin";
+  }
+}
+
 function severityIcon(severity?: string): string {
   switch (severity) {
     case "critical":
@@ -471,5 +668,37 @@ function auditTooltip(item: MillsAuditFinding): string {
   if (typeof item.SurvivalScore === "number") {
     lines.push(`Survival score: ${item.SurvivalScore.toFixed(2)}`);
   }
+  return lines.join("\n");
+}
+
+function crossRepoTooltip(item: MillsCrossRepoRun): string {
+  const lines: string[] = [`Run: ${item.id}`];
+  if (item.backlog_item_id) lines.push(`Backlog: ${item.backlog_item_id}`);
+  if (item.state) lines.push(`State: ${item.state}`);
+  if (item.atomicity_strategy) lines.push(`Strategy: ${item.atomicity_strategy}`);
+  if (item.repos?.length) {
+    lines.push(`Repos: ${item.repos.map((r) => r.repo_name ?? r.project_id ?? "?").join(", ")}`);
+  }
+  return lines.join("\n");
+}
+
+function workflowTooltip(item: MillsWorkflowRun): string {
+  const lines: string[] = [`Run: ${item.id}`];
+  if (item.backlog_id) lines.push(`Backlog: ${item.backlog_id}`);
+  if (item.engine) lines.push(`Engine: ${item.engine}`);
+  if (item.template) lines.push(`Template: ${item.template}`);
+  if (item.state) lines.push(`State: ${item.state}`);
+  if (item.step_count != null) lines.push(`Steps: ${item.step_count}`);
+  if (typeof item.cost_usd === "number") lines.push(`Cost: $${item.cost_usd.toFixed(2)}`);
+  return lines.join("\n");
+}
+
+function evalTooltip(item: MillsEvalScore): string {
+  const lines: string[] = [`Score: ${item.ID ?? "?"}`];
+  if (item.SubjectKind) lines.push(`Subject kind: ${item.SubjectKind}`);
+  if (item.SubjectID) lines.push(`Subject: ${item.SubjectID}`);
+  if (item.Rubric) lines.push(`Rubric: ${item.Rubric}`);
+  if (typeof item.Score === "number") lines.push(`Score: ${item.Score.toFixed(2)}`);
+  if (item.JudgedBy) lines.push(`Judged by: ${item.JudgedBy}`);
   return lines.join("\n");
 }
