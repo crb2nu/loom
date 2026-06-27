@@ -1,4 +1,12 @@
-import { requestJson } from "../utils/http";
+import { postJson, requestJson } from "../utils/http";
+
+/**
+ * A synthesized weaver query routes through one or more sub-agent models
+ * and can take far longer than a read-only status/history GET. Use a
+ * generous timeout so slow multi-domain dispatch isn't cut off by the
+ * 5s default in DEFAULT_HTTP_TIMEOUT_MS.
+ */
+const WEAVER_QUERY_TIMEOUT_MS = 120_000;
 
 /**
  * Read-only client for the Loom HUD's weaver + aimodels REST surfaces.
@@ -67,6 +75,44 @@ export interface WeaverMetricsResponse {
   error_count?: number;
 }
 
+/**
+ * Request body for POST /api/weaver/query. Mirrors the HUD handler's
+ * params struct (internal/hud/domain/weaver/handlers.go handleQuery):
+ * only `query` is required; the rest are optional routing hints.
+ */
+export interface WeaverQueryRequest {
+  query: string;
+  domains?: string[];
+  max_tokens?: number;
+  agent_id?: string;
+  session_id?: string;
+  parent_session_id?: string;
+}
+
+/**
+ * Response body for POST /api/weaver/query. Mirrors pkg/weaver.QueryResult
+ * (services/loom-core/pkg/weaver/router.go), surfaced verbatim by the HUD.
+ * `query_id` / `status` are not part of QueryResult (they live on history
+ * entries) but are typed optional in case the daemon enriches the payload.
+ */
+export interface WeaverQueryResponse {
+  answer?: string;
+  domain_results?: WeaverDomainResult[];
+  total_tokens?: number;
+  latency_ms?: number;
+  domains_used?: string[];
+  query_id?: string;
+  status?: string;
+  [key: string]: unknown;
+}
+
+export interface WeaverDomainResult {
+  domain?: string;
+  answer?: string;
+  tokens?: number;
+  [key: string]: unknown;
+}
+
 export interface AIModelsRoleEntry {
   role: string;
   primary: string;
@@ -125,5 +171,17 @@ export class WeaverClient {
     const u = this.url("/api/aimodels/roles");
     if (!u) return null;
     return requestJson<AIModelsRolesResponse>(u, this.headers());
+  }
+
+  /**
+   * Submit a synthesized query via POST /api/weaver/query. Returns `null`
+   * when `hudBaseUrl` is empty (matching the read-only methods above).
+   * Rejects on HTTP errors (e.g. weaver disabled/degraded, missing model,
+   * network failure) so callers can surface the failure to the user.
+   */
+  async query(request: WeaverQueryRequest): Promise<WeaverQueryResponse | null> {
+    const u = this.url("/api/weaver/query");
+    if (!u) return null;
+    return postJson<WeaverQueryResponse>(u, request, this.headers(), WEAVER_QUERY_TIMEOUT_MS);
   }
 }
