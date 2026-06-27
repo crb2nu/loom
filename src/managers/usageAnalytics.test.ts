@@ -34,7 +34,7 @@ describe("UsageAnalyticsManager", () => {
       hide: vi.fn(),
       dispose: vi.fn(),
       replace: vi.fn(),
-    } as unknown as vscode.OutputChannel;
+    };
   });
 
   it("records tool execution events and updates aggregates", async () => {

@@ -35,7 +35,7 @@ describe("HubStatusManager", () => {
       hide: vi.fn(),
       dispose: vi.fn(),
       replace: vi.fn(),
-    } as unknown as vscode.OutputChannel;
+    };
 
     settings = {
       hubUrl: "wss://mcp.example.com/ws",

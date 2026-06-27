@@ -77,7 +77,7 @@ describe("ConfigSyncManager", () => {
       hide: vi.fn(),
       dispose: vi.fn(),
       replace: vi.fn(),
-    } as unknown as vscode.OutputChannel;
+    };
 
     manager = new ConfigSyncManager("/workspace", mockChannel);
   });

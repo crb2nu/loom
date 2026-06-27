@@ -578,7 +578,7 @@ export class PlatformConfigClient implements vscode.Disposable {
 
     for (const candidate of candidates) {
       if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
-        return Object.keys(candidate as Record<string, unknown>).sort();
+        return Object.keys(candidate).sort();
       }
     }
 

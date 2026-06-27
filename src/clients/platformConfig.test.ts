@@ -142,7 +142,7 @@ describe("PlatformConfigClient", () => {
       hide: vi.fn(),
       dispose: vi.fn(),
       replace: vi.fn(),
-    } as unknown as vscode.OutputChannel;
+    };
 
     const mockConfig = {
       get: vi.fn(() => undefined),
@@ -150,9 +150,7 @@ describe("PlatformConfigClient", () => {
       inspect: vi.fn(() => undefined),
       update: vi.fn(),
     };
-    vi.mocked(vscode.workspace.getConfiguration).mockReturnValue(
-      mockConfig as unknown as vscode.WorkspaceConfiguration
-    );
+    vi.mocked(vscode.workspace.getConfiguration).mockReturnValue(mockConfig);
 
     client = new PlatformConfigClient("/workspace", mockChannel);
   });

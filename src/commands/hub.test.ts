@@ -48,7 +48,7 @@ describe("hub commands", () => {
       hide: vi.fn(),
       dispose: vi.fn(),
       replace: vi.fn(),
-    } as unknown as vscode.OutputChannel;
+    };
 
     mockHubStatusManager = {
       refresh: vi.fn(async () => undefined),

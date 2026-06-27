@@ -27,7 +27,7 @@ describe("PluginManager", () => {
       hide: vi.fn(),
       dispose: vi.fn(),
       replace: vi.fn(),
-    } as unknown as vscode.OutputChannel;
+    };
     (globalThis as Record<string, unknown>).__loomPluginDeactivateCount = 0;
   });
 

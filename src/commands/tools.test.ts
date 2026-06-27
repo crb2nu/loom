@@ -63,7 +63,7 @@ describe("tools commands", () => {
       hide: vi.fn(),
       dispose: vi.fn(),
       replace: vi.fn(),
-    } as unknown as vscode.OutputChannel;
+    };
 
     mockDaemonClient = {
       getTools: vi.fn(async () => [

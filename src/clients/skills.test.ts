@@ -65,7 +65,7 @@ describe("SkillsClient", () => {
       hide: vi.fn(),
       dispose: vi.fn(),
       replace: vi.fn(),
-    } as unknown as vscode.OutputChannel;
+    };
 
     client = new SkillsClient(mockChannel);
   });
