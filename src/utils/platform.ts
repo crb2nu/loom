@@ -3,7 +3,15 @@ import * as vscode from "vscode";
 /**
  * Supported platform types for MCP configuration.
  */
-export type PlatformType = "vscode" | "antigravity" | "gemini" | "codex" | "kilocode" | "claude";
+export type PlatformType =
+  | "vscode"
+  | "antigravity"
+  | "gemini"
+  | "codex"
+  | "kilocode"
+  | "claude"
+  | "opencode"
+  | "zed";
 
 /**
  * Platform metadata and configuration paths.
@@ -39,7 +47,7 @@ export const PLATFORMS: Record<PlatformType, PlatformInfo> = {
     label: "Antigravity",
     configFormat: "json",
     repoConfigPath: ".antigravity/mcp.json",
-    homeConfigPath: ".antigravity/mcp.json",
+    homeConfigPath: ".gemini/antigravity/mcp_config.json",
     icon: "rocket",
     description: "Google's VS Code fork with Gemini/Claude",
   },
@@ -47,7 +55,7 @@ export const PLATFORMS: Record<PlatformType, PlatformInfo> = {
     type: "gemini",
     displayName: "Gemini",
     label: "Gemini CLI",
-    configFormat: "toml",
+    configFormat: "json",
     repoConfigPath: ".gemini/settings.json",
     homeConfigPath: ".gemini/settings.json",
     icon: "sparkle",
@@ -82,6 +90,26 @@ export const PLATFORMS: Record<PlatformType, PlatformInfo> = {
     homeConfigPath: ".claude/mcp.json",
     icon: "comment-discussion",
     description: "Claude Code CLI assistant",
+  },
+  opencode: {
+    type: "opencode",
+    displayName: "OpenCode",
+    label: "OpenCode",
+    configFormat: "json",
+    repoConfigPath: ".opencode/opencode.json",
+    homeConfigPath: ".config/opencode/opencode.json",
+    icon: "extensions",
+    description: "OpenCode CLI with TypeScript hook plugin support",
+  },
+  zed: {
+    type: "zed",
+    displayName: "Zed",
+    label: "Zed",
+    configFormat: "json",
+    repoConfigPath: ".zed/mcp.json",
+    homeConfigPath: "Library/Application Support/Zed/mcp.json",
+    icon: "symbol-color",
+    description: "Zed editor MCP configuration",
   },
 };
 

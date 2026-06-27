@@ -1,8 +1,23 @@
 import * as vscode from "vscode";
 
-import { DaemonClient } from "../clients/daemon";
-import { ConfigSyncManager, HubStatusManager } from "../managers";
-import { RegistryProvider, SecretsProvider, ServerProvider, ToolProvider } from "../providers";
+import { AgentContextClient, DaemonClient } from "../clients";
+import {
+  AgentSessionManager,
+  ConfigSyncManager,
+  HubStatusManager,
+  MillsStatusManager,
+  RemoteTunnelManager,
+  UsageAnalyticsManager,
+} from "../managers";
+import {
+  MillsTreeProvider,
+  RegistryProvider,
+  SecretsProvider,
+  ServerProvider,
+  ToolProvider,
+} from "../providers";
+import { WeaverTreeProvider } from "../providers/weaver";
+import { MillsTokenStore } from "../utils/millsToken";
 
 /**
  * Shared context passed to all command handlers.
@@ -19,7 +34,15 @@ export interface CommandContext {
   serverProvider: ServerProvider;
   toolProvider: ToolProvider;
   secretsProvider: SecretsProvider;
+  usageAnalyticsManager: UsageAnalyticsManager;
+  remoteTunnelManager: RemoteTunnelManager;
   extensionContext: vscode.ExtensionContext;
+  agentContextClient?: AgentContextClient;
+  agentSessionManager?: AgentSessionManager;
+  millsStatusManager?: MillsStatusManager;
+  millsTreeProvider?: MillsTreeProvider;
+  millsTokenStore?: MillsTokenStore;
+  weaverTreeProvider?: WeaverTreeProvider;
 }
 
 /**

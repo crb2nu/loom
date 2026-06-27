@@ -35,6 +35,8 @@ export class AgentContextProvider implements vscode.TreeDataProvider<AgentContex
   private readonly emitter = new vscode.EventEmitter<AgentContextTreeItem | undefined | void>();
   readonly onDidChangeTreeData = this.emitter.event;
   private sessions: AgentSession[] = [];
+  private hasLoaded = false;
+  private refreshPromise: Promise<void> | null = null;
 
   constructor(client: AgentContextClient, sessionManager: AgentSessionManager) {
     this.client = client;
@@ -47,8 +49,21 @@ export class AgentContextProvider implements vscode.TreeDataProvider<AgentContex
   }
 
   async refresh(): Promise<void> {
-    this.sessions = await this.client.listSessions();
-    this.emitter.fire();
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.refreshPromise = (async () => {
+      this.sessions = await this.client.listSessions();
+      this.hasLoaded = true;
+      this.emitter.fire();
+    })();
+
+    try {
+      await this.refreshPromise;
+    } finally {
+      this.refreshPromise = null;
+    }
   }
 
   getTreeItem(element: AgentContextTreeItem): vscode.TreeItem {
@@ -71,7 +86,7 @@ export class AgentContextProvider implements vscode.TreeDataProvider<AgentContex
   }
 
   private async getSessionItems(): Promise<AgentContextTreeItem[]> {
-    if (this.sessions.length === 0) {
+    if (!this.hasLoaded) {
       await this.refresh();
     }
 

@@ -6,10 +6,13 @@ import * as vscode from "vscode";
 
 import { DaemonClient } from "../clients/daemon";
 import { PlatformConfigClient } from "../clients/platformConfig";
-import { PlatformType } from "../types";
+import { LoomCoreProfile, PlatformType } from "../types";
 import { PLATFORMS } from "../utils/platform";
 
-export type ProfileType = "full" | "minimal" | "custom";
+export interface OnboardingProfileSource {
+  getActiveProfileName(): string;
+  getProfiles(forceRefresh?: boolean): Promise<LoomCoreProfile[]>;
+}
 
 export interface DetectedPlatform {
   type: PlatformType;
@@ -29,10 +32,19 @@ export interface OnboardingState {
   hubEnabled: boolean;
   selectedPlatforms: PlatformType[];
   detectedPlatforms: DetectedPlatform[];
-  profile: ProfileType;
+  profile: string;
   verificationResults: VerificationResult[];
   completed: boolean;
 }
+
+const FALLBACK_ONBOARDING_PROFILES: LoomCoreProfile[] = [
+  {
+    name: "full",
+    description: "All available tools with smart prioritization",
+    maxTools: 500,
+    servers: "*",
+  },
+];
 
 /**
  * Webview panel for the onboarding wizard.
@@ -44,8 +56,12 @@ export class OnboardingPanel {
   private readonly extensionUri: vscode.Uri;
   private readonly platformConfigClient: PlatformConfigClient;
   private readonly daemonClient: DaemonClient;
+  private readonly profileSource: OnboardingProfileSource;
   private readonly workspaceRoot: string;
   private disposables: vscode.Disposable[] = [];
+  private availableProfiles: LoomCoreProfile[] = [];
+  private profileLoadError?: string;
+  private loadingProfiles = false;
   private state: OnboardingState = {
     step: 1,
     hubUrl: "",
@@ -61,6 +77,7 @@ export class OnboardingPanel {
     extensionUri: vscode.Uri,
     platformConfigClient: PlatformConfigClient,
     daemonClient: DaemonClient,
+    profileSource: OnboardingProfileSource,
     workspaceRoot: string
   ): OnboardingPanel {
     if (OnboardingPanel.currentPanel) {
@@ -83,6 +100,7 @@ export class OnboardingPanel {
       extensionUri,
       platformConfigClient,
       daemonClient,
+      profileSource,
       workspaceRoot
     );
 
@@ -94,27 +112,35 @@ export class OnboardingPanel {
     extensionUri: vscode.Uri,
     platformConfigClient: PlatformConfigClient,
     daemonClient: DaemonClient,
+    profileSource: OnboardingProfileSource,
     workspaceRoot: string
   ) {
     this.panel = panel;
     this.extensionUri = extensionUri;
     this.platformConfigClient = platformConfigClient;
     this.daemonClient = daemonClient;
+    this.profileSource = profileSource;
     this.workspaceRoot = workspaceRoot;
 
     // TODO: Use ConfigManager when OnboardingPanel is refactored to receive injected dependencies
     const config = vscode.workspace.getConfiguration("loom");
     this.state.hubUrl = config.get<string>("hubUrl") ?? "";
-    this.state.hubEnabled = config.get<boolean>("hubEnabled") ?? false;
+    this.state.hubEnabled = this.state.hubUrl.trim().length > 0;
+    this.state.profile =
+      config.get<string>("activeProfile") ?? this.profileSource.getActiveProfileName();
 
     // Auto-detect installed platforms
     this.state.detectedPlatforms = this.detectInstalledPlatforms();
     this.state.selectedPlatforms = this.state.detectedPlatforms
       .filter((p) => p.detected)
       .map((p) => p.type);
+    if (this.state.selectedPlatforms.length === 0) {
+      this.state.selectedPlatforms = ["vscode"];
+    }
 
     // Set initial content
     this.updateContent();
+    void this.loadProfiles();
 
     // Handle messages from webview
     this.panel.webview.onDidReceiveMessage(
@@ -124,7 +150,7 @@ export class OnboardingPanel {
         hubUrl?: string;
         hubEnabled?: boolean;
         platforms?: PlatformType[];
-        profile?: ProfileType;
+        profile?: string;
       }) => {
         switch (message.command) {
           case "next":
@@ -274,9 +300,12 @@ export class OnboardingPanel {
   private async finishOnboarding(): Promise<void> {
     // TODO: Use ConfigManager when OnboardingPanel is refactored to receive injected dependencies
     const config = vscode.workspace.getConfiguration("loom");
-    await config.update("hubUrl", this.state.hubUrl, vscode.ConfigurationTarget.Global);
-    await config.update("hubEnabled", this.state.hubEnabled, vscode.ConfigurationTarget.Global);
-    await config.update("serverProfile", this.state.profile, vscode.ConfigurationTarget.Global);
+    await config.update(
+      "hubUrl",
+      this.state.hubEnabled ? this.state.hubUrl : "",
+      vscode.ConfigurationTarget.Global
+    );
+    await config.update("activeProfile", this.state.profile, vscode.ConfigurationTarget.Global);
     await config.update(
       "enabledPlatforms",
       this.state.selectedPlatforms,
@@ -305,6 +334,28 @@ export class OnboardingPanel {
 
   private updateContent(): void {
     this.panel.webview.html = this.getHtml();
+  }
+
+  private async loadProfiles(): Promise<void> {
+    this.loadingProfiles = true;
+    this.profileLoadError = undefined;
+
+    try {
+      const profiles = await this.profileSource.getProfiles();
+      this.availableProfiles = profiles.length > 0 ? profiles : FALLBACK_ONBOARDING_PROFILES;
+    } catch (error) {
+      this.availableProfiles = FALLBACK_ONBOARDING_PROFILES;
+      this.profileLoadError = error instanceof Error ? error.message : String(error);
+    }
+
+    this.state.profile = selectOnboardingProfile(
+      this.state.profile,
+      this.profileSource.getActiveProfileName(),
+      this.availableProfiles
+    );
+
+    this.loadingProfiles = false;
+    this.updateContent();
   }
 
   private getHtml(): string {
@@ -594,22 +645,6 @@ export class OnboardingPanel {
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
 
-    function next() {
-      vscode.postMessage({ command: 'next' });
-    }
-
-    function back() {
-      vscode.postMessage({ command: 'back' });
-    }
-
-    function skip() {
-      vscode.postMessage({ command: 'skip' });
-    }
-
-    function finish() {
-      vscode.postMessage({ command: 'finish' });
-    }
-
     function updateHubSettings() {
       const hubUrl = document.getElementById('hubUrl')?.value ?? '';
       const hubEnabled = document.getElementById('hubEnabled')?.checked ?? false;
@@ -621,7 +656,8 @@ export class OnboardingPanel {
       card?.classList.toggle('selected');
 
       const selected = Array.from(document.querySelectorAll('.platform-card.selected'))
-        .map(el => el.getAttribute('data-platform'));
+        .map(el => el.getAttribute('data-platform'))
+        .filter(platform => typeof platform === 'string');
       vscode.postMessage({ command: 'updatePlatforms', platforms: selected });
     }
 
@@ -634,6 +670,56 @@ export class OnboardingPanel {
 
     function rerunVerification() {
       vscode.postMessage({ command: 'runVerification' });
+    }
+
+    document.addEventListener('click', (event) => {
+      const target = event.target?.closest?.('[data-action]');
+      if (!target) {
+        return;
+      }
+
+      const action = target.getAttribute('data-action');
+      switch (action) {
+        case 'next':
+          vscode.postMessage({ command: 'next' });
+          break;
+        case 'back':
+          vscode.postMessage({ command: 'back' });
+          break;
+        case 'skip':
+          vscode.postMessage({ command: 'skip' });
+          break;
+        case 'finish':
+          vscode.postMessage({ command: 'finish' });
+          break;
+        case 'toggle-platform': {
+          const platform = target.getAttribute('data-platform');
+          if (platform) {
+            togglePlatform(platform);
+          }
+          break;
+        }
+        case 'select-profile': {
+          const profile = target.getAttribute('data-profile');
+          if (profile) {
+            selectProfile(profile);
+          }
+          break;
+        }
+        case 'rerun-verification':
+          rerunVerification();
+          break;
+      }
+    });
+
+    const hubUrlInput = document.getElementById('hubUrl');
+    if (hubUrlInput) {
+      hubUrlInput.addEventListener('change', updateHubSettings);
+    }
+
+    const hubEnabledInput = document.getElementById('hubEnabled');
+    if (hubEnabledInput) {
+      hubEnabledInput.addEventListener('change', updateHubSettings);
     }
   </script>
 </body>
@@ -666,12 +752,12 @@ export class OnboardingPanel {
 
           <div class="form-group">
             <label for="hubUrl">Hub URL</label>
-            <input type="url" id="hubUrl" placeholder="https://mcp-hub.example.com" value="${this.state.hubUrl}" onchange="updateHubSettings()">
+            <input type="url" id="hubUrl" placeholder="https://mcp-hub.example.com" value="${this.state.hubUrl}">
           </div>
 
           <div class="form-group">
             <label class="checkbox-label">
-              <input type="checkbox" id="hubEnabled" ${this.state.hubEnabled ? "checked" : ""} onchange="updateHubSettings()">
+              <input type="checkbox" id="hubEnabled" ${this.state.hubEnabled ? "checked" : ""}>
               Enable hub connection
             </label>
           </div>
@@ -692,7 +778,7 @@ export class OnboardingPanel {
                 (dp) => `
               <div class="platform-card ${this.state.selectedPlatforms.includes(dp.type) ? "selected" : ""} ${dp.detected ? "detected" : ""}"
                    data-platform="${dp.type}"
-                   onclick="togglePlatform('${dp.type}')">
+                   data-action="toggle-platform">
                 <div class="platform-name">
                   ${PLATFORMS[dp.type].displayName}
                   ${dp.detected ? '<span class="badge">Detected</span>' : ""}
@@ -712,49 +798,18 @@ export class OnboardingPanel {
       case 4:
         return `
           <h2>Choose Server Profile</h2>
-          <p>Select which MCP servers to enable:</p>
+          <p>Select the active loom-core tool profile. These options come from live loom-core profile metadata, with CLI fallback when needed.</p>
 
-          <div class="profile-grid">
-            <label class="profile-card ${this.state.profile === "full" ? "selected" : ""}" onclick="selectProfile('full')">
-              <input type="radio" name="profile" value="full" ${this.state.profile === "full" ? "checked" : ""}>
-              <div class="profile-header">
-                <span class="profile-name">Full</span>
-                <span class="badge recommended">Recommended</span>
-              </div>
-              <p class="profile-desc">All available servers (40+)</p>
-              <ul class="profile-features">
-                <li>Git, GitHub, GitLab</li>
-                <li>Kubernetes, Docker, Helm</li>
-                <li>Prometheus, Grafana, Loki</li>
-                <li>Memory, Agent Context</li>
-              </ul>
-            </label>
-
-            <label class="profile-card ${this.state.profile === "minimal" ? "selected" : ""}" onclick="selectProfile('minimal')">
-              <input type="radio" name="profile" value="minimal" ${this.state.profile === "minimal" ? "checked" : ""}>
-              <div class="profile-header">
-                <span class="profile-name">Minimal</span>
-              </div>
-              <p class="profile-desc">Essential servers only (10)</p>
-              <ul class="profile-features">
-                <li>Git, GitHub</li>
-                <li>Memory</li>
-                <li>Time, Tavily</li>
-              </ul>
-            </label>
-
-            <label class="profile-card ${this.state.profile === "custom" ? "selected" : ""}" onclick="selectProfile('custom')">
-              <input type="radio" name="profile" value="custom" ${this.state.profile === "custom" ? "checked" : ""}>
-              <div class="profile-header">
-                <span class="profile-name">Custom</span>
-              </div>
-              <p class="profile-desc">Choose specific servers</p>
-              <ul class="profile-features">
-                <li>Configure via Loom sidebar</li>
-                <li>Enable/disable individually</li>
-              </ul>
-            </label>
-          </div>
+          ${
+            this.profileLoadError
+              ? `<div class="tip warning"><strong>Note:</strong> Failed to load live profile details from loom-core (${escapeHtml(this.profileLoadError)}). Showing the safest fallback profile.</div>`
+              : ""
+          }
+          ${
+            this.loadingProfiles && this.availableProfiles.length === 0
+              ? '<p class="pending">Loading loom-core profiles...</p>'
+              : `<div class="profile-grid">${this.renderProfileCards()}</div>`
+          }
 
           <div class="tip">
             <strong>Note:</strong> You can change the profile anytime from Loom settings.
@@ -787,7 +842,7 @@ export class OnboardingPanel {
             <div class="tip warning">
               <strong>Note:</strong> Some checks failed. Setup can still complete - fix issues later from the Loom sidebar.
             </div>
-            <button class="btn-secondary" onclick="rerunVerification()">Re-run Checks</button>
+            <button class="btn-secondary" data-action="rerun-verification">Re-run Checks</button>
           `
               : ""
           }
@@ -811,10 +866,18 @@ export class OnboardingPanel {
 
     return `
       <div>
-        ${isFirst ? '<button class="btn-link" onclick="skip()">Skip Setup</button>' : '<button class="btn-secondary" onclick="back()">Back</button>'}
+        ${
+          isFirst
+            ? '<button class="btn-link" data-action="skip">Skip Setup</button>'
+            : '<button class="btn-secondary" data-action="back">Back</button>'
+        }
       </div>
       <div>
-        ${isLast ? '<button class="btn-primary" onclick="finish()">Finish Setup</button>' : '<button class="btn-primary" onclick="next()">Next</button>'}
+        ${
+          isLast
+            ? '<button class="btn-primary" data-action="finish">Finish Setup</button>'
+            : '<button class="btn-primary" data-action="next">Next</button>'
+        }
       </div>
     `;
   }
@@ -831,6 +894,32 @@ export class OnboardingPanel {
       }
     }
   }
+
+  private renderProfileCards(): string {
+    return this.availableProfiles
+      .map((profile, index) => {
+        const selected = this.state.profile === profile.name;
+        const recommended =
+          profile.name === "full" ||
+          (index === 0 && !this.availableProfiles.some((candidate) => candidate.name === "full"));
+        const highlights = summarizeOnboardingProfile(profile);
+
+        return `
+          <label class="profile-card ${selected ? "selected" : ""}" data-action="select-profile" data-profile="${escapeHtml(profile.name)}">
+            <input type="radio" name="profile" value="${escapeHtml(profile.name)}" ${selected ? "checked" : ""}>
+            <div class="profile-header">
+              <span class="profile-name">${escapeHtml(formatOnboardingProfileName(profile.name))}</span>
+              ${recommended ? '<span class="badge recommended">Recommended</span>' : ""}
+            </div>
+            <p class="profile-desc">${escapeHtml(profile.description ?? "Profile details loaded from live loom-core metadata")}</p>
+            <ul class="profile-features">
+              ${highlights.map((highlight) => `<li>${escapeHtml(highlight)}</li>`).join("")}
+            </ul>
+          </label>
+        `;
+      })
+      .join("");
+  }
 }
 
 function getNonce(): string {
@@ -840,4 +929,72 @@ function getNonce(): string {
     text += possible.charAt(Math.floor(Math.random() * possible.length));
   }
   return text;
+}
+
+function escapeHtml(value: string): string {
+  const safeValue = String(value);
+  return safeValue
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+export function selectOnboardingProfile(
+  savedProfile: string,
+  activeProfile: string,
+  availableProfiles: LoomCoreProfile[]
+): string {
+  const availableProfileNames = new Set(availableProfiles.map((profile) => profile.name));
+  if (availableProfileNames.has(savedProfile)) {
+    return savedProfile;
+  }
+
+  if (availableProfileNames.has(activeProfile)) {
+    return activeProfile;
+  }
+
+  return (
+    availableProfiles.find((profile) => profile.name === "full")?.name ??
+    availableProfiles[0]?.name ??
+    "full"
+  );
+}
+
+export function summarizeOnboardingProfile(profile: LoomCoreProfile): string[] {
+  const highlights: string[] = [];
+
+  if (typeof profile.maxTools === "number") {
+    highlights.push(`Max ${profile.maxTools} tools`);
+  }
+
+  if (profile.servers === "*") {
+    highlights.push("All registered servers");
+  } else if (profile.servers.length > 0) {
+    highlights.push(`${profile.servers.length} explicit server routes`);
+  }
+
+  if (profile.categories && profile.categories.length > 0) {
+    highlights.push(
+      `Categories: ${profile.categories
+        .slice(0, 3)
+        .map((category) => formatOnboardingProfileName(category))
+        .join(", ")}`
+    );
+  }
+
+  if (highlights.length === 0) {
+    highlights.push("Profile details loaded from loom-core");
+  }
+
+  return highlights.slice(0, 3);
+}
+
+export function formatOnboardingProfileName(name: string): string {
+  return name
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
 }

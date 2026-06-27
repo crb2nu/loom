@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 
+import { HubClient, HubServerHealth, HubHealthDivergenceEntry } from "../clients/hub";
 import { ProfileManager } from "../managers/profileManager";
 import { ServerMetricsManager } from "../managers/serverMetrics";
 import { ServerHealthPanel } from "../webviews/ServerHealthPanel";
@@ -8,7 +9,35 @@ export interface ServerHealthCommandContext {
   loomChannel: vscode.OutputChannel;
   serverMetricsManager: ServerMetricsManager;
   profileManager: ProfileManager;
+  hubClient: HubClient;
   extensionContext: vscode.ExtensionContext;
+}
+
+interface HubHealthView {
+  hubServers: Record<string, HubServerHealth>;
+  divergence: HubHealthDivergenceEntry[];
+}
+
+/**
+ * Fetch the hub `/api/health` per-server map and top-level divergence for the
+ * Server Health panel. A hub failure degrades gracefully to an empty view so
+ * the metrics dashboard still renders without the divergence banner.
+ */
+async function fetchHubHealthView(
+  hubClient: HubClient,
+  channel: vscode.OutputChannel
+): Promise<HubHealthView> {
+  try {
+    const health = await hubClient.fetchHealth();
+    return {
+      hubServers: (health.servers ?? {}) as Record<string, HubServerHealth>,
+      divergence: (health.divergence ?? []) as HubHealthDivergenceEntry[],
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    channel.appendLine(`[ServerHealth] hub health fetch failed: ${message}`);
+    return { hubServers: {}, divergence: [] };
+  }
 }
 
 /**
@@ -23,20 +52,26 @@ export function registerServerHealthCommands(ctx: ServerHealthCommandContext): v
       const metrics = ctx.serverMetricsManager.getMetrics();
       const history = ctx.serverMetricsManager.getAllHistory();
       const routing = await ctx.profileManager.getRoutingStatus();
+      const hubHealth = await fetchHubHealthView(ctx.hubClient, ctx.loomChannel);
 
       panel.updateData({
         metrics: Array.from(metrics.values()),
         history,
         routing,
+        hubServers: hubHealth.hubServers,
+        divergence: hubHealth.divergence,
       });
 
       // Subscribe to updates
       const disposable = ctx.serverMetricsManager.onDidChangeMetrics(async (newMetrics) => {
         const newRouting = await ctx.profileManager.getRoutingStatus();
+        const newHubHealth = await fetchHubHealthView(ctx.hubClient, ctx.loomChannel);
         panel.updateData({
           metrics: Array.from(newMetrics.values()),
           history: ctx.serverMetricsManager.getAllHistory(),
           routing: newRouting,
+          hubServers: newHubHealth.hubServers,
+          divergence: newHubHealth.divergence,
         });
       });
 
@@ -88,16 +123,16 @@ export function registerServerHealthCommands(ctx: ServerHealthCommandContext): v
     }),
 
     vscode.commands.registerCommand("loom.switchProfile", async () => {
-      const profiles = ctx.profileManager.getProfiles();
+      const profiles = await ctx.profileManager.getProfiles();
       const activeProfile = ctx.profileManager.getActiveProfileName();
 
       const items = profiles.map((p) => ({
         label: p.name === activeProfile ? `$(check) ${p.name}` : p.name,
-        description: p.hubEnabled ? "Hub enabled" : "Local only",
+        description: p.description ?? "loom-core profile",
         detail:
           p.servers === "*"
-            ? "All servers"
-            : `${p.servers.length} server${p.servers.length !== 1 ? "s" : ""}`,
+            ? `All servers${p.maxTools ? ` · max ${p.maxTools} tools` : ""}`
+            : `${p.servers.length} server${p.servers.length !== 1 ? "s" : ""}${p.maxTools ? ` · max ${p.maxTools} tools` : ""}`,
         profileName: p.name,
       }));
 
@@ -122,6 +157,13 @@ export function registerServerHealthCommands(ctx: ServerHealthCommandContext): v
         "",
         `**Active Profile:** ${routing.activeProfile}`,
         `**Hub Status:** ${routing.hubHealthy ? "Healthy" : "Unhealthy"}`,
+        ...(routing.profileDescription
+          ? [`**Profile Description:** ${routing.profileDescription}`]
+          : []),
+        ...(routing.profileMaxTools ? [`**Profile Max Tools:** ${routing.profileMaxTools}`] : []),
+        ...(routing.profileCategories && routing.profileCategories.length > 0
+          ? [`**Profile Categories:** ${routing.profileCategories.join(", ")}`]
+          : []),
         "",
         "## Hub Routed",
         ...(routing.hubRouted.length > 0 ? routing.hubRouted.map((s) => `- ${s}`) : ["- None"]),

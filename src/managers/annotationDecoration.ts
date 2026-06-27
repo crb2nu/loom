@@ -11,6 +11,8 @@ export class AnnotationDecorationManager implements vscode.Disposable {
   private activeDecorations: Map<string, vscode.DecorationOptions[]>;
   private enabled: boolean = true;
   private disposables: vscode.Disposable[] = [];
+  private lastErrorTime = 0;
+  private static readonly ERROR_BACKOFF_MS = 60_000;
 
   constructor(client: AgentContextClient) {
     this.client = client;
@@ -82,7 +84,20 @@ export class AnnotationDecorationManager implements vscode.Disposable {
     }
 
     const filePath = editor.document.uri.fsPath;
-    const annotations = await this.client.getAnnotations(filePath);
+
+    // Back off after recent errors to avoid spamming failed MCP calls
+    const now = Date.now();
+    if (now - this.lastErrorTime < AnnotationDecorationManager.ERROR_BACKOFF_MS) {
+      return;
+    }
+
+    let annotations;
+    try {
+      annotations = await this.client.getAnnotations(filePath);
+    } catch {
+      this.lastErrorTime = Date.now();
+      return;
+    }
 
     // Group annotations by type
     const decorationsByType = new Map<string, vscode.DecorationOptions[]>();

@@ -65,7 +65,7 @@ describe("SkillsClient", () => {
       hide: vi.fn(),
       dispose: vi.fn(),
       replace: vi.fn(),
-    } as unknown as vscode.OutputChannel;
+    };
 
     client = new SkillsClient(mockChannel);
   });
@@ -93,6 +93,18 @@ describe("SkillsClient", () => {
       client.initialize("/workspace");
 
       expect(client.getRegistry()).toBeNull();
+    });
+
+    it("should find registry in home config when workspace is unavailable", () => {
+      const homeDir = process.env.HOME ?? "";
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        return String(p) === `${homeDir}/.config/loom/skills-registry.yaml`;
+      });
+      vi.mocked(fs.readFileSync).mockReturnValue(sampleRegistryYaml);
+
+      client.initialize("");
+
+      expect(client.getSkills()).toHaveLength(2);
     });
   });
 

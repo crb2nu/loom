@@ -27,17 +27,28 @@ export interface HubSettings {
   profile: string;
   cfAccessClientId?: string;
   cfAccessClientSecret?: string;
+  // preferHub: when true (default), the daemon routes every hub-capable
+  // server through the deployed hub instead of spawning local stdio
+  // processes. Persisted as `hub.prefer_hub` in ~/.config/loom/config.yaml.
+  preferHub?: boolean;
 }
 
 export interface HubHealthResponse {
   status?: string;
   timestamp?: string;
   sessions?: number;
+  servers?: Record<string, unknown>;
+  divergence?: unknown[];
+  cacheBackend?: string;
 }
 
 export interface HubReadyResponse {
   ready?: boolean;
+  running?: boolean;
   servers?: number;
+  activeConns?: number;
+  idleConns?: number;
+  processes?: unknown[];
   error?: string;
 }
 
@@ -70,6 +81,8 @@ export interface DaemonToolInfo {
   name: string;
   description?: string;
   server: string;
+  serverPrefix: string;
+  inputSchema?: ToolInputSchema;
 }
 
 export interface HubStatusSnapshot {
@@ -108,6 +121,7 @@ export interface DaemonConfig {
     url: string;
     enabled: boolean;
     profile: string;
+    prefer_hub?: boolean;
     cf_access_client_id?: string;
     cf_access_client_secret?: string;
   };
@@ -169,14 +183,14 @@ export interface AgentSession {
   agent_id: string;
   started_at: string;
   ended_at?: string;
-  status: "active" | "ended";
+  status: "active" | "ended" | "summarized";
   entry_count: number;
 }
 
 export interface AgentContextEntry {
   entry_id: string;
   session_id: string;
-  entry_type: "decision" | "finding" | "file_read" | "question" | "note" | "error";
+  entry_type: string;
   title: string;
   content: string;
   tags?: string[];
@@ -262,11 +276,38 @@ export interface ServerProfile {
   hubEnabled: boolean;
 }
 
+export interface LoomCoreProfile {
+  name: string;
+  description?: string;
+  maxTools?: number;
+  servers: string[] | "*";
+  categories?: string[];
+}
+
+// ============================================================================
+// Remote Tunnel Types
+// ============================================================================
+
+export interface RemoteTunnelProfile {
+  name: string;
+  context?: string;
+  namespace: string;
+  service: string;
+  localPort: number;
+  remotePort: number;
+  hubPath?: string;
+  autoSetHubUrl?: boolean;
+}
+
 export interface RoutingStatus {
   hubRouted: string[];
   localRouted: string[];
   hubHealthy: boolean;
   activeProfile: string;
+  profileDescription?: string;
+  profileMaxTools?: number;
+  profileServers?: string[] | "*";
+  profileCategories?: string[];
 }
 
 // ============================================================================
@@ -276,12 +317,73 @@ export interface RoutingStatus {
 /**
  * Supported platform types for MCP configuration.
  */
-export type PlatformType = "vscode" | "antigravity" | "gemini" | "codex" | "kilocode" | "claude";
+export type PlatformType =
+  | "vscode"
+  | "antigravity"
+  | "gemini"
+  | "codex"
+  | "kilocode"
+  | "claude"
+  | "opencode"
+  | "zed";
+
+export type DoctorCheckStatus = "ok" | "n/a" | "stale" | "missing" | "healthy" | "error";
 
 /**
  * Sync status for a platform configuration.
  */
 export type PlatformSyncStatus = "synced" | "out-of-sync" | "missing" | "error" | "unknown";
+
+export interface DoctorPlatformCapabilities {
+  SessionStartHook?: boolean;
+  SessionEndHook?: boolean;
+  PostToolUseHook?: boolean;
+  PreToolUseHook?: boolean;
+  NotifyHook?: boolean;
+  MCPServers?: boolean;
+  Permissions?: boolean;
+  SandboxMode?: boolean;
+  WebSearch?: boolean;
+  CustomModels?: boolean;
+  PluginSystem?: boolean;
+  DisplayName?: string;
+}
+
+export interface DoctorPlatformReport {
+  platform: string;
+  hooks: DoctorCheckStatus;
+  perms: DoctorCheckStatus;
+  schema: DoctorCheckStatus;
+  status: DoctorCheckStatus;
+  config_path?: string;
+  details?: string[];
+  capabilities?: DoctorPlatformCapabilities;
+}
+
+export interface DoctorTemplateProfile {
+  profile?: string;
+  unresolved?: number;
+  items?: string[];
+  fix?: string[];
+}
+
+export interface DoctorEnvWarning {
+  key?: string;
+  message?: string;
+  fix?: string;
+  servers?: string[];
+}
+
+export interface DoctorReport {
+  ok: boolean;
+  platforms: DoctorPlatformReport[];
+  loomBinary?: string;
+  registry?: string;
+  registrySource?: string;
+  registryPrecedence?: string[];
+  templateProfiles?: DoctorTemplateProfile[];
+  envWarnings?: DoctorEnvWarning[];
+}
 
 /**
  * Platform configuration state.
@@ -291,12 +393,14 @@ export interface PlatformConfig {
   format: "json" | "toml";
   repoPath: string; // Full path to repo config
   homePath: string; // Full path to home config
+  artifacts?: PlatformConfigArtifact[];
   syncStatus: PlatformSyncStatus;
   serverCount: number;
   repoHash?: string;
   homeHash?: string;
   lastChecked: Date;
   error?: string;
+  doctor?: DoctorPlatformReport;
 }
 
 /**
@@ -319,6 +423,14 @@ export interface SyncDashboardState {
   registryPath?: string;
   registryServerCount: number;
   lastUpdated: Date;
+}
+
+export interface PlatformConfigArtifact {
+  label: string;
+  path: string;
+  required: boolean;
+  exists: boolean;
+  hash?: string;
 }
 
 /**

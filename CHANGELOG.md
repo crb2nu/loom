@@ -5,6 +5,43 @@ All notable changes to the Loom extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+## [1.1.0] - 2026-05-04
+
+### Added
+
+- Mills (formerly hive in loom-core) read-only support: `MillsClient` over the HUD proxy at `/api/mills/*`, status manager with auto-hiding status bar item, and `Loom: Show Mills Status` command
+- "Loom Mills" tree view in the explorer with sections for Backlog, Pipeline Runs, Council Runs, Squads, Audit Findings, and Policy Proposals — lazy-loaded with empty/error placeholders and a refresh icon
+- `MillsDetailPanel` webview reused across five subjects (backlog item, council run, pipeline run, audit finding, policy proposal); tree leaves carry a typed `MillsSubjectRef` and a click command
+- `MillsAdminClient` with admin-token-gated mutations: council dryrun/run, pipeline pause/resume/escalate, policy proposal apply/reject, backlog submit
+- `MillsTokenStore` wraps `SecretStorage` so the HUD admin token never lives in settings; commands prompt on demand and gate every mutation on a modal confirmation
+- Wire-format strings (REST paths, env names, Prometheus prefix, namespace) centralized in `src/clients/millsTransport.ts`
+- `loom.mills.hudBaseUrl` and `loom.mills.refreshIntervalMs` settings; `loom.mills.setAdminToken` / `clearAdminToken` commands
+
+### Coordination
+
+- Wire format matches loom-core's hive→mills rename. Requires the corresponding `platform/gitops` cluster reconcile (namespace `loom-mills`, ConfigMaps, secrets, PVC migration) to be live before the extension can talk to a HUD.
+
+## [1.0.0] - 2026-04-10
+
+### Added
+
+- Added platform parity for OpenCode and Zed across settings, onboarding, platform metadata, and tests
+- Added `Loom: Show Doctor Report` backed by `loom doctor --json`
+- Added extension-surface parity tests for registered commands and contributed settings
+- Added planning docs refresh for the current `1.0.0` readiness effort
+
+### Changed
+
+- Profile selection continues to use loom-core `profile list/show` with compatibility fallbacks retained until a machine-readable profile contract lands
+- Platform sync now prefers `loom sync <platform> --regen`, `loom pull <platform>`, and doctor-based drift reporting
+- Agent context recall and memory flows now prefer current loom-core tools with compatibility fallbacks retained
+
+### Deprecated
+
+- `loom.profiles` is now ignored in favor of loom-core profiles and only retained as a compatibility shim
+
 ## [0.9.0] - 2026-02-01
 
 ### Added

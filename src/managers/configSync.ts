@@ -9,6 +9,7 @@ import * as vscode from "vscode";
 import { ConfigSyncState } from "../types";
 import { resolveLoomBinary } from "../utils/binary";
 import { Logger } from "../utils/logger";
+import { getCurrentPlatformInfo } from "../utils/platform";
 
 export type OfflineMode = "online" | "offline" | "degraded";
 
@@ -84,11 +85,43 @@ export class ConfigSyncManager implements vscode.Disposable {
 
   readonly onDidChange = this.emitter.event;
 
+  private applyState(nextState: ConfigSyncState): void {
+    const changed = this.hasMeaningfulStateChange(this.state, nextState);
+    this.state = nextState;
+    this.updateStatusBar();
+
+    if (!changed) {
+      return;
+    }
+
+    this.logState();
+    this.emitter.fire(this.state);
+  }
+
+  private hasMeaningfulStateChange(previous: ConfigSyncState, next: ConfigSyncState): boolean {
+    const previousDiffs = previous.diffs ?? [];
+    const nextDiffs = next.diffs ?? [];
+
+    return (
+      previous.status !== next.status ||
+      previous.generatedPath !== next.generatedPath ||
+      previous.appliedPath !== next.appliedPath ||
+      previous.generatedHash !== next.generatedHash ||
+      previous.appliedHash !== next.appliedHash ||
+      previousDiffs.length !== nextDiffs.length ||
+      previousDiffs.some((diff, index) => diff !== nextDiffs[index])
+    );
+  }
+
   /**
    * Get current offline state.
    */
   getOfflineState(): OfflineState {
-    return { ...this.offlineState };
+    return {
+      ...this.offlineState,
+      pendingSyncs: [...this.offlineState.pendingSyncs],
+      cachedServers: [...this.offlineState.cachedServers],
+    };
   }
 
   /**
@@ -96,6 +129,7 @@ export class ConfigSyncManager implements vscode.Disposable {
    */
   setOfflineMode(mode: OfflineMode, reason?: string): void {
     const wasOnline = this.offlineState.mode === "online";
+    const changed = this.offlineState.mode !== mode;
     this.offlineState.mode = mode;
     this.offlineState.reason = reason;
 
@@ -103,6 +137,11 @@ export class ConfigSyncManager implements vscode.Disposable {
       this.offlineState.lastOnline = new Date();
       // Process pending syncs
       void this.processPendingSyncs();
+    }
+
+    // Skip status bar, event, and log updates when mode hasn't changed
+    if (!changed) {
+      return;
     }
 
     this.updateOfflineStatusBar();
@@ -125,8 +164,17 @@ export class ConfigSyncManager implements vscode.Disposable {
     const exists = this.offlineState.pendingSyncs.some((s) => s.platform === platform);
     if (!exists) {
       this.offlineState.pendingSyncs.push({ platform, timestamp: new Date() });
+      this.updateOfflineStatusBar();
+      this.offlineEmitter.fire(this.getOfflineState());
       this.logger.info(`Queued pending sync for ${platform}`);
     }
+  }
+
+  /**
+   * Process pending syncs immediately.
+   */
+  async processPendingSyncsNow(): Promise<PendingSyncResult[]> {
+    return this.processPendingSyncs();
   }
 
   /**
@@ -153,15 +201,17 @@ export class ConfigSyncManager implements vscode.Disposable {
 
   /**
    * Process pending syncs when back online.
-   * Executes `loom sync <platform>` for each queued platform.
+   * Executes `loom sync <platform> --regen` for each queued platform.
    */
-  private async processPendingSyncs(): Promise<void> {
+  private async processPendingSyncs(): Promise<PendingSyncResult[]> {
     if (this.offlineState.pendingSyncs.length === 0) {
-      return;
+      return [];
     }
 
     const pending = [...this.offlineState.pendingSyncs];
     this.offlineState.pendingSyncs = [];
+    this.updateOfflineStatusBar();
+    this.offlineEmitter.fire(this.getOfflineState());
 
     this.logger.info(`Processing ${pending.length} pending syncs`);
 
@@ -175,7 +225,7 @@ export class ConfigSyncManager implements vscode.Disposable {
 
       try {
         const loomBinary = resolveLoomBinary(this.root);
-        await execFileAsync(loomBinary, ["sync", sync.platform], {
+        await execFileAsync(loomBinary, ["sync", sync.platform, "--regen"], {
           cwd: this.root || os.homedir(),
           timeout: 30000,
         });
@@ -210,6 +260,10 @@ export class ConfigSyncManager implements vscode.Disposable {
     } else if (successful > 0) {
       vscode.window.showInformationMessage(`Processed ${successful} pending sync(s) successfully.`);
     }
+
+    this.updateOfflineStatusBar();
+    this.offlineEmitter.fire(this.getOfflineState());
+    return results;
   }
 
   /**
@@ -262,27 +316,20 @@ export class ConfigSyncManager implements vscode.Disposable {
 
   private async performCheck(): Promise<void> {
     if (!this.root) {
-      this.state = { status: "unknown", lastChecked: new Date() };
-      this.updateStatusBar();
-      this.emitter.fire(this.state);
+      this.applyState({ status: "unknown", lastChecked: new Date() });
       return;
     }
 
-    // After loom sync, config is in .vscode-mcp/mcp.json (source of truth)
-    // and we apply keychain resolution to .vscode/mcp.json (for VS Code MCP extension)
-    const generatedPath = path.join(this.root, ".vscode-mcp", "mcp.json");
-    const appliedPath = path.join(this.root, ".vscode", "mcp.json");
+    const { generatedPath, appliedPath } = this.getSyncPaths();
 
     try {
       await fsp.access(generatedPath);
     } catch {
-      this.state = {
+      this.applyState({
         status: "no-generated",
         appliedPath,
         lastChecked: new Date(),
-      };
-      this.updateStatusBar();
-      this.emitter.fire(this.state);
+      });
       return;
     }
 
@@ -292,9 +339,7 @@ export class ConfigSyncManager implements vscode.Disposable {
     try {
       generatedContent = await fsp.readFile(generatedPath, "utf-8");
     } catch {
-      this.state = { status: "unknown", lastChecked: new Date() };
-      this.updateStatusBar();
-      this.emitter.fire(this.state);
+      this.applyState({ status: "unknown", lastChecked: new Date() });
       return;
     }
 
@@ -309,8 +354,10 @@ export class ConfigSyncManager implements vscode.Disposable {
 
     const diffs = this.computeDiffs(generatedContent, appliedContent);
 
+    let nextState: ConfigSyncState;
+
     if (!appliedContent) {
-      this.state = {
+      nextState = {
         status: "out-of-sync",
         generatedPath,
         appliedPath,
@@ -321,7 +368,7 @@ export class ConfigSyncManager implements vscode.Disposable {
     } else if (generatedHash === appliedHash || diffs.length === 0) {
       // Configs are synced if hashes match OR if server lists are identical.
       // Content differences are expected due to keychain/env placeholder resolution.
-      this.state = {
+      nextState = {
         status: "synced",
         generatedPath,
         appliedPath,
@@ -330,7 +377,7 @@ export class ConfigSyncManager implements vscode.Disposable {
         lastChecked: new Date(),
       };
     } else {
-      this.state = {
+      nextState = {
         status: "out-of-sync",
         generatedPath,
         appliedPath,
@@ -341,9 +388,7 @@ export class ConfigSyncManager implements vscode.Disposable {
       };
     }
 
-    this.updateStatusBar();
-    this.logState();
-    this.emitter.fire(this.state);
+    this.applyState(nextState);
   }
 
   private logState(): void {
@@ -426,8 +471,7 @@ export class ConfigSyncManager implements vscode.Disposable {
       return;
     }
 
-    const generatedPath = path.join(this.root, ".vscode-mcp", "mcp.json");
-    const appliedPath = path.join(this.root, ".vscode", "mcp.json");
+    const { generatedPath, appliedPath } = this.getSyncPaths();
 
     for (const filePath of [generatedPath, appliedPath]) {
       try {
@@ -450,5 +494,23 @@ export class ConfigSyncManager implements vscode.Disposable {
         }
       }
     }
+  }
+
+  private getSyncPaths(): { generatedPath: string; appliedPath: string } {
+    const platform = getCurrentPlatformInfo();
+
+    // VS Code maintains a generated source-of-truth file under .vscode-mcp and an
+    // applied file under .vscode after placeholder resolution.
+    if (platform.type === "vscode") {
+      return {
+        generatedPath: path.join(this.root, ".vscode-mcp", "mcp.json"),
+        appliedPath: path.join(this.root, ".vscode", "mcp.json"),
+      };
+    }
+
+    return {
+      generatedPath: path.join(this.root, platform.repoConfigPath),
+      appliedPath: path.join(os.homedir(), platform.homeConfigPath),
+    };
   }
 }

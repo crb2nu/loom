@@ -46,9 +46,16 @@ describe("DaemonClient", () => {
       hide: vi.fn(),
       dispose: vi.fn(),
       replace: vi.fn(),
-    } as unknown as vscode.OutputChannel;
+    };
 
     client = new DaemonClient("/workspace", mockChannel);
+    // Speed up retry-based tests.
+    (client as unknown as { retryConfig: unknown }).retryConfig = {
+      maxRetries: 3,
+      initialDelayMs: 1,
+      maxDelayMs: 2,
+      backoffMultiplier: 1,
+    };
   });
 
   describe("getServers", () => {
@@ -139,7 +146,9 @@ git       idle      Git operations`;
 
   describe("isDaemonRunning", () => {
     it("should return true when daemon is running", async () => {
-      mockExecFile("daemon running on pid 12345");
+      mockExecFile(
+        "Daemon status:\n  Lock:    held (PID 12345)\n  Socket:  active (/tmp/loom.sock)"
+      );
 
       const running = await client.isDaemonRunning();
 
@@ -178,28 +187,62 @@ git       idle      Git operations`;
   });
 
   describe("getTools", () => {
-    it("should parse tool list output", async () => {
-      const toolOutput = `NAME                          DESCRIPTION
-----                          -----------
-github__list_repos            List GitHub repositories
-github__create_issue          Create GitHub issue
-prometheus__query             Query Prometheus metrics`;
+    it("should parse paged JSON tool list output with normalized metadata", async () => {
+      const page1 = JSON.stringify({
+        page: 1,
+        totalPages: 2,
+        tools: [
+          {
+            name: "github__list_repos",
+            description: "List GitHub repositories",
+            inputSchema: {
+              type: "object",
+              properties: {
+                query: { type: "string" },
+              },
+            },
+          },
+          { name: "github__create_issue", description: "Create GitHub issue" },
+        ],
+      });
+      const page2 = JSON.stringify({
+        page: 2,
+        total_pages: 2,
+        tools: [
+          {
+            name: "prometheus__query",
+            description: "Query Prometheus metrics",
+            input_schema: {
+              properties: {
+                query: { type: "string" },
+                limit: { type: "number" },
+              },
+            },
+          },
+        ],
+      });
 
-      mockExecFile(toolOutput);
-
+      mockExecFileAsync.mockResolvedValueOnce({ stdout: page1, stderr: "" });
+      mockExecFileAsync.mockResolvedValueOnce({ stdout: page2, stderr: "" });
       const tools = await client.getTools();
 
       expect(tools).toHaveLength(3);
       expect(tools[0].name).toBe("github__list_repos");
       expect(tools[0].server).toBe("github");
+      expect(tools[0].serverPrefix).toBe("github");
       expect(tools[0].description).toBe("List GitHub repositories");
+      expect(tools[0].inputSchema?.type).toBe("object");
+      expect(tools[0].inputSchema?.properties).toHaveProperty("query");
+      expect(tools[2].inputSchema?.properties).toHaveProperty("limit");
     });
 
     it("should use cached tools within timeout", async () => {
-      const toolOutput = `NAME                 DESCRIPTION
-github__list_repos   List repos`;
-
-      mockExecFile(toolOutput);
+      const page1 = JSON.stringify({
+        page: 1,
+        totalPages: 1,
+        tools: [{ name: "github__list_repos", description: "List repos" }],
+      });
+      mockExecFile(page1);
 
       // First call
       await client.getTools();
@@ -211,7 +254,29 @@ github__list_repos   List repos`;
       expect(mockExecFileAsync).toHaveBeenCalledTimes(callCount);
     });
 
-    it("should return empty array on error", async () => {
+    it("should fallback to text parsing when JSON listing fails", async () => {
+      const textOutput = `NAME                          DESCRIPTION
+----                          -----------
+github__list_repos            List GitHub repositories
+prometheus__query             Query Prometheus metrics`;
+      // JSON path fails (4 attempts with retry), fallback text succeeds.
+      mockExecFileAsync
+        .mockRejectedValueOnce(new Error("unknown flag: --json"))
+        .mockRejectedValueOnce(new Error("unknown flag: --json"))
+        .mockRejectedValueOnce(new Error("unknown flag: --json"))
+        .mockRejectedValueOnce(new Error("unknown flag: --json"))
+        .mockResolvedValueOnce({ stdout: textOutput, stderr: "" });
+
+      const tools = await client.getTools();
+
+      expect(tools).toHaveLength(2);
+      expect(tools[0].name).toBe("github__list_repos");
+      expect(tools[0].server).toBe("github");
+      expect(tools[0].serverPrefix).toBe("github");
+      expect(tools[0].inputSchema).toBeUndefined();
+    });
+
+    it("should return empty array when both JSON and text listing fail", async () => {
       mockExecFileError(new Error("command failed"));
 
       const tools = await client.getTools();
@@ -240,6 +305,15 @@ github__list_repos   List repos`;
       expect(result.result).toBe("plain text output");
     });
 
+    it("should treat top-level JSON error payload as a tool failure", async () => {
+      mockExecFile('{"error":"daemon error for tools/call: access denied"}');
+
+      const result = await client.executeTool("github__create_issue", {});
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("access denied");
+    });
+
     it("should return error on failure", async () => {
       mockExecFileError(new Error("tool execution failed"));
 
@@ -258,6 +332,38 @@ github__list_repos   List repos`;
       expect(mockChannel.appendLine).toHaveBeenCalledWith(
         expect.stringContaining("warning: deprecated API")
       );
+    });
+
+    it("should emit tool execution event on success", async () => {
+      const events: Array<{
+        toolName: string;
+        success: boolean;
+      }> = [];
+      client.onToolExecution((event) => {
+        events.push({ toolName: event.toolName, success: event.success });
+      });
+      mockExecFile('{"ok":true}');
+
+      await client.executeTool("github__list_repos", { limit: 1 });
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toEqual({ toolName: "github__list_repos", success: true });
+    });
+
+    it("should emit tool execution event on failure", async () => {
+      const events: Array<{
+        toolName: string;
+        success: boolean;
+      }> = [];
+      client.onToolExecution((event) => {
+        events.push({ toolName: event.toolName, success: event.success });
+      });
+      mockExecFileError(new Error("boom"));
+
+      await client.executeTool("failing_tool", {});
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toEqual({ toolName: "failing_tool", success: false });
     });
   });
 
@@ -331,6 +437,48 @@ github__list_repos   List repos`;
       const result = await client.restartServer("github");
 
       expect(result).toBe(false);
+    });
+  });
+
+  describe("daemon lifecycle recovery", () => {
+    it("should notify when start daemon recovers after a retry", async () => {
+      mockExecFileAsync
+        .mockRejectedValueOnce(new Error("temporary start failure"))
+        .mockResolvedValueOnce({ stdout: "", stderr: "" })
+        .mockResolvedValueOnce({
+          stdout: "Daemon status:\n  Lock:    held (PID 12345)\n  Socket:  active (/tmp/loom.sock)",
+          stderr: "",
+        });
+
+      const result = await client.startDaemon();
+
+      expect(result).toBe(true);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
+        expect.stringContaining("Retrying")
+      );
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        expect.stringContaining("recovered and completed start the Loom daemon")
+      );
+    });
+
+    it("should notify when start daemon exhausts retries", async () => {
+      (client as unknown as { retryConfig: unknown }).retryConfig = {
+        maxRetries: 1,
+        initialDelayMs: 1,
+        maxDelayMs: 2,
+        backoffMultiplier: 1,
+      };
+      mockExecFileAsync.mockRejectedValue(new Error("persistent start failure"));
+
+      const result = await client.startDaemon();
+
+      expect(result).toBe(false);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+        expect.stringContaining("failed to start the Loom daemon after 2 attempts")
+      );
     });
   });
 });

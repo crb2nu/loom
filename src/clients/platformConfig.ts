@@ -1,20 +1,32 @@
 import { execFile } from "child_process";
 import * as crypto from "crypto";
-import * as fs from "fs";
-import { promises as fsp } from "fs";
+import { existsSync, promises as fsp } from "fs";
 import * as os from "os";
 import * as path from "path";
 import { promisify } from "util";
 
 import * as vscode from "vscode";
+import { parse as parseYaml } from "yaml";
 
-import { PlatformConfig, PlatformSyncResult, PlatformType, SyncDashboardState } from "../types";
+import {
+  DoctorEnvWarning,
+  DoctorPlatformReport,
+  DoctorReport,
+  PlatformConfigArtifact,
+  PlatformConfig,
+  PlatformSyncResult,
+  PlatformType,
+  SyncDashboardState,
+} from "../types";
 import { resolveLoomBinary } from "../utils/binary";
 import { ConfigManager } from "../utils/configManager";
 import { Logger } from "../utils/logger";
 import { PLATFORMS, getEnabledPlatforms } from "../utils/platform";
 
 const execFileAsync = promisify(execFile);
+const DOCTOR_CACHE_TTL_MS = 30_000;
+const ANTIGRAVITY_REPO_SETTINGS_STUB = path.join(".antigravity", "settings.json");
+const ANTIGRAVITY_HOME_SETTINGS_STUB = path.join(".gemini", "antigravity", "settings.json");
 
 /**
  * Client for managing MCP configurations across multiple platforms.
@@ -26,9 +38,11 @@ export class PlatformConfigClient implements vscode.Disposable {
   private readonly logger: Logger;
   private readonly configManager?: ConfigManager;
   private readonly emitter = new vscode.EventEmitter<PlatformConfig[]>();
-  private configs: Map<PlatformType, PlatformConfig> = new Map();
+  private configs = new Map<PlatformType, PlatformConfig>();
   private checkInterval?: NodeJS.Timeout;
   private lastConfigsHash = "";
+  private cachedDoctorReport?: DoctorReport;
+  private lastDoctorLoadAt = 0;
 
   readonly onDidChange = this.emitter.event;
 
@@ -39,7 +53,6 @@ export class PlatformConfigClient implements vscode.Disposable {
     this.logger = new Logger(channel, "PlatformConfig");
     this.configManager = configManager;
 
-    // Start periodic sync status checks if configured
     const pollInterval = this.configManager
       ? this.configManager.get("syncStatusPollingInterval")
       : vscode.workspace.getConfiguration("loom").get<number>("syncStatusPollingInterval");
@@ -58,46 +71,23 @@ export class PlatformConfigClient implements vscode.Disposable {
     }
   }
 
-  /**
-   * Get the current state of all platform configurations.
-   */
   getConfigs(): PlatformConfig[] {
     return Array.from(this.configs.values());
   }
 
-  /**
-   * Get configuration for a specific platform.
-   */
   getConfig(platform: PlatformType): PlatformConfig | undefined {
     return this.configs.get(platform);
   }
 
-  /**
-   * Get the full dashboard state.
-   */
   async getDashboardState(): Promise<SyncDashboardState> {
     await this.checkAllSyncStatus();
 
-    // Find registry path
     const registryPath = this.findRegistryPath();
     let registryServerCount = 0;
-
     if (registryPath) {
-      try {
-        const content = await fsp.readFile(registryPath, "utf-8");
-        const parsed = JSON.parse(content) as { servers?: unknown[] };
-        registryServerCount = parsed.servers?.length ?? 0;
-      } catch {
-        // Registry might be YAML
-        try {
-          const { parse } = await import("yaml");
-          const content = await fsp.readFile(registryPath, "utf-8");
-          const parsed = parse(content) as { servers?: unknown[] };
-          registryServerCount = parsed.servers?.length ?? 0;
-        } catch {
-          // Ignore parse errors
-        }
-      }
+      const content = await fsp.readFile(registryPath, "utf-8");
+      const parsed = this.parseConfigContent(content);
+      registryServerCount = this.extractServerNames(parsed).length;
     }
 
     return {
@@ -108,398 +98,463 @@ export class PlatformConfigClient implements vscode.Disposable {
     };
   }
 
-  /**
-   * Check sync status for all enabled platforms.
-   * Only fires change event if configs actually changed.
-   */
+  async getDoctorReport(forceRefresh = false): Promise<DoctorReport | null> {
+    const now = Date.now();
+    if (
+      !forceRefresh &&
+      this.cachedDoctorReport &&
+      now - this.lastDoctorLoadAt < DOCTOR_CACHE_TTL_MS
+    ) {
+      return this.cachedDoctorReport;
+    }
+
+    try {
+      const loomBinary = resolveLoomBinary(this.workspaceRoot);
+      const { stdout } = await execFileAsync(loomBinary, ["doctor", "--json"], {
+        cwd: this.workspaceRoot || os.homedir(),
+        timeout: 30_000,
+      });
+      const parsed = JSON.parse(stdout) as Record<string, unknown>;
+      this.cachedDoctorReport = this.normalizeDoctorReport(parsed);
+      this.lastDoctorLoadAt = now;
+      return this.cachedDoctorReport;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to load doctor report: ${message}`);
+      return this.cachedDoctorReport ?? null;
+    }
+  }
+
+  async fixDoctorIssues(): Promise<{ output: string; report: DoctorReport | null }> {
+    const loomBinary = resolveLoomBinary(this.workspaceRoot);
+    const { stdout, stderr } = await execFileAsync(loomBinary, ["doctor", "--fix"], {
+      cwd: this.workspaceRoot || os.homedir(),
+      timeout: 60_000,
+    });
+
+    this.cachedDoctorReport = undefined;
+    this.lastDoctorLoadAt = 0;
+    await this.checkAllSyncStatus();
+
+    return {
+      output: [stdout, stderr].filter(Boolean).join("\n").trim(),
+      report: await this.getDoctorReport(true),
+    };
+  }
+
   async checkAllSyncStatus(): Promise<void> {
     const enabledPlatforms = this.configManager
       ? getEnabledPlatforms(this.configManager.get("enabledPlatforms"))
       : getEnabledPlatforms();
+    const doctorReport = await this.getDoctorReport();
 
-    for (const platform of enabledPlatforms) {
-      await this.checkPlatformSyncStatus(platform);
-    }
+    await Promise.all(
+      enabledPlatforms.map(async (platform) => {
+        const doctor = doctorReport?.platforms.find((item) => item.platform === platform);
+        await this.checkPlatformSyncStatus(platform, doctor, doctorReport?.envWarnings ?? []);
+      })
+    );
 
     this.fireIfChanged();
   }
 
-  /**
-   * Fire change event only if configs have meaningfully changed.
-   */
-  private fireIfChanged(): void {
-    const newHash = this.computeConfigsHash();
-    if (newHash !== this.lastConfigsHash) {
-      this.lastConfigsHash = newHash;
-      this.emitter.fire(this.getConfigs());
-    }
-  }
-
-  /**
-   * Compute a hash of the current configs for change detection.
-   * Excludes lastChecked since it always changes.
-   */
-  private computeConfigsHash(): string {
-    const hashable = Array.from(this.configs.values()).map((c) => ({
-      platform: c.platform,
-      syncStatus: c.syncStatus,
-      serverCount: c.serverCount,
-      repoHash: c.repoHash,
-      homeHash: c.homeHash,
-      error: c.error,
-    }));
-    return JSON.stringify(hashable);
-  }
-
-  /**
-   * Check sync status for a specific platform.
-   */
-  async checkPlatformSyncStatus(platform: PlatformType): Promise<PlatformConfig> {
+  async checkPlatformSyncStatus(
+    platform: PlatformType,
+    doctorOverride?: DoctorPlatformReport,
+    envWarnings: DoctorEnvWarning[] = []
+  ): Promise<PlatformConfig> {
     const info = PLATFORMS[platform];
     const repoPath = path.join(this.workspaceRoot, info.repoConfigPath);
     const homePath = path.join(this.homeDir, info.homeConfigPath);
-
     const config: PlatformConfig = {
       platform,
       format: info.configFormat,
       repoPath,
       homePath,
+      artifacts: [],
       syncStatus: "unknown",
       serverCount: 0,
       lastChecked: new Date(),
+      doctor: doctorOverride,
     };
+    let artifacts: PlatformConfigArtifact[] = [];
 
     try {
+      const supplementalArtifacts = await this.getSupplementalArtifacts(platform);
       const [repoExists, homeExists] = await Promise.all([
         this.fileExists(repoPath),
         this.fileExists(homePath),
       ]);
 
-      if (!repoExists && !homeExists) {
-        config.syncStatus = "missing";
-      } else if (!repoExists) {
-        config.syncStatus = "out-of-sync";
-        config.error = "Repo config missing";
-        if (homeExists) {
-          const homeContent = await this.readConfig(homePath, info.configFormat);
-          config.serverCount = this.countServers(homeContent);
-          config.homeHash = this.hashContent(JSON.stringify(homeContent));
-        }
-      } else if (!homeExists) {
-        config.syncStatus = "out-of-sync";
-        config.error = "Home config missing";
-        const repoContent = await this.readConfig(repoPath, info.configFormat);
-        config.serverCount = this.countServers(repoContent);
-        config.repoHash = this.hashContent(JSON.stringify(repoContent));
-      } else {
-        // Both exist - compare them
-        const [repoContent, homeContent] = await Promise.all([
-          this.readConfig(repoPath, info.configFormat),
-          this.readConfig(homePath, info.configFormat),
-        ]);
+      artifacts = [
+        {
+          label: "Repo config",
+          path: repoPath,
+          required: true,
+          exists: repoExists,
+        },
+        {
+          label: "Home config",
+          path: homePath,
+          required: true,
+          exists: homeExists,
+        },
+        ...supplementalArtifacts,
+      ];
 
-        config.repoHash = this.hashContent(JSON.stringify(repoContent));
-        config.homeHash = this.hashContent(JSON.stringify(homeContent));
-        config.serverCount = this.countServers(repoContent);
+      if (repoExists) {
+        const repoContent = await fsp.readFile(repoPath, "utf-8");
+        config.repoHash = this.hashContent(repoContent);
+        artifacts[0].hash = config.repoHash;
+        config.serverCount = this.extractServerNames(this.parseConfigContent(repoContent)).length;
+      }
 
-        // Compare server lists (not full content, due to placeholder resolution)
-        const repoServers = this.getServerNames(repoContent);
-        const homeServers = this.getServerNames(homeContent);
-
-        if (this.arraysEqual(repoServers, homeServers)) {
-          config.syncStatus = "synced";
-        } else {
-          config.syncStatus = "out-of-sync";
-          config.error = `Server mismatch: repo=${repoServers.length}, home=${homeServers.length}`;
+      if (homeExists) {
+        const homeContent = await fsp.readFile(homePath, "utf-8");
+        config.homeHash = this.hashContent(homeContent);
+        artifacts[1].hash = config.homeHash;
+        if (config.serverCount === 0) {
+          config.serverCount = this.extractServerNames(this.parseConfigContent(homeContent)).length;
         }
       }
-    } catch (err) {
+
+      const warningCount = envWarnings.length;
+      config.artifacts = artifacts;
+      config.syncStatus = this.determineSyncStatus(doctorOverride, repoExists, homeExists);
+      config.error = this.buildConfigError(doctorOverride, repoExists, homeExists, warningCount);
+    } catch (error) {
+      config.artifacts = artifacts;
       config.syncStatus = "error";
-      config.error = err instanceof Error ? err.message : String(err);
+      config.error = error instanceof Error ? error.message : String(error);
+      this.configs.set(platform, config);
+      return config;
     }
 
+    config.artifacts = artifacts;
     this.configs.set(platform, config);
     return config;
   }
 
-  /**
-   * Sync a specific platform's configuration from repo to home.
-   */
   async syncPlatform(platform: PlatformType): Promise<PlatformSyncResult> {
-    const info = PLATFORMS[platform];
-    const repoPath = path.join(this.workspaceRoot, info.repoConfigPath);
-    const homePath = path.join(this.homeDir, info.homeConfigPath);
-
-    this.logger.info(`Syncing ${info.displayName} config...`);
-
-    try {
-      // Check if repo config exists
-      if (!(await this.fileExists(repoPath))) {
-        return {
-          platform,
-          success: false,
-          message: `Repo config not found: ${repoPath}`,
-        };
-      }
-
-      // Read repo config
-      const content = await fsp.readFile(repoPath, "utf-8");
-
-      // Ensure home directory exists
-      await fsp.mkdir(path.dirname(homePath), { recursive: true });
-
-      // Write to home
-      await fsp.writeFile(homePath, content, "utf-8");
-
-      // Re-check sync status
-      await this.checkPlatformSyncStatus(platform);
-
-      this.logger.info(`${info.displayName} synced successfully`);
-
-      return {
-        platform,
-        success: true,
-        message: `Synced ${info.displayName} config`,
-        repoPath,
-        homePath,
-        serversUpdated: this.configs.get(platform)?.serverCount,
-      };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Error syncing ${info.displayName}: ${message}`);
-
-      return {
-        platform,
-        success: false,
-        message,
-        repoPath,
-        homePath,
-      };
-    }
+    return this.runPlatformCommand(
+      platform,
+      ["sync", platform, "--regen"],
+      `Synced ${PLATFORMS[platform].displayName} config`
+    );
   }
 
-  /**
-   * Sync all enabled platforms.
-   */
   async syncAllPlatforms(): Promise<PlatformSyncResult[]> {
-    const enabledPlatforms = getEnabledPlatforms();
+    const enabledPlatforms = this.configManager
+      ? getEnabledPlatforms(this.configManager.get("enabledPlatforms"))
+      : getEnabledPlatforms();
     const results: PlatformSyncResult[] = [];
 
     for (const platform of enabledPlatforms) {
-      const result = await this.syncPlatform(platform);
-      results.push(result);
+      results.push(await this.syncPlatform(platform));
     }
 
-    // Force fire after sync since user initiated action
     this.lastConfigsHash = "";
     this.fireIfChanged();
     return results;
   }
 
-  /**
-   * Pull config from home to repo (reverse sync).
-   */
   async pullFromHome(platform: PlatformType): Promise<PlatformSyncResult> {
-    const info = PLATFORMS[platform];
-    const repoPath = path.join(this.workspaceRoot, info.repoConfigPath);
-    const homePath = path.join(this.homeDir, info.homeConfigPath);
-
-    this.logger.info(`Pulling ${info.displayName} config from home...`);
-
-    try {
-      // Check if home config exists
-      if (!(await this.fileExists(homePath))) {
-        return {
-          platform,
-          success: false,
-          message: `Home config not found: ${homePath}`,
-        };
-      }
-
-      // Read home config
-      const content = await fsp.readFile(homePath, "utf-8");
-
-      // Ensure repo directory exists
-      await fsp.mkdir(path.dirname(repoPath), { recursive: true });
-
-      // Write to repo
-      await fsp.writeFile(repoPath, content, "utf-8");
-
-      // Re-check sync status
-      await this.checkPlatformSyncStatus(platform);
-
-      this.logger.info(`${info.displayName} pulled successfully`);
-
-      return {
-        platform,
-        success: true,
-        message: `Pulled ${info.displayName} config from home`,
-        repoPath,
-        homePath,
-        serversUpdated: this.configs.get(platform)?.serverCount,
-      };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return {
-        platform,
-        success: false,
-        message,
-        repoPath,
-        homePath,
-      };
-    }
+    return this.runPlatformCommand(
+      platform,
+      ["pull", platform],
+      `Pulled ${PLATFORMS[platform].displayName} config from home`
+    );
   }
 
-  /**
-   * Regenerate a platform's config using loom CLI.
-   */
   async regenerateConfig(platform: PlatformType): Promise<PlatformSyncResult> {
-    const info = PLATFORMS[platform];
-
-    this.logger.info(`Regenerating ${info.displayName} config...`);
-
-    try {
-      const loomBinary = resolveLoomBinary(this.workspaceRoot);
-
-      // Run loom sync with the platform target
-      const { stdout, stderr } = await execFileAsync(loomBinary, ["sync", platform, "--regen"], {
-        cwd: this.workspaceRoot,
-      });
-
-      if (stderr) {
-        this.channel.appendLine(stderr);
-      }
-      if (stdout) {
-        this.channel.appendLine(stdout);
-      }
-
-      // Re-check sync status
-      await this.checkPlatformSyncStatus(platform);
-
-      return {
-        platform,
-        success: true,
-        message: `Regenerated ${info.displayName} config`,
-        serversUpdated: this.configs.get(platform)?.serverCount,
-      };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Error regenerating ${info.displayName}: ${message}`);
-
-      return {
-        platform,
-        success: false,
-        message,
-      };
-    }
+    return this.runPlatformCommand(
+      platform,
+      ["sync", platform, "--regen", "--repo-only"],
+      `Regenerated ${PLATFORMS[platform].displayName} config`
+    );
   }
 
-  /**
-   * Get the diff between repo and home configs.
-   */
   async getDiff(platform: PlatformType): Promise<string> {
     const info = PLATFORMS[platform];
     const repoPath = path.join(this.workspaceRoot, info.repoConfigPath);
     const homePath = path.join(this.homeDir, info.homeConfigPath);
+    const config = this.getConfig(platform);
 
-    try {
-      const repoExists = await this.fileExists(repoPath);
-      const homeExists = await this.fileExists(homePath);
+    const [repoExists, homeExists] = await Promise.all([
+      this.fileExists(repoPath),
+      this.fileExists(homePath),
+    ]);
+    const [repoContent, homeContent] = await Promise.all([
+      repoExists ? fsp.readFile(repoPath, "utf-8") : Promise.resolve("(file not found)"),
+      homeExists ? fsp.readFile(homePath, "utf-8") : Promise.resolve("(file not found)"),
+    ]);
 
-      const [repoContent, homeContent] = await Promise.all([
-        repoExists ? fsp.readFile(repoPath, "utf-8") : Promise.resolve("(file not found)"),
-        homeExists ? fsp.readFile(homePath, "utf-8") : Promise.resolve("(file not found)"),
-      ]);
+    const repoServers = repoExists
+      ? this.extractServerNames(this.parseConfigContent(repoContent))
+      : [];
+    const homeServers = homeExists
+      ? this.extractServerNames(this.parseConfigContent(homeContent))
+      : [];
 
-      const repoServers = this.getServerNamesFromContent(repoContent, info.configFormat);
-      const homeServers = this.getServerNamesFromContent(homeContent, info.configFormat);
+    const onlyInRepo = repoServers.filter((server) => !homeServers.includes(server));
+    const onlyInHome = homeServers.filter((server) => !repoServers.includes(server));
 
-      const lines: string[] = [
-        `# ${info.displayName} Configuration Diff`,
-        "",
-        `Repo: ${repoPath}`,
-        `Home: ${homePath}`,
-        "",
-        "## Server Comparison",
-        "",
-      ];
+    const lines: string[] = [
+      `# ${info.displayName} Configuration Diff`,
+      "",
+      `Repo: ${repoPath}`,
+      `Home: ${homePath}`,
+      config?.doctor
+        ? `Doctor: status=${config.doctor.status}, hooks=${config.doctor.hooks}, perms=${config.doctor.perms}, schema=${config.doctor.schema}`
+        : "Doctor: unavailable",
+      "",
+    ];
 
-      // Find differences
-      const onlyInRepo = repoServers.filter((s) => !homeServers.includes(s));
-      const onlyInHome = homeServers.filter((s) => !repoServers.includes(s));
-      const inBoth = repoServers.filter((s) => homeServers.includes(s));
-
-      if (onlyInRepo.length > 0) {
-        lines.push("### Only in Repo:");
-        for (const server of onlyInRepo) {
-          lines.push(`+ ${server}`);
-        }
-        lines.push("");
-      }
-
-      if (onlyInHome.length > 0) {
-        lines.push("### Only in Home:");
-        for (const server of onlyInHome) {
-          lines.push(`- ${server}`);
-        }
-        lines.push("");
-      }
-
-      if (inBoth.length > 0) {
-        lines.push("### In Both:");
-        for (const server of inBoth) {
-          lines.push(`  ${server}`);
-        }
-      }
-
-      if (onlyInRepo.length === 0 && onlyInHome.length === 0) {
-        lines.push("Configs are in sync (same servers)");
-      }
-
-      return lines.join("\n");
-    } catch (err) {
-      return `Error generating diff: ${err instanceof Error ? err.message : String(err)}`;
+    if (onlyInRepo.length > 0) {
+      lines.push("## Only in Repo", "", ...onlyInRepo.map((server) => `- ${server}`), "");
     }
+    if (onlyInHome.length > 0) {
+      lines.push("## Only in Home", "", ...onlyInHome.map((server) => `- ${server}`), "");
+    }
+    if (onlyInRepo.length === 0 && onlyInHome.length === 0) {
+      lines.push("Server sets are aligned.");
+    }
+
+    const supplementalArtifacts = config?.artifacts?.filter((artifact) => !artifact.required) ?? [];
+    if (supplementalArtifacts.length > 0) {
+      lines.push("", "## Supplemental Artifacts");
+      for (const artifact of supplementalArtifacts) {
+        lines.push(
+          `- ${artifact.label}: ${artifact.exists ? "present" : "missing"} \`${artifact.path}\``
+        );
+      }
+    }
+
+    if (config?.error) {
+      lines.push("", `Doctor/Status note: ${config.error}`);
+    }
+
+    return lines.join("\n");
   }
 
-  /**
-   * Backup all platform configs.
-   */
   async backupConfigs(): Promise<string> {
     const backupDir = path.join(this.workspaceRoot, ".loom-backup", this.getTimestamp());
     await fsp.mkdir(backupDir, { recursive: true });
 
-    const enabledPlatforms = getEnabledPlatforms();
-    const backedUp: string[] = [];
+    const enabledPlatforms = this.configManager
+      ? getEnabledPlatforms(this.configManager.get("enabledPlatforms"))
+      : getEnabledPlatforms();
 
     for (const platform of enabledPlatforms) {
       const info = PLATFORMS[platform];
       const repoPath = path.join(this.workspaceRoot, info.repoConfigPath);
       const homePath = path.join(this.homeDir, info.homeConfigPath);
 
-      // Backup repo config
       if (await this.fileExists(repoPath)) {
-        const destPath = path.join(backupDir, `${platform}-repo.${info.configFormat}`);
-        await fsp.copyFile(repoPath, destPath);
-        backedUp.push(`${platform} (repo)`);
+        await fsp.mkdir(path.join(backupDir, platform), { recursive: true });
+        await fsp.copyFile(repoPath, path.join(backupDir, platform, `repo.${info.configFormat}`));
       }
-
-      // Backup home config
       if (await this.fileExists(homePath)) {
-        const destPath = path.join(backupDir, `${platform}-home.${info.configFormat}`);
-        await fsp.copyFile(homePath, destPath);
-        backedUp.push(`${platform} (home)`);
+        await fsp.mkdir(path.join(backupDir, platform), { recursive: true });
+        await fsp.copyFile(homePath, path.join(backupDir, platform, `home.${info.configFormat}`));
       }
     }
-
-    this.logger.info(`Backed up ${backedUp.length} configs to ${backupDir}`);
 
     return backupDir;
   }
 
-  // ============================================================================
-  // Private Helpers
-  // ============================================================================
+  private async runPlatformCommand(
+    platform: PlatformType,
+    args: string[],
+    successMessage: string
+  ): Promise<PlatformSyncResult> {
+    const info = PLATFORMS[platform];
+
+    try {
+      const loomBinary = resolveLoomBinary(this.workspaceRoot);
+      const { stdout, stderr } = await execFileAsync(loomBinary, args, {
+        cwd: this.workspaceRoot || os.homedir(),
+        timeout: 30_000,
+      });
+
+      if (stdout.trim()) {
+        this.channel.appendLine(stdout.trim());
+      }
+      if (stderr.trim()) {
+        this.channel.appendLine(stderr.trim());
+      }
+
+      this.lastDoctorLoadAt = 0;
+      await this.checkAllSyncStatus();
+
+      return {
+        platform,
+        success: true,
+        message: successMessage,
+        repoPath: path.join(this.workspaceRoot, info.repoConfigPath),
+        homePath: path.join(this.homeDir, info.homeConfigPath),
+        serversUpdated: this.configs.get(platform)?.serverCount ?? 0,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`${args.join(" ")} failed: ${message}`);
+      return {
+        platform,
+        success: false,
+        message,
+        repoPath: path.join(this.workspaceRoot, info.repoConfigPath),
+        homePath: path.join(this.homeDir, info.homeConfigPath),
+      };
+    }
+  }
+
+  private normalizeDoctorReport(raw: Record<string, unknown>): DoctorReport {
+    const asRecordArray = (value: unknown): Array<Record<string, unknown>> =>
+      Array.isArray(value)
+        ? value.filter((item): item is Record<string, unknown> =>
+            Boolean(item && typeof item === "object")
+          )
+        : [];
+
+    return {
+      ok: raw.ok !== false,
+      platforms: asRecordArray(raw.platforms).map((platform) => ({
+        platform: this.asString(platform.platform) ?? "",
+        hooks: this.asDoctorStatus(platform.hooks),
+        perms: this.asDoctorStatus(platform.perms),
+        schema: this.asDoctorStatus(platform.schema),
+        status: this.asDoctorStatus(platform.status),
+        config_path: typeof platform.config_path === "string" ? platform.config_path : undefined,
+        details: Array.isArray(platform.details)
+          ? platform.details.filter((entry): entry is string => typeof entry === "string")
+          : undefined,
+        capabilities:
+          platform.capabilities && typeof platform.capabilities === "object"
+            ? (platform.capabilities as DoctorPlatformReport["capabilities"])
+            : undefined,
+      })),
+      loomBinary: typeof raw.loom_binary === "string" ? raw.loom_binary : undefined,
+      registry: typeof raw.registry === "string" ? raw.registry : undefined,
+      registrySource: typeof raw.registry_source === "string" ? raw.registry_source : undefined,
+      registryPrecedence: Array.isArray(raw.registry_precedence)
+        ? raw.registry_precedence.filter((entry): entry is string => typeof entry === "string")
+        : undefined,
+      templateProfiles: asRecordArray(raw.template_profiles).map((profile) => ({
+        profile: typeof profile.profile === "string" ? profile.profile : undefined,
+        unresolved: typeof profile.unresolved === "number" ? profile.unresolved : undefined,
+        items: Array.isArray(profile.items)
+          ? profile.items.filter((entry): entry is string => typeof entry === "string")
+          : undefined,
+        fix: Array.isArray(profile.fix)
+          ? profile.fix.filter((entry): entry is string => typeof entry === "string")
+          : undefined,
+      })),
+      envWarnings: asRecordArray(raw.env_warnings).map((warning) => ({
+        key: typeof warning.key === "string" ? warning.key : undefined,
+        message: typeof warning.message === "string" ? warning.message : undefined,
+        fix: typeof warning.fix === "string" ? warning.fix : undefined,
+        servers: Array.isArray(warning.servers)
+          ? warning.servers.filter((entry): entry is string => typeof entry === "string")
+          : undefined,
+      })),
+    };
+  }
+
+  private asDoctorStatus(value: unknown): DoctorPlatformReport["status"] {
+    if (
+      value === "ok" ||
+      value === "n/a" ||
+      value === "stale" ||
+      value === "missing" ||
+      value === "healthy" ||
+      value === "error"
+    ) {
+      return value;
+    }
+    return "error";
+  }
+
+  private asString(value: unknown): string | undefined {
+    return typeof value === "string" && value.length > 0 ? value : undefined;
+  }
+
+  private determineSyncStatus(
+    doctor: DoctorPlatformReport | undefined,
+    repoExists: boolean,
+    homeExists: boolean
+  ): PlatformConfig["syncStatus"] {
+    if (!repoExists && !homeExists) {
+      return "missing";
+    }
+
+    if (!doctor) {
+      return repoExists && homeExists ? "synced" : "out-of-sync";
+    }
+
+    if (doctor.status === "error") {
+      return "error";
+    }
+    if (doctor.status === "missing") {
+      return "missing";
+    }
+    if (
+      doctor.status !== "healthy" ||
+      doctor.hooks === "stale" ||
+      doctor.perms === "stale" ||
+      doctor.schema === "stale"
+    ) {
+      return "out-of-sync";
+    }
+
+    return repoExists && homeExists ? "synced" : "out-of-sync";
+  }
+
+  private buildConfigError(
+    doctor: DoctorPlatformReport | undefined,
+    repoExists: boolean,
+    homeExists: boolean,
+    envWarningCount: number
+  ): string | undefined {
+    const issues: string[] = [];
+    if (!repoExists) issues.push("repo config missing");
+    if (!homeExists) issues.push("home config missing");
+    if (doctor) {
+      if (doctor.status !== "healthy") issues.push(`doctor status ${doctor.status}`);
+      if (doctor.hooks !== "ok" && doctor.hooks !== "n/a") issues.push(`hooks ${doctor.hooks}`);
+      if (doctor.perms !== "ok" && doctor.perms !== "n/a") issues.push(`perms ${doctor.perms}`);
+      if (doctor.schema !== "ok" && doctor.schema !== "n/a") issues.push(`schema ${doctor.schema}`);
+    }
+    if (envWarningCount > 0) {
+      issues.push(`${envWarningCount} env warning${envWarningCount === 1 ? "" : "s"}`);
+    }
+    return issues.length > 0 ? issues.join("; ") : undefined;
+  }
+
+  private fireIfChanged(): void {
+    const nextHash = JSON.stringify(
+      Array.from(this.configs.values()).map((config) => ({
+        platform: String(config.platform),
+        syncStatus: config.syncStatus,
+        serverCount: config.serverCount,
+        repoHash: config.repoHash,
+        homeHash: config.homeHash,
+        artifacts: config.artifacts?.map((artifact) => ({
+          label: artifact.label,
+          path: artifact.path,
+          required: artifact.required,
+          exists: artifact.exists,
+          hash: artifact.hash,
+        })),
+        error: config.error,
+        doctorStatus: config.doctor?.status,
+      }))
+    );
+
+    if (nextHash !== this.lastConfigsHash) {
+      this.lastConfigsHash = nextHash;
+      this.emitter.fire(this.getConfigs());
+    }
+  }
 
   private async fileExists(filePath: string): Promise<boolean> {
     try {
@@ -510,99 +565,78 @@ export class PlatformConfigClient implements vscode.Disposable {
     }
   }
 
-  private async readConfig(
-    filePath: string,
-    format: "json" | "toml"
-  ): Promise<Record<string, unknown>> {
-    const content = await fsp.readFile(filePath, "utf-8");
-
-    if (format === "json") {
-      return JSON.parse(content) as Record<string, unknown>;
-    }
-
-    // TOML parsing - simplified for now
-    // In production, you'd use a proper TOML parser
+  private parseConfigContent(content: string): Record<string, unknown> {
     try {
-      // Try to parse as JSON first (some "toml" configs might actually be JSON)
       return JSON.parse(content) as Record<string, unknown>;
     } catch {
-      // Return empty object for now - TOML parsing would go here
-      return {};
+      return (parseYaml(content) as Record<string, unknown>) ?? {};
     }
   }
 
-  private countServers(config: Record<string, unknown>): number {
-    // Handle different config structures
-    if (config.mcpServers && typeof config.mcpServers === "object") {
-      return Object.keys(config.mcpServers).length;
-    }
-    if (config.servers && typeof config.servers === "object") {
-      if (Array.isArray(config.servers)) {
-        return config.servers.length;
-      }
-      return Object.keys(config.servers).length;
-    }
-    return 0;
-  }
+  private extractServerNames(content: Record<string, unknown>): string[] {
+    const candidates = [content.mcpServers, content.mcp, content.servers, content.targets];
 
-  private getServerNames(config: Record<string, unknown>): string[] {
-    if (config.mcpServers && typeof config.mcpServers === "object") {
-      return Object.keys(config.mcpServers).sort();
-    }
-    if (config.servers && typeof config.servers === "object") {
-      if (Array.isArray(config.servers)) {
-        return (config.servers as { name?: string }[])
-          .map((s) => s.name ?? "")
-          .filter(Boolean)
-          .sort();
+    for (const candidate of candidates) {
+      if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+        return Object.keys(candidate).sort();
       }
-      return Object.keys(config.servers).sort();
     }
+
     return [];
   }
 
-  private getServerNamesFromContent(content: string, format: "json" | "toml"): string[] {
-    try {
-      if (content === "(file not found)") {
-        return [];
-      }
-      const config: Record<string, unknown> =
-        format === "json" ? (JSON.parse(content) as Record<string, unknown>) : {};
-      return this.getServerNames(config);
-    } catch {
-      return [];
-    }
-  }
-
   private hashContent(content: string): string {
-    return crypto.createHash("sha256").update(content).digest("hex").slice(0, 12);
-  }
-
-  private arraysEqual(a: string[], b: string[]): boolean {
-    if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) {
-      if (a[i] !== b[i]) return false;
-    }
-    return true;
-  }
-
-  private getTimestamp(): string {
-    const now = new Date();
-    return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}${String(now.getSeconds()).padStart(2, "0")}`;
+    return crypto.createHash("sha256").update(content).digest("hex").slice(0, 8);
   }
 
   private findRegistryPath(): string | undefined {
-    const locations = [
-      path.join(this.homeDir, ".config", "loom", "registry.yaml"),
+    const candidates = [
       path.join(this.workspaceRoot, "mcp", "context", "registry.yaml"),
-      path.join(this.workspaceRoot, ".loom", "registry.yaml"),
+      path.join(this.workspaceRoot, ".config", "loom", "registry.yaml"),
+      path.join(this.homeDir, ".config", "loom", "registry.yaml"),
     ];
 
-    for (const loc of locations) {
-      if (fs.existsSync(loc)) {
-        return loc;
+    return candidates.find((candidate) => {
+      try {
+        return existsSync(candidate);
+      } catch {
+        return false;
       }
+    });
+  }
+
+  private async getSupplementalArtifacts(
+    platform: PlatformType
+  ): Promise<PlatformConfigArtifact[]> {
+    if (platform !== "antigravity") {
+      return [];
     }
-    return undefined;
+
+    const repoSettingsPath = path.join(this.workspaceRoot, ANTIGRAVITY_REPO_SETTINGS_STUB);
+    const homeSettingsPath = path.join(this.homeDir, ANTIGRAVITY_HOME_SETTINGS_STUB);
+
+    const [repoExists, homeExists] = await Promise.all([
+      this.fileExists(repoSettingsPath),
+      this.fileExists(homeSettingsPath),
+    ]);
+
+    return [
+      {
+        label: "Repo settings stub",
+        path: repoSettingsPath,
+        required: false,
+        exists: repoExists,
+      },
+      {
+        label: "Home settings stub",
+        path: homeSettingsPath,
+        required: false,
+        exists: homeExists,
+      },
+    ];
+  }
+
+  private getTimestamp(): string {
+    return new Date().toISOString().replace(/[:.]/g, "-");
   }
 }

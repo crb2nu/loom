@@ -103,8 +103,42 @@ describe("resolveLoomBinary", () => {
     mockExistsSync.mockImplementation(
       (p: string) => p === "/workspace/services/loom-core/bin/loom"
     );
+    mockStatSync.mockReturnValue({ isFile: () => true });
 
     const result = resolveLoomBinary("/workspace");
+
+    expect(result).toBe("/workspace/services/loom-core/bin/loom");
+  });
+
+  it("should resolve a sibling loom-core repository", () => {
+    mockExistsSync.mockImplementation(
+      (p: string) => p === "/workspace/services/loom-core/bin/loom"
+    );
+    mockStatSync.mockReturnValue({ isFile: () => true });
+
+    const result = resolveLoomBinary("/workspace/services/loom");
+
+    expect(result).toBe("/workspace/services/loom-core/bin/loom");
+  });
+
+  it("should resolve loom-core from an ancestor monorepo root", () => {
+    mockExistsSync.mockImplementation(
+      (p: string) => p === "/workspace/services/loom-core/bin/loom"
+    );
+    mockStatSync.mockReturnValue({ isFile: () => true });
+
+    const result = resolveLoomBinary("/workspace/platform/gitops");
+
+    expect(result).toBe("/workspace/services/loom-core/bin/loom");
+  });
+
+  it("should resolve the repo-local loom-core binary", () => {
+    mockExistsSync.mockImplementation(
+      (p: string) => p === "/workspace/services/loom-core/bin/loom"
+    );
+    mockStatSync.mockReturnValue({ isFile: () => true });
+
+    const result = resolveLoomBinary("/workspace/services/loom-core");
 
     expect(result).toBe("/workspace/services/loom-core/bin/loom");
   });

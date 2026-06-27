@@ -3,13 +3,18 @@ import * as vscode from "vscode";
 import { DaemonClient } from "../clients/daemon";
 import { DaemonToolInfo } from "../types";
 
+export type SearchResultStatus = "ok" | "error";
+
 export interface SearchResult {
   tool: string;
   source: string;
   data: unknown;
+  status: SearchResultStatus;
   error?: string;
   executedAt?: Date;
   durationMs?: number;
+  snippet?: string;
+  resultCount?: number;
 }
 
 export interface SearchOptions {
@@ -20,21 +25,54 @@ export interface SearchOptions {
 }
 
 // Known search tool configurations
-const SEARCH_TOOL_CONFIGS: Record<
-  string,
-  { queryParam: string; extraParams?: Record<string, unknown> }
-> = {
-  tavily__search: { queryParam: "query", extraParams: { max_results: 10 } },
-  tavily__search_context: { queryParam: "query", extraParams: { max_results: 5 } },
-  github__search_repos: { queryParam: "query", extraParams: { per_page: 10 } },
-  github__search_code: { queryParam: "query", extraParams: { per_page: 10 } },
-  gitlab__search_repositories: { queryParam: "query" },
-  codebase_memory__codebase_search: { queryParam: "query", extraParams: { limit: 10 } },
-  codebase_memory__codebase_text_search: { queryParam: "query", extraParams: { limit: 10 } },
-  memory__search_nodes: { queryParam: "query" },
-  agent_context__agent_context_search: { queryParam: "query", extraParams: { limit: 10 } },
-  qdrant__qdrant_search: { queryParam: "query", extraParams: { limit: 10 } },
+interface SearchToolConfig {
+  queryParam: string;
+  limitParam?: string;
+  staticParams?: Record<string, unknown>;
+}
+
+const LEGACY_SEARCH_TOOL_CONFIGS: Record<string, SearchToolConfig> = {
+  tavily__search: { queryParam: "query", limitParam: "max_results" },
+  tavily__search_context: { queryParam: "query", limitParam: "max_results" },
+  github__search_repos: { queryParam: "query", limitParam: "per_page" },
+  github__search_code: { queryParam: "query", limitParam: "per_page" },
+  gitlab__search_repositories: { queryParam: "search", limitParam: "per_page" },
+  codebase_memory__codebase_search: { queryParam: "query", limitParam: "limit" },
+  codebase_memory__codebase_text_search: {
+    queryParam: "query",
+    limitParam: "limit",
+  },
+  memory__search_nodes: { queryParam: "query", limitParam: "limit" },
+  agent_context__agent_context_search: {
+    queryParam: "query",
+    limitParam: "limit",
+  },
+  qdrant__qdrant_search: { queryParam: "query", limitParam: "limit" },
 };
+
+const QUERY_PARAM_CANDIDATES = ["query", "q", "search", "search_query", "text", "term"] as const;
+const LIMIT_PARAM_CANDIDATES = ["max_results", "limit", "per_page", "top_k", "count"] as const;
+const SEARCH_NAME_HINTS = [
+  "search",
+  "lookup",
+  "find",
+  "query",
+  "discover",
+  "semantic",
+  "match",
+  "browse",
+] as const;
+const RESULT_LIST_KEYS = [
+  "results",
+  "items",
+  "matches",
+  "nodes",
+  "entries",
+  "entities",
+  "repositories",
+  "records",
+  "data",
+] as const;
 
 export class DeepSearchManager {
   private searchHistory: Array<{ query: string; results: SearchResult[]; timestamp: Date }> = [];
@@ -68,12 +106,7 @@ export class DeepSearchManager {
     if (options.tools && options.tools.length > 0) {
       searchTools = tools.filter((t) => options.tools!.includes(t.name));
     } else {
-      searchTools = tools.filter(
-        (t) =>
-          t.name.toLowerCase().includes("search") ||
-          t.name.toLowerCase().includes("find") ||
-          t.name.toLowerCase().includes("query")
-      );
+      searchTools = tools.filter((tool) => this.resolveSearchToolConfig(tool) !== undefined);
     }
 
     if (searchTools.length === 0) {
@@ -107,7 +140,9 @@ export class DeepSearchManager {
             tool: tool.name,
             source: this.getSource(tool.name),
             data: null,
+            status: "error",
             error: reason?.message ?? "Unknown error",
+            executedAt: new Date(),
           });
         }
       }
@@ -123,7 +158,9 @@ export class DeepSearchManager {
             tool: tool.name,
             source: this.getSource(tool.name),
             data: null,
+            status: "error",
             error: message,
+            executedAt: new Date(),
           });
         }
       }
@@ -149,26 +186,11 @@ export class DeepSearchManager {
     maxResults: number
   ): Promise<SearchResult> {
     const startTime = Date.now();
-    const source = this.getSource(tool.name);
+    const source = tool.serverPrefix || this.getSource(tool.name);
 
     // Build tool arguments
-    const config = SEARCH_TOOL_CONFIGS[tool.name];
-    const queryParam = config?.queryParam ?? "query";
-    const extraParams = config?.extraParams ?? {};
-
-    const args: Record<string, unknown> = {
-      [queryParam]: query,
-      ...extraParams,
-    };
-
-    // Override max results if specified
-    if (args.max_results !== undefined) {
-      args.max_results = maxResults;
-    } else if (args.limit !== undefined) {
-      args.limit = maxResults;
-    } else if (args.per_page !== undefined) {
-      args.per_page = maxResults;
-    }
+    const config = this.resolveSearchToolConfig(tool) ?? { queryParam: "query" };
+    const args = this.buildArgs(config, query, maxResults);
 
     this.channel.appendLine(`[DeepSearch] Executing ${tool.name}...`);
 
@@ -185,18 +207,23 @@ export class DeepSearchManager {
           tool: tool.name,
           source,
           data: null,
+          status: "error",
           error: response.error ?? "Tool execution failed",
           executedAt: new Date(),
           durationMs,
         };
       }
 
+      const summary = this.summarizeResult(response.result);
       return {
         tool: tool.name,
         source,
         data: response.result,
+        status: "ok",
         executedAt: new Date(),
         durationMs,
+        snippet: summary.snippet,
+        resultCount: summary.resultCount,
       };
     } catch (error) {
       const durationMs = Date.now() - startTime;
@@ -206,6 +233,7 @@ export class DeepSearchManager {
         tool: tool.name,
         source,
         data: null,
+        status: "error",
         error: message,
         executedAt: new Date(),
         durationMs,
@@ -242,12 +270,7 @@ export class DeepSearchManager {
    */
   public async getSearchTools(): Promise<DaemonToolInfo[]> {
     const tools = await this.daemonClient.getTools();
-    return tools.filter(
-      (t) =>
-        t.name.toLowerCase().includes("search") ||
-        t.name.toLowerCase().includes("find") ||
-        t.name.toLowerCase().includes("query")
-    );
+    return tools.filter((tool) => this.resolveSearchToolConfig(tool) !== undefined);
   }
 
   private getSource(toolName: string): string {
@@ -256,5 +279,215 @@ export class DeepSearchManager {
       return toolName.split("__")[0];
     }
     return "system";
+  }
+
+  private resolveSearchToolConfig(tool: DaemonToolInfo): SearchToolConfig | undefined {
+    return this.inferSearchToolConfigFromSchema(tool) ?? LEGACY_SEARCH_TOOL_CONFIGS[tool.name];
+  }
+
+  private inferSearchToolConfigFromSchema(tool: DaemonToolInfo): SearchToolConfig | undefined {
+    const schemaProperties = this.getSchemaProperties(tool);
+    if (!schemaProperties) {
+      return undefined;
+    }
+
+    const queryParam = this.findQueryParam(schemaProperties, tool);
+    if (!queryParam) {
+      return undefined;
+    }
+
+    const limitParam = this.findLimitParam(schemaProperties);
+    const familyDefaultLimit = this.getDefaultLimitParamForFamily(tool.serverPrefix || tool.server);
+
+    return {
+      queryParam,
+      limitParam: limitParam ?? familyDefaultLimit,
+    };
+  }
+
+  private getSchemaProperties(tool: DaemonToolInfo): Record<string, unknown> | undefined {
+    const properties = tool.inputSchema?.properties;
+    if (!properties || typeof properties !== "object" || Array.isArray(properties)) {
+      return undefined;
+    }
+
+    return properties;
+  }
+
+  private findQueryParam(
+    schemaProperties: Record<string, unknown>,
+    tool: DaemonToolInfo
+  ): string | undefined {
+    const exactCandidate = QUERY_PARAM_CANDIDATES.find((candidate) =>
+      Object.prototype.hasOwnProperty.call(schemaProperties, candidate)
+    );
+    if (exactCandidate) {
+      return exactCandidate;
+    }
+
+    if (!this.isSearchLikeTool(tool)) {
+      return undefined;
+    }
+
+    const requiredProperties = this.getRequiredProperties(tool);
+    const requiredStringCandidates = requiredProperties.filter((propertyName) =>
+      this.isStringLikeProperty(schemaProperties[propertyName])
+    );
+    if (requiredStringCandidates.length === 1) {
+      return requiredStringCandidates[0];
+    }
+
+    const stringCandidates = Object.keys(schemaProperties).filter(
+      (propertyName) =>
+        this.isStringLikeProperty(schemaProperties[propertyName]) &&
+        !this.isLimitLikeName(propertyName)
+    );
+
+    if (stringCandidates.length === 1) {
+      return stringCandidates[0];
+    }
+
+    return requiredStringCandidates[0] ?? stringCandidates[0];
+  }
+
+  private findLimitParam(schemaProperties: Record<string, unknown>): string | undefined {
+    return LIMIT_PARAM_CANDIDATES.find((candidate) =>
+      Object.prototype.hasOwnProperty.call(schemaProperties, candidate)
+    );
+  }
+
+  private getRequiredProperties(tool: DaemonToolInfo): string[] {
+    const required = tool.inputSchema?.required;
+    return Array.isArray(required)
+      ? required.filter((value): value is string => typeof value === "string")
+      : [];
+  }
+
+  private isStringLikeProperty(property: unknown): boolean {
+    if (!property || typeof property !== "object" || Array.isArray(property)) {
+      return false;
+    }
+
+    const typedProperty = property as {
+      type?: string | string[];
+      enum?: unknown[];
+    };
+    const propertyType = typedProperty.type;
+
+    if (typeof propertyType === "string") {
+      return propertyType === "string";
+    }
+
+    if (Array.isArray(propertyType) && propertyType.includes("string")) {
+      return true;
+    }
+
+    return Array.isArray(typedProperty.enum);
+  }
+
+  private isLimitLikeName(propertyName: string): boolean {
+    return LIMIT_PARAM_CANDIDATES.some((candidate) => propertyName.includes(candidate));
+  }
+
+  private isSearchLikeTool(tool: DaemonToolInfo): boolean {
+    const haystack = [tool.name, tool.description, tool.server, tool.serverPrefix]
+      .filter((value): value is string => typeof value === "string")
+      .join(" ")
+      .toLowerCase();
+
+    return SEARCH_NAME_HINTS.some((hint) => haystack.includes(hint));
+  }
+
+  private buildArgs(
+    config: SearchToolConfig,
+    query: string,
+    maxResults: number
+  ): Record<string, unknown> {
+    const args: Record<string, unknown> = {
+      [config.queryParam]: query,
+      ...(config.staticParams ?? {}),
+    };
+
+    if (config.limitParam) {
+      args[config.limitParam] = maxResults;
+    }
+
+    return args;
+  }
+
+  private getDefaultLimitParamForFamily(family: string): string | undefined {
+    const normalized = family.toLowerCase();
+    if (normalized === "tavily") return "max_results";
+    if (normalized === "github" || normalized === "gitlab") return "per_page";
+    if (
+      normalized === "codebase_memory" ||
+      normalized === "agent_context" ||
+      normalized === "qdrant" ||
+      normalized === "memory"
+    ) {
+      return "limit";
+    }
+    return undefined;
+  }
+
+  private summarizeResult(data: unknown): { snippet?: string; resultCount?: number } {
+    if (data === null || data === undefined) {
+      return {};
+    }
+
+    if (typeof data === "string") {
+      const snippet = this.trimSnippet(data);
+      return snippet ? { snippet } : {};
+    }
+
+    if (Array.isArray(data)) {
+      return {
+        resultCount: data.length,
+        snippet: data.length > 0 ? this.stringifySnippet(data[0]) : undefined,
+      };
+    }
+
+    if (typeof data === "object") {
+      const record = data as Record<string, unknown>;
+      for (const key of RESULT_LIST_KEYS) {
+        const value = record[key];
+        if (Array.isArray(value)) {
+          return {
+            resultCount: value.length,
+            snippet: value.length > 0 ? this.stringifySnippet(value[0]) : undefined,
+          };
+        }
+      }
+      return { snippet: this.stringifySnippet(record) };
+    }
+
+    if (typeof data === "number" || typeof data === "boolean" || typeof data === "bigint") {
+      return { snippet: this.trimSnippet(String(data)) };
+    }
+
+    return {};
+  }
+
+  private stringifySnippet(value: unknown): string {
+    if (typeof value === "string") {
+      return this.trimSnippet(value);
+    }
+    if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+      return this.trimSnippet(String(value));
+    }
+    try {
+      return this.trimSnippet(JSON.stringify(value));
+    } catch {
+      return "";
+    }
+  }
+
+  private trimSnippet(input: string): string {
+    const compact = input.replace(/\s+/g, " ").trim();
+    if (!compact) {
+      return "";
+    }
+    const maxLength = 220;
+    return compact.length > maxLength ? `${compact.slice(0, maxLength - 3)}...` : compact;
   }
 }

@@ -1,8 +1,8 @@
 # Project Roadmap
 
-> Last Updated: February 2026
+> Last Updated: April 2026
 
-## Current Status: v0.9.0
+## Current Status: v1.0.0 shipped
 
 Loom is a VS Code extension for MCP (Model Context Protocol) context management. It provides unified configuration sync across multiple AI coding assistant platforms.
 
@@ -12,6 +12,10 @@ Loom is a VS Code extension for MCP (Model Context Protocol) context management.
 - **Deep search framework**: Search across MCP resources
 - **Skill recommendations**: Context-aware skill suggestions
 - **Server metrics**: Performance monitoring and health tracking
+- **Usage analytics**: Tool invocation tracking and report generation
+- **Remote tunnels**: Managed `kubectl` port-forward workflows for remote K8s MCP services
+
+The extension is now on the `1.0.0` line. The remaining work is about stabilizing contracts, aligning docs, and tightening release gates rather than adding another isolated feature tier.
 
 ### v0.8.0 Highlights
 
@@ -30,14 +34,18 @@ Loom is a VS Code extension for MCP (Model Context Protocol) context management.
 ## Implemented Features
 
 ### Onboarding & Discovery (v0.9.0)
+
 - [x] Welcome wizard with first-run detection
 - [x] Workspace environment snapshot
 - [x] Guided setup for registry and daemon
 - [x] Deep search framework for MCP resources
 - [x] Context-aware skill recommendations
 - [x] Server metrics and performance tracking
+- [x] Usage analytics report command
+- [x] Remote tunnel start/stop/status commands
 
 ### Error Handling & Resilience (v0.8.0)
+
 - [x] Daemon error recovery with notifications
 - [x] Offline mode with pending sync queue
 - [x] Config templates for quick setup
@@ -45,6 +53,7 @@ Loom is a VS Code extension for MCP (Model Context Protocol) context management.
 - [x] Config drift detection
 
 ### Platform Management (v0.7.0)
+
 - [x] Platform detection (VS Code vs Antigravity)
 - [x] Loom Platforms tree view
 - [x] Sync dashboard webview
@@ -53,11 +62,13 @@ Loom is a VS Code extension for MCP (Model Context Protocol) context management.
 - [x] Skills platform filtering
 
 ### Server Health (v0.6.0)
+
 - [x] Health monitoring dashboard
 - [x] Profile manager with quick switching
 - [x] Hub vs local routing status
 
 ### Agent Context (v0.5.0)
+
 - [x] Session management (start/end)
 - [x] Context entries (decisions, findings, questions)
 - [x] Task tracking
@@ -65,40 +76,36 @@ Loom is a VS Code extension for MCP (Model Context Protocol) context management.
 - [x] Code annotations with gutter decorations
 
 ### Skills Registry (v0.4.0)
+
 - [x] Skills browser with categories
 - [x] Script execution from VS Code
 - [x] Skill search and filtering
 - [x] Resource and asset access
 
 ### Secrets Management (v0.3.0)
+
 - [x] Secrets view and management
 - [x] Config validation for missing secrets
 - [x] Keychain integration
 
 ### Core Features (v0.1.0-0.2.0)
+
 - [x] MCP Hub integration
 - [x] Server status polling
 - [x] Tools browser
 - [x] Daemon control (start/stop/restart)
 - [x] Config sync from registry
 
-## Upcoming Work
+## 1.0.0 Release Focus
 
-### v1.0.0 Release
+Tracking issue: [#1](https://gitlab.flexinfer.ai/services/loom/-/issues/1)
 
-- [ ] **Test coverage**: Increase to 40%+ coverage
-- [ ] **Marketplace publishing**: VS Code Marketplace release
-- [ ] **API stability**: Document stable vs internal APIs
-- [ ] **Daemon failure recovery**: Retry logic with user notification
-- [ ] **Offline mode completion**: Full pending sync processing
-
-### Post-1.0 Features
-
-- [ ] **Antigravity store**: Publish to Antigravity extension store
-- [ ] **Plugin system**: Allow custom providers and views
-- [ ] **Theme support**: Light/dark theme awareness
-- [ ] **Remote tunnels**: Secure tunneling to remote K8s MCP servers
-- [ ] **Usage analytics**: Track tool usage patterns
+- [ ] **Contract-first profile/runtime adapters**: Prefer Loom resources and JSON-first paths where available; keep text parsing fallback-only.
+- [ ] **Downstream contract verification**: Track selected `loom-core` golden fixtures in CI.
+- [ ] **Parity overview**: Promote fleet, health, tasks, memory, presence, and stream into one shell.
+- [ ] **Search capability metadata**: Replace brittle hardcoded tool-family assumptions.
+- [ ] **Webview hardening**: Reduce inline HTML/JS debt in release-critical panels.
+- [ ] **Release gates**: Keep docs, coverage, package, and publish checks aligned with the shipped surface.
 
 ## Non-Goals
 
@@ -137,8 +144,8 @@ loom CLI (Go) - loom-core
 
 ## References
 
-| Document | Purpose |
-|----------|---------|
-| [README.md](README.md) | Installation and usage |
-| [AGENTS.md](AGENTS.md) | Agent working notes |
-| [CHANGELOG.md](CHANGELOG.md) | Version history |
+| Document                     | Purpose                |
+| ---------------------------- | ---------------------- |
+| [README.md](README.md)       | Installation and usage |
+| [AGENTS.md](AGENTS.md)       | Agent working notes    |
+| [CHANGELOG.md](CHANGELOG.md) | Version history        |

@@ -32,8 +32,10 @@ export class ToolProvider implements vscode.TreeDataProvider<ToolTreeItem> {
     this.daemonClient = daemonClient;
   }
 
-  refresh() {
-    this.daemonClient.invalidateCache();
+  refresh(invalidateCache: boolean = true) {
+    if (invalidateCache) {
+      this.daemonClient.invalidateCache();
+    }
     this.emitter.fire();
   }
 

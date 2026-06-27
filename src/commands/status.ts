@@ -1,10 +1,9 @@
-import * as path from "path";
-
 import * as vscode from "vscode";
 
-import { loadVscodeConfigSnapshot } from "../utils/config";
+import { ParityReadModel } from "../readModels";
 import { formatNameList } from "../utils/helpers";
 import { Logger } from "../utils/logger";
+import { ParityOverviewPanel } from "../webviews/ParityOverviewPanel";
 
 import { CommandContext } from "./types";
 
@@ -26,78 +25,50 @@ async function showStatus(ctx: CommandContext): Promise<void> {
 }
 
 async function showMeshReport(ctx: CommandContext): Promise<void> {
-  const { workspaceRoot, loomChannel, hubStatusManager, registryProvider } = ctx;
+  const {
+    workspaceRoot,
+    hubStatusManager,
+    registryProvider,
+    daemonClient,
+    usageAnalyticsManager,
+    agentContextClient,
+    agentSessionManager,
+    extensionContext,
+  } = ctx;
 
   if (!workspaceRoot) {
     void vscode.window.showErrorMessage("Loom: workspace folder not detected.");
     return;
   }
 
-  const logger = new Logger(loomChannel, "Status");
-  loomChannel.clear();
+  const logger = new Logger(ctx.loomChannel, "Status");
   logger.info("MCP mesh diagnostics");
 
-  const registry = await registryProvider.getRegistrySnapshot();
-  const hubSnapshot = hubStatusManager.getStatus();
-  const configSnapshot = await loadVscodeConfigSnapshot(workspaceRoot);
+  const readModel = new ParityReadModel({
+    workspaceRoot,
+    registryProvider,
+    hubStatusManager,
+    daemonClient,
+    usageAnalyticsManager,
+    agentContextClient,
+    agentSessionManager,
+  });
+  const domains = await readModel.collect();
+  const { summary, fleet, health } = domains;
 
-  const registryNames = new Set<string>(registry?.servers?.map((server) => server.name) ?? []);
-  const hubNames = new Set<string>(hubSnapshot.servers?.map((server) => server.name) ?? []);
-  const configNames = new Set<string>(configSnapshot?.serverNames ?? []);
+  const panel = ParityOverviewPanel.render(extensionContext.extensionUri);
+  panel.updateSnapshot(domains);
 
-  loomChannel.appendLine(
-    `Hub status: ${hubSnapshot.health?.status ?? hubSnapshot.error ?? "unknown"} (ready=${Boolean(hubSnapshot.readiness?.ready)}, sessions=${hubSnapshot.health?.sessions ?? 0})`
-  );
-  loomChannel.appendLine(`Hub URL: ${hubStatusManager.getSettings().hubUrl}`);
-  loomChannel.appendLine(`Profile: ${hubStatusManager.getSettings().profile}`);
-
-  if (!registry) {
-    loomChannel.appendLine("Registry: registry.yaml not found");
-  } else {
-    loomChannel.appendLine(`Registry servers: ${registryNames.size}`);
-  }
-
-  if (configSnapshot) {
-    loomChannel.appendLine(
-      `VS Code config: ${configSnapshot.serverNames.length} servers (${configSnapshot.hubRouted.length} via hub, ${configSnapshot.localRouted.length} local) [${path.relative(workspaceRoot, configSnapshot.source)}]`
-    );
-  } else {
-    loomChannel.appendLine("VS Code config: not found (run sync to generate)");
-  }
-
-  if (registryNames.size > 0) {
-    const missingFromHub = Array.from(registryNames).filter((name) => !hubNames.has(name));
-    const missingFromConfig = Array.from(registryNames).filter((name) => !configNames.has(name));
-    const hubOnly = Array.from(hubNames).filter((name) => !registryNames.has(name));
-    const configOnly = Array.from(configNames).filter((name) => !registryNames.has(name));
-
-    if (missingFromHub.length > 0) {
-      loomChannel.appendLine(`Registry → hub gaps: ${formatNameList(missingFromHub)}`);
-    } else {
-      loomChannel.appendLine("Registry → hub gaps: none");
-    }
-
-    if (missingFromConfig.length > 0) {
-      loomChannel.appendLine(`Registry → VS Code gaps: ${formatNameList(missingFromConfig)}`);
-    } else {
-      loomChannel.appendLine("Registry → VS Code gaps: none");
-    }
-
-    if (hubOnly.length > 0) {
-      loomChannel.appendLine(`Hub-only servers: ${formatNameList(hubOnly)}`);
-    }
-
-    if (configOnly.length > 0) {
-      loomChannel.appendLine(`VS Code-only servers: ${formatNameList(configOnly)}`);
-    }
-  }
-
-  if (configSnapshot?.localRouted.length) {
-    loomChannel.appendLine(
-      `Local-mode servers: ${formatNameList(configSnapshot.localRouted)} (consider hub-mode)`
-    );
-  }
-
-  loomChannel.show(true);
-  void vscode.window.showInformationMessage("Loom: mesh report ready");
+  const overviewText = `${summary.ready} ready / ${summary.degraded} degraded / ${summary.unavailable} unavailable`;
+  const fleetText = `${fleet.registryCount} registry / ${fleet.hubCount} hub / ${fleet.configCount} VS Code`;
+  const localModeText = fleet.localRouted.length
+    ? ` Local-only: ${formatNameList(fleet.localRouted)}.`
+    : "";
+  const diagnostics = [
+    `Hub status ${health.hubStatus} (ready=${health.hubReady}, sessions=${health.hubSessions}).`,
+    `Overview ${overviewText}.`,
+    `Fleet ${fleetText}.${localModeText}`,
+  ].join(" ");
+  logger.info(diagnostics);
+  void vscode.window.showInformationMessage("Loom: overview ready");
 }

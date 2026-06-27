@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 
-import { PlatformType } from "../types";
+import { PlatformType, RemoteTunnelProfile } from "../types";
 
 export interface LoomConfig {
   hubUrl: string;
@@ -18,13 +18,24 @@ export interface LoomConfig {
   onboardingComplete: boolean;
   skillsRegistryPath: string | null;
   serverMetricsInterval: number;
+  plugins: string[];
+  remoteTunnels: RemoteTunnelProfile[];
 }
 
 const DEFAULTS: LoomConfig = {
   hubUrl: "wss://mcp.flexinfer.ai/ws",
   hubProfile: "codex",
   platform: "auto",
-  enabledPlatforms: ["vscode", "antigravity", "gemini", "claude"],
+  enabledPlatforms: [
+    "vscode",
+    "antigravity",
+    "gemini",
+    "claude",
+    "codex",
+    "kilocode",
+    "opencode",
+    "zed",
+  ],
   syncOnStartup: false,
   syncStatusPollingInterval: 60000,
   autoSyncOnDrift: "prompt",
@@ -36,6 +47,8 @@ const DEFAULTS: LoomConfig = {
   onboardingComplete: false,
   skillsRegistryPath: null,
   serverMetricsInterval: 30000,
+  plugins: [],
+  remoteTunnels: [],
 };
 
 export class ConfigManager implements vscode.Disposable {
@@ -94,6 +107,8 @@ export class ConfigManager implements vscode.Disposable {
       skillsRegistryPath: c.get<string | null>("skillsRegistryPath") ?? DEFAULTS.skillsRegistryPath,
       serverMetricsInterval:
         c.get<number>("serverMetricsInterval") ?? DEFAULTS.serverMetricsInterval,
+      plugins: c.get<string[]>("plugins") ?? DEFAULTS.plugins,
+      remoteTunnels: c.get<RemoteTunnelProfile[]>("remoteTunnels") ?? DEFAULTS.remoteTunnels,
     };
   }
 

@@ -8,18 +8,20 @@ import * as vscode from "vscode";
 import { resolveLoomBinary } from "../utils/binary";
 import { formatSyncStatus, getStatusIcon } from "../utils/helpers";
 import { Logger } from "../utils/logger";
+import { getEnabledPlatforms } from "../utils/platform";
 import { isPlaceholder, resolvePlaceholder } from "../utils/secrets";
 
 import { CommandContext } from "./types";
 
 const execFileAsync = promisify(execFile);
-
+let activeSync: Promise<void> | undefined;
 /**
  * Register all sync-related commands.
  */
 export function registerSyncCommands(ctx: CommandContext): vscode.Disposable[] {
   return [
     vscode.commands.registerCommand("loom.showSyncStatus", () => showSyncStatus(ctx)),
+    vscode.commands.registerCommand("loom.showOfflineStatus", () => showOfflineStatus(ctx)),
     vscode.commands.registerCommand("loom.syncConfigs", () => syncConfigs(ctx)),
   ];
 }
@@ -83,6 +85,17 @@ async function showSyncStatus(ctx: CommandContext): Promise<void> {
 }
 
 async function syncConfigs(ctx: CommandContext): Promise<void> {
+  if (activeSync) {
+    return activeSync;
+  }
+
+  activeSync = runSyncConfigs(ctx).finally(() => {
+    activeSync = undefined;
+  });
+  return activeSync;
+}
+
+async function runSyncConfigs(ctx: CommandContext): Promise<void> {
   const {
     workspaceRoot,
     loomChannel,
@@ -106,28 +119,24 @@ async function syncConfigs(ctx: CommandContext): Promise<void> {
       title: "Syncing MCP configurations",
     },
     async () => {
+      const offlineState = configSyncManager.getOfflineState();
+      if (offlineState.mode === "offline") {
+        queuePendingProfileSyncs(configSyncManager);
+        const pendingCount = configSyncManager.getPendingSyncsCount();
+        loomChannel.appendLine(
+          `⚠ Hub is offline. Queued ${pendingCount} pending sync(s) for automatic processing when connection recovers.`
+        );
+        void vscode.window.showWarningMessage(
+          `Loom: Hub offline. Queued ${pendingCount} pending sync(s) for retry when back online.`
+        );
+        return;
+      }
+
       try {
         const hubSettings = hubStatusManager.getSettings();
         const loomBinary = resolveLoomBinary(workspaceRoot);
 
-        // Sync vscode profile (generates and copies to .vscode/)
-        loomChannel.appendLine(`→ ${loomBinary} sync vscode --regen`);
-        await execFileAsync(loomBinary, ["sync", "vscode", "--regen"], {
-          cwd: workspaceRoot,
-          env: { ...process.env, MCP_HUB_URL: hubSettings.hubUrl },
-        });
-        loomChannel.appendLine("✓ vscode profile synced");
-
-        // Sync claude profile (generates and copies to .claude/)
-        loomChannel.appendLine(`→ ${loomBinary} sync claude --regen`);
-        await execFileAsync(loomBinary, ["sync", "claude", "--regen"], {
-          cwd: workspaceRoot,
-          env: { ...process.env, MCP_HUB_URL: hubSettings.hubUrl },
-        });
-        loomChannel.appendLine("✓ claude profile synced");
-
-        // Sync codex and kilocode profiles
-        for (const profile of ["codex", "kilocode"]) {
+        for (const profile of getEnabledPlatforms()) {
           loomChannel.appendLine(`→ ${loomBinary} sync ${profile} --regen`);
           await execFileAsync(loomBinary, ["sync", profile, "--regen"], {
             cwd: workspaceRoot,
@@ -141,6 +150,7 @@ async function syncConfigs(ctx: CommandContext): Promise<void> {
 
         // Check sync status
         await configSyncManager.checkSync();
+        configSyncManager.setOfflineMode("online");
 
         loomChannel.show(true);
         registryProvider.refresh();
@@ -148,12 +158,99 @@ async function syncConfigs(ctx: CommandContext): Promise<void> {
         void vscode.window.showInformationMessage("Loom: synced MCP configs for all profiles");
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        if (isConnectivityFailure(message)) {
+          configSyncManager.setOfflineMode("offline", message);
+          queuePendingProfileSyncs(configSyncManager);
+          const pendingCount = configSyncManager.getPendingSyncsCount();
+          loomChannel.appendLine(
+            `⚠ Hub connectivity issue detected. Queued ${pendingCount} pending sync(s) for retry.`
+          );
+          loomChannel.show(true);
+          void vscode.window.showWarningMessage(
+            `Loom: Hub offline. Queued ${pendingCount} pending sync(s) for automatic retry when online.`
+          );
+          return;
+        }
+
+        configSyncManager.setOfflineMode("degraded", message);
         loomChannel.appendLine(`✗ Sync failed: ${message}`);
         loomChannel.show(true);
         void vscode.window.showErrorMessage(`Loom: failed to sync configs (${message})`);
       }
     }
   );
+}
+
+async function showOfflineStatus(ctx: CommandContext): Promise<void> {
+  const { configSyncManager, hubStatusManager } = ctx;
+  const state = configSyncManager.getOfflineState();
+
+  const modeText =
+    state.mode === "online" ? "Online" : state.mode === "degraded" ? "Degraded" : "Offline";
+  const pendingText = `${state.pendingSyncs.length} pending sync(s)`;
+  const reasonText = state.reason ? `Reason: ${state.reason}` : "Reason: none";
+
+  const picks: Array<vscode.QuickPickItem & { action?: string }> = [
+    {
+      label: `$(cloud) Mode: ${modeText}`,
+      description: pendingText,
+      detail: reasonText,
+    },
+  ];
+
+  if (state.pendingSyncs.length > 0) {
+    picks.push({
+      label: "$(sync) Process pending syncs now",
+      description: "Run queued sync operations immediately",
+      action: "process",
+    });
+  }
+
+  if (state.mode !== "online") {
+    picks.push({
+      label: "$(clock) Queue full profile sync",
+      description: "Queue all enabled platform syncs for retry",
+      action: "queue",
+    });
+  }
+
+  picks.push({
+    label: "$(refresh) Refresh hub status",
+    description: "Re-check hub availability",
+    action: "refresh",
+  });
+
+  const selected = await vscode.window.showQuickPick(picks, {
+    title: "Loom Offline Status",
+    placeHolder: "Select an action",
+  });
+
+  if (!selected?.action) {
+    return;
+  }
+
+  if (selected.action === "process") {
+    const results = await configSyncManager.processPendingSyncsNow();
+    const succeeded = results.filter((r) => r.success).length;
+    const failed = results.length - succeeded;
+    void vscode.window.showInformationMessage(
+      `Loom: processed pending syncs (${succeeded} succeeded, ${failed} failed)`
+    );
+    return;
+  }
+
+  if (selected.action === "queue") {
+    queuePendingProfileSyncs(configSyncManager);
+    const pendingCount = configSyncManager.getPendingSyncsCount();
+    void vscode.window.showInformationMessage(
+      `Loom: queued profile syncs for retry (${pendingCount} pending)`
+    );
+    return;
+  }
+
+  if (selected.action === "refresh") {
+    await hubStatusManager.refresh();
+  }
 }
 
 /**
@@ -224,4 +321,26 @@ export async function applyGeneratedConfigs(
     );
     await fsp.copyFile(generatedVscode, target);
   }
+}
+
+function queuePendingProfileSyncs(configSyncManager: CommandContext["configSyncManager"]): void {
+  for (const profile of getEnabledPlatforms()) {
+    configSyncManager.queuePendingSync(profile);
+  }
+}
+
+function isConnectivityFailure(message: string): boolean {
+  const text = message.toLowerCase();
+  return [
+    "econnrefused",
+    "enotfound",
+    "etimedout",
+    "timed out",
+    "network",
+    "socket",
+    "connect",
+    "offline",
+    "unable to fetch",
+    "fetch failed",
+  ].some((pattern) => text.includes(pattern));
 }

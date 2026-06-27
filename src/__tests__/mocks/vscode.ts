@@ -119,6 +119,14 @@ export enum StatusBarAlignment {
   Right = 2,
 }
 
+export enum ViewColumn {
+  Active = -1,
+  Beside = -2,
+  One = 1,
+  Two = 2,
+  Three = 3,
+}
+
 // Configuration target
 export enum ConfigurationTarget {
   Global = 1,
@@ -160,6 +168,18 @@ const createStatusBarItem = vi.fn(() => ({
   dispose: vi.fn(),
 }));
 
+const createWebviewPanel = vi.fn((_viewType: string, _title: string, _showOptions: unknown) => ({
+  webview: {
+    html: "",
+    cspSource: "vscode-resource:",
+    postMessage: vi.fn(() => Promise.resolve(true)),
+    onDidReceiveMessage: vi.fn(),
+  },
+  onDidDispose: vi.fn(),
+  reveal: vi.fn(),
+  dispose: vi.fn(),
+}));
+
 // Configuration mock
 const createConfiguration = () => {
   const configStore: Record<string, unknown> = {};
@@ -185,6 +205,7 @@ export const window = {
   showInputBox: vi.fn(() => Promise.resolve(undefined)),
   createOutputChannel,
   createStatusBarItem,
+  createWebviewPanel,
   withProgress: vi.fn(async (_options, task) => {
     return task(
       { report: vi.fn() },

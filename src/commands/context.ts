@@ -10,6 +10,7 @@ import { REGISTRY_PATH } from "../constants";
 import { RegistryDocument, SnapshotEnvResult } from "../types";
 import { resolveLoomBinary } from "../utils/binary";
 import { Logger } from "../utils/logger";
+import { getEnabledPlatforms } from "../utils/platform";
 import { isPlaceholder, loadSecretsFromEnvFile, resolvePlaceholder } from "../utils/secrets";
 
 import { applyGeneratedConfigs } from "./sync";
@@ -84,16 +85,16 @@ async function bootstrapContext(ctx: CommandContext): Promise<void> {
         const hubSettings = hubStatusManager.getSettings();
         const loomBinary = resolveLoomBinary(workspaceRoot);
 
-        // Sync all profiles using loom CLI
-        const profiles = ["vscode", "claude", "codex", "kilocode"];
-        for (const profile of profiles) {
+        // Sync all enabled platforms using loom CLI
+        const platforms = getEnabledPlatforms();
+        for (const profile of platforms) {
           loomChannel.appendLine(`→ ${loomBinary} sync ${profile} --regen`);
           await execFileAsync(loomBinary, ["sync", profile, "--regen"], {
             cwd: workspaceRoot,
             env: { ...process.env, MCP_HUB_URL: hubSettings.hubUrl },
           });
         }
-        loomChannel.appendLine("✓ Generated and synced MCP configs for all profiles");
+        loomChannel.appendLine("✓ Generated and synced MCP configs for all enabled platforms");
 
         await applyGeneratedConfigs(workspaceRoot, loomChannel);
         loomChannel.appendLine("✓ Applied keychain/env resolution to workspace config");

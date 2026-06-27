@@ -4,24 +4,43 @@ import * as os from "os";
 import * as path from "path";
 
 import * as vscode from "vscode";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { DEFAULT_HUB_URL } from "../constants";
-import { DaemonConfig, HubSettings, VscodeConfigSnapshot } from "../types";
+import { HubSettings, VscodeConfigSnapshot } from "../types";
 
 /**
  * Derive hub settings from VS Code configuration and environment variables.
  */
 export function deriveHubSettings(): HubSettings {
   const configuration = vscode.workspace.getConfiguration("loom");
+  const fileSettings = readHubSettingsFromConfig();
   const configuredUrl = configuration.get<string>("hubUrl")?.trim();
   const configuredProfile = configuration.get<string>("hubProfile")?.trim();
-  const hubUrl = configuredUrl || process.env.MCP_HUB_URL || DEFAULT_HUB_URL;
-  const profile = configuredProfile || process.env.MCP_PROFILE || "codex";
+  const hubUrl = configuredUrl || process.env.MCP_HUB_URL || fileSettings.hubUrl || DEFAULT_HUB_URL;
+  const profile = configuredProfile || process.env.MCP_PROFILE || fileSettings.profile || "codex";
   const httpBaseUrl = convertHubUrlToHttpBase(hubUrl);
   const cfAccessClientId =
-    process.env.CF_ACCESS_CLIENT_ID || process.env.CF_Access_Client_Id || undefined;
+    process.env.CF_ACCESS_CLIENT_ID ||
+    process.env.CF_Access_Client_Id ||
+    fileSettings.cfAccessClientId ||
+    undefined;
   const cfAccessClientSecret =
-    process.env.CF_ACCESS_CLIENT_SECRET || process.env.CF_Access_ClientSecret || undefined;
+    process.env.CF_ACCESS_CLIENT_SECRET ||
+    process.env.CF_Access_ClientSecret ||
+    fileSettings.cfAccessClientSecret ||
+    undefined;
+  // prefer_hub: VS Code setting wins; otherwise inherit whatever the user
+  // last persisted to ~/.config/loom/config.yaml; default true so a fresh
+  // install of the extension routes traffic through the deployed hub
+  // instead of spawning local stdio processes.
+  const configuredPreferHub = configuration.get<boolean>("hubPreferHub");
+  const preferHub =
+    typeof configuredPreferHub === "boolean"
+      ? configuredPreferHub
+      : typeof fileSettings.preferHub === "boolean"
+        ? fileSettings.preferHub
+        : true;
 
   return {
     hubUrl,
@@ -29,7 +48,40 @@ export function deriveHubSettings(): HubSettings {
     profile,
     cfAccessClientId,
     cfAccessClientSecret,
+    preferHub,
   };
+}
+
+function readHubSettingsFromConfig(): Partial<HubSettings> {
+  const configPath = path.join(os.homedir(), ".config", "loom", "config.yaml");
+
+  try {
+    const raw = fs.readFileSync(configPath, "utf-8");
+    const parsed = parseYaml(raw) as {
+      hub?: {
+        url?: unknown;
+        profile?: unknown;
+        prefer_hub?: unknown;
+        cf_access_client_id?: unknown;
+        cf_access_client_secret?: unknown;
+      };
+    } | null;
+    const hub = parsed?.hub;
+
+    return {
+      hubUrl: typeof hub?.url === "string" ? hub.url.trim() : undefined,
+      profile: typeof hub?.profile === "string" ? hub.profile.trim() : undefined,
+      preferHub: typeof hub?.prefer_hub === "boolean" ? hub.prefer_hub : undefined,
+      cfAccessClientId:
+        typeof hub?.cf_access_client_id === "string" ? hub.cf_access_client_id.trim() : undefined,
+      cfAccessClientSecret:
+        typeof hub?.cf_access_client_secret === "string"
+          ? hub.cf_access_client_secret.trim()
+          : undefined,
+    };
+  } catch {
+    return {};
+  }
 }
 
 /**
@@ -56,60 +108,126 @@ export function convertHubUrlToHttpBase(urlText: string): string | undefined {
 }
 
 /**
+ * Settings for the Mills HUD client and refresh cadence, derived from VS Code config.
+ */
+export interface MillsConfig {
+  hudBaseUrl: string;
+  refreshIntervalMs: number;
+  alertingIntervalMs: number;
+  cfAccessClientId?: string;
+  cfAccessClientSecret?: string;
+}
+
+/**
+ * Derive Mills settings from VS Code configuration.
+ * CF Access credentials are reused from the same env vars as the hub.
+ */
+export function deriveMillsConfig(): MillsConfig {
+  const configuration = vscode.workspace.getConfiguration("loom.mills");
+  const hudBaseUrl = (configuration.get<string>("hudBaseUrl") ?? "").trim();
+  const refreshIntervalMs = configuration.get<number>("refreshIntervalMs") ?? 60_000;
+  const alertingIntervalMs = configuration.get<number>("alertingIntervalMs") ?? 120_000;
+  const cfAccessClientId =
+    process.env.CF_ACCESS_CLIENT_ID || process.env.CF_Access_Client_Id || undefined;
+  const cfAccessClientSecret =
+    process.env.CF_ACCESS_CLIENT_SECRET || process.env.CF_Access_ClientSecret || undefined;
+  return {
+    hudBaseUrl,
+    refreshIntervalMs,
+    alertingIntervalMs,
+    cfAccessClientId,
+    cfAccessClientSecret,
+  };
+}
+
+/**
  * Write the daemon configuration file.
+ *
+ * Merge-preserve semantics: the extension owns the keys it understands
+ * (repo_root, hub.url, hub.enabled, hub.profile, hub.prefer_hub,
+ * hub.cf_access_*, debug) and rewrites those from `settings`. Every
+ * other key found in the existing config.yaml — for example
+ * `routing.preferences`, `audit.*`, `health.*`, or any future
+ * server-side setting — is preserved verbatim. Prior to this, the
+ * writer emitted a hardcoded template that silently wiped any
+ * non-template field on every regen, so users who hand-added
+ * `hub.prefer_hub: true` or `routing.preferences` saw their changes
+ * disappear on the next extension activation.
  */
 export async function writeDaemonConfig(settings: HubSettings): Promise<void> {
   const configDir = path.join(os.homedir(), ".config", "loom");
   const configPath = path.join(configDir, "config.yaml");
 
-  // Read existing config to preserve repo_root if set
-  let existingRepoRoot: string | undefined;
+  // Load existing config so unknown keys (audit, routing, health, etc.)
+  // survive the regen. Any parse error degrades to an empty object so a
+  // corrupted file doesn't permanently block the writer.
+  let existing: Record<string, unknown> = {};
   try {
-    const existingContent = await fsp.readFile(configPath, "utf-8");
-    const repoRootMatch = existingContent.match(/^repo_root:\s*(.+)$/m);
-    if (repoRootMatch) {
-      existingRepoRoot = repoRootMatch[1]?.trim().replace(/^["']|["']$/g, "");
+    const raw = await fsp.readFile(configPath, "utf-8");
+    const parsed: unknown = parseYaml(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      existing = parsed as Record<string, unknown>;
     }
   } catch {
-    // File doesn't exist yet, that's fine
+    // File missing or unreadable — start from empty.
   }
 
-  const config: DaemonConfig = {
-    repo_root: existingRepoRoot,
-    hub: {
-      url: settings.hubUrl,
-      enabled: true,
-      profile: settings.profile,
-    },
-    debug: false,
-  };
+  const existingHub =
+    existing.hub && typeof existing.hub === "object" && !Array.isArray(existing.hub)
+      ? (existing.hub as Record<string, unknown>)
+      : {};
 
+  // Build the new hub block by overriding only the keys the extension
+  // owns. Spread first so any user-added sibling key (e.g. timeout
+  // tunables added in a future daemon release) survives.
+  const newHub: Record<string, unknown> = {
+    ...existingHub,
+    url: settings.hubUrl,
+    enabled: true,
+    profile: settings.profile,
+  };
+  if (typeof settings.preferHub === "boolean") {
+    newHub.prefer_hub = settings.preferHub;
+  }
   if (settings.cfAccessClientId) {
-    config.hub.cf_access_client_id = settings.cfAccessClientId;
+    newHub.cf_access_client_id = settings.cfAccessClientId;
+  } else {
+    delete newHub.cf_access_client_id;
   }
   if (settings.cfAccessClientSecret) {
-    config.hub.cf_access_client_secret = settings.cfAccessClientSecret;
+    newHub.cf_access_client_secret = settings.cfAccessClientSecret;
+  } else {
+    delete newHub.cf_access_client_secret;
   }
+
+  const merged: Record<string, unknown> = {
+    ...existing,
+    hub: newHub,
+  };
+
+  // repo_root is extension-derived only when not already set; keep the
+  // existing value otherwise so a stale extension activation doesn't
+  // clobber a user-chosen workspace root.
+  if (existing.repo_root === undefined) {
+    delete merged.repo_root;
+  }
+  // debug defaults to false but never clobbers an explicitly true value
+  // a user set for troubleshooting.
+  if (typeof existing.debug !== "boolean") {
+    merged.debug = false;
+  }
+
+  const header =
+    "# Loom daemon configuration\n" +
+    "# This file is managed by the Loom VS Code extension; the extension\n" +
+    "# preserves unknown keys across regens, so hand-added blocks like\n" +
+    "# `routing.preferences:` or `audit:` survive activation.\n" +
+    "# Changes will be applied on next daemon restart (or reload).\n\n";
+  const body = stringifyYaml(merged, { lineWidth: 0 });
 
   try {
     await fsp.mkdir(configDir, { recursive: true });
-    const repoRootLine = config.repo_root
-      ? `# Workspace root for resolving \${repo} in registry.yaml\nrepo_root: ${config.repo_root}\n\n`
-      : "";
-    const yaml = `# Loom daemon configuration
-# This file is managed by the Loom VS Code extension
-# Changes will be applied on next daemon restart
-
-${repoRootLine}hub:
-  url: "${config.hub.url}"
-  enabled: ${config.hub.enabled}
-  profile: "${config.hub.profile}"
-${config.hub.cf_access_client_id ? `  cf_access_client_id: "${config.hub.cf_access_client_id}"` : ""}
-${config.hub.cf_access_client_secret ? `  cf_access_client_secret: "${config.hub.cf_access_client_secret}"` : ""}
-
-debug: ${config.debug}
-`;
-    await fsp.writeFile(configPath, yaml, "utf-8");
+    await fsp.writeFile(configPath, header + body, "utf-8");
   } catch {
     // Silently fail - daemon config is best-effort
   }

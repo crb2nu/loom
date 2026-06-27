@@ -25,12 +25,11 @@ export function registerDaemonCommands(ctx: CommandContext): vscode.Disposable[]
 }
 
 async function startDaemon(ctx: CommandContext): Promise<void> {
-  const { workspaceRoot, loomChannel, hubStatusManager, serverProvider } = ctx;
-  const loomBinary = resolveLoomBinary(workspaceRoot);
+  const { loomChannel, hubStatusManager, serverProvider, daemonClient } = ctx;
 
   const logger = new Logger(loomChannel, "Daemon");
   logger.info("Starting loom daemon...");
-  loomChannel.appendLine(`→ ${loomBinary} daemon start`);
+  loomChannel.appendLine(`→ start daemon (with retry recovery)`);
 
   await vscode.window.withProgress(
     {
@@ -38,83 +37,53 @@ async function startDaemon(ctx: CommandContext): Promise<void> {
       title: "Starting Loom daemon",
     },
     async () => {
-      try {
-        const { stdout, stderr } = await execFileAsync(loomBinary, ["daemon", "start"], {
-          cwd: workspaceRoot || os.homedir(),
-          timeout: 10000,
-        });
-        if (stdout) {
-          loomChannel.append(stdout);
-        }
-        if (stderr) {
-          loomChannel.append(stderr);
-        }
+      const started = await daemonClient.startDaemon();
+      if (started) {
         loomChannel.appendLine("✓ Daemon started");
-        loomChannel.show(true);
-        void vscode.window.showInformationMessage("Loom: daemon started successfully");
         // Refresh hub status and server list after daemon starts
         await hubStatusManager.refresh();
         serverProvider.refresh();
-      } catch (error) {
-        const execError = error as ExecError;
-        if (execError.stdout) {
-          loomChannel.append(execError.stdout);
-        }
-        if (execError.stderr) {
-          loomChannel.append(execError.stderr);
-        }
-        loomChannel.appendLine(`✗ ${execError.message ?? "Failed to start daemon"}`);
-        loomChannel.show(true);
-        await showActionableError(error, "Failed to start daemon");
+      } else {
+        loomChannel.appendLine("✗ Failed to start daemon after retries");
+        await showActionableError(
+          new Error("Failed to start daemon after retries"),
+          "Failed to start daemon"
+        );
       }
+      loomChannel.show(true);
     }
   );
 }
 
 async function stopDaemon(ctx: CommandContext): Promise<void> {
-  const { workspaceRoot, loomChannel, serverProvider } = ctx;
-  const loomBinary = resolveLoomBinary(workspaceRoot);
+  const { loomChannel, serverProvider, daemonClient } = ctx;
 
   const logger = new Logger(loomChannel, "Daemon");
   logger.info("Stopping loom daemon...");
-  loomChannel.appendLine(`→ ${loomBinary} daemon stop`);
+  loomChannel.appendLine(`→ stop daemon (with retry recovery)`);
 
-  try {
-    const { stdout, stderr } = await execFileAsync(loomBinary, ["daemon", "stop"], {
-      cwd: workspaceRoot || os.homedir(),
-      timeout: 5000,
-    });
-    if (stdout) {
-      loomChannel.append(stdout);
-    }
-    if (stderr) {
-      loomChannel.append(stderr);
-    }
+  const stopped = await daemonClient.stopDaemon();
+  if (stopped) {
     loomChannel.appendLine("✓ Daemon stopped");
-    loomChannel.show(true);
     void vscode.window.showInformationMessage("Loom: daemon stopped");
     serverProvider.refresh();
-  } catch (error) {
-    const execError = error as ExecError;
-    if (execError.stdout) {
-      loomChannel.append(execError.stdout);
-    }
-    if (execError.stderr) {
-      loomChannel.append(execError.stderr);
-    }
-    loomChannel.appendLine(`✗ ${execError.message ?? "Failed to stop daemon"}`);
-    loomChannel.show(true);
-    await showActionableError(error, "Failed to stop daemon");
+  } else {
+    loomChannel.appendLine("✗ Failed to stop daemon after retries");
+    await showActionableError(
+      new Error("Failed to stop daemon after retries"),
+      "Failed to stop daemon"
+    );
     serverProvider.refresh();
   }
+  loomChannel.show(true);
 }
 
 async function restartDaemon(ctx: CommandContext): Promise<void> {
-  const { workspaceRoot, loomChannel, hubStatusManager, serverProvider } = ctx;
-  const loomBinary = resolveLoomBinary(workspaceRoot);
+  const { loomChannel, hubStatusManager, serverProvider, daemonClient } = ctx;
 
   const logger = new Logger(loomChannel, "Daemon");
   logger.info("Restarting loom daemon...");
+  loomChannel.appendLine(`→ restart daemon (with retry recovery)`);
 
   await vscode.window.withProgress(
     {
@@ -122,52 +91,21 @@ async function restartDaemon(ctx: CommandContext): Promise<void> {
       title: "Restarting Loom daemon",
     },
     async () => {
-      try {
-        // Stop first
-        loomChannel.appendLine(`→ ${loomBinary} daemon stop`);
-        try {
-          await execFileAsync(loomBinary, ["daemon", "stop"], {
-            cwd: workspaceRoot || os.homedir(),
-            timeout: 5000,
-          });
-          loomChannel.appendLine("✓ Daemon stopped");
-        } catch {
-          loomChannel.appendLine("⚠ Daemon was not running");
-        }
-
-        // Wait a moment for cleanup
-        await new Promise((resolve) => setTimeout(resolve, 500));
-
-        // Start
-        loomChannel.appendLine(`→ ${loomBinary} daemon start`);
-        const { stdout, stderr } = await execFileAsync(loomBinary, ["daemon", "start"], {
-          cwd: workspaceRoot || os.homedir(),
-          timeout: 10000,
-        });
-        if (stdout) {
-          loomChannel.append(stdout);
-        }
-        if (stderr) {
-          loomChannel.append(stderr);
-        }
+      const restarted = await daemonClient.restartDaemon();
+      if (restarted) {
         loomChannel.appendLine("✓ Daemon restarted");
-        loomChannel.show(true);
         void vscode.window.showInformationMessage("Loom: daemon restarted successfully");
         // Refresh hub status and server list after restart
         await hubStatusManager.refresh();
         serverProvider.refresh();
-      } catch (error) {
-        const execError = error as ExecError;
-        if (execError.stdout) {
-          loomChannel.append(execError.stdout);
-        }
-        if (execError.stderr) {
-          loomChannel.append(execError.stderr);
-        }
-        loomChannel.appendLine(`✗ ${execError.message ?? "Failed to restart daemon"}`);
-        loomChannel.show(true);
-        await showActionableError(error, "Failed to restart daemon");
+      } else {
+        loomChannel.appendLine("✗ Failed to restart daemon after retries");
+        await showActionableError(
+          new Error("Failed to restart daemon after retries"),
+          "Failed to restart daemon"
+        );
       }
+      loomChannel.show(true);
     }
   );
 }

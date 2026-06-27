@@ -5,7 +5,13 @@ import { promisify } from "util";
 
 import * as vscode from "vscode";
 
-import { DaemonClient, SkillsClient, AgentContextClient, PlatformConfigClient } from "./clients";
+import {
+  DaemonClient,
+  HubClient,
+  SkillsClient,
+  AgentContextClient,
+  PlatformConfigClient,
+} from "./clients";
 import {
   registerAllCommands,
   CommandContext,
@@ -18,11 +24,16 @@ import { HUB_REFRESH_INTERVAL_MS } from "./constants";
 import {
   ConfigSyncManager,
   HubStatusManager,
+  MillsStatusManager,
+  MillsAlertingManager,
   AgentSessionManager,
   AnnotationDecorationManager,
   ServerMetricsManager,
   ProfileManager,
   SkillRecommendationManager,
+  PluginManager,
+  RemoteTunnelManager,
+  UsageAnalyticsManager,
 } from "./managers";
 import { DeepSearchManager, SearchResult } from "./managers/deepSearch";
 import {
@@ -34,9 +45,13 @@ import {
   AgentContextProvider,
   TasksProvider,
   PlatformsProvider,
+  MillsTreeProvider,
 } from "./providers";
+import { WeaverTreeProvider } from "./providers/weaver";
+import { HubStatusSnapshot } from "./types";
 import {
   deriveHubSettings,
+  deriveMillsConfig,
   findRegistryPath,
   watchRegistry,
   writeDaemonConfig,
@@ -44,6 +59,7 @@ import {
 import { ConfigManager } from "./utils/configManager";
 import { getPythonExecutable } from "./utils/helpers";
 import { Logger } from "./utils/logger";
+import { MillsTokenStore } from "./utils/millsToken";
 import { detectPlatform, getPlatformStatusText } from "./utils/platform";
 import { ContextGraphPanel } from "./webviews/ContextGraphPanel";
 import { KnowledgeGraphPanel } from "./webviews/KnowledgeGraphPanel";
@@ -77,6 +93,9 @@ interface ActivationEnvironment {
   agentContextClient: AgentContextClient;
   agentSessionManager: AgentSessionManager;
   annotationDecorationManager: AnnotationDecorationManager;
+  usageAnalyticsManager: UsageAnalyticsManager;
+  remoteTunnelManager: RemoteTunnelManager;
+  profileManager: ProfileManager;
 }
 
 // ============================================================================
@@ -149,6 +168,116 @@ function registerHubIntegration(
   );
 
   return hubStatusManager;
+}
+
+function registerWeaverIntegration(
+  loomChannel: vscode.OutputChannel,
+  logger: Logger,
+  context: vscode.ExtensionContext
+): WeaverTreeProvider {
+  const weaverLogger = logger.child("Weaver");
+  const initial = deriveMillsConfig();
+  const settings = {
+    hudBaseUrl: initial.hudBaseUrl,
+    cfAccessClientId: initial.cfAccessClientId,
+    cfAccessClientSecret: initial.cfAccessClientSecret,
+  };
+  const provider = new WeaverTreeProvider(settings, weaverLogger);
+  const treeView = vscode.window.createTreeView("loomWeaver", {
+    treeDataProvider: provider,
+  });
+  context.subscriptions.push(treeView);
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (
+        event.affectsConfiguration("loom.mills.hudBaseUrl") ||
+        event.affectsConfiguration("loom.mills.cfAccessClientId") ||
+        event.affectsConfiguration("loom.mills.cfAccessClientSecret")
+      ) {
+        // Reuse the Mills HUD config for now — both surfaces hit the
+        // same daemon-embedded HUD. A future slice can break them out
+        // if a user wants to point Weaver at a different HUD.
+        weaverLogger.info("Weaver settings changed; refreshing");
+        void provider.refresh();
+      }
+    })
+  );
+
+  return provider;
+}
+
+function registerMillsIntegration(
+  loomChannel: vscode.OutputChannel,
+  logger: Logger,
+  context: vscode.ExtensionContext
+): {
+  millsStatusManager: MillsStatusManager;
+  millsTreeProvider: MillsTreeProvider;
+  millsAlertingManager: MillsAlertingManager;
+} {
+  const millsLogger = logger.child("Mills");
+  const initial = deriveMillsConfig();
+  const settings = {
+    hudBaseUrl: initial.hudBaseUrl,
+    cfAccessClientId: initial.cfAccessClientId,
+    cfAccessClientSecret: initial.cfAccessClientSecret,
+  };
+  const manager = new MillsStatusManager(settings, initial.refreshIntervalMs, loomChannel);
+  context.subscriptions.push(manager);
+  manager.start();
+
+  const treeProvider = new MillsTreeProvider(settings, loomChannel);
+  const treeView = vscode.window.createTreeView("loomMills", {
+    treeDataProvider: treeProvider,
+  });
+  context.subscriptions.push(treeView);
+
+  const alertingManager = new MillsAlertingManager(
+    settings,
+    initial.alertingIntervalMs,
+    manager,
+    loomChannel
+  );
+  context.subscriptions.push(alertingManager);
+  alertingManager.start();
+
+  // Refresh tree whenever the status manager learns of a change
+  // (paused → ok, regression count moved, etc.).
+  context.subscriptions.push(
+    manager.onDidChange(() => {
+      treeProvider.refresh();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (
+        event.affectsConfiguration("loom.mills.hudBaseUrl") ||
+        event.affectsConfiguration("loom.mills.refreshIntervalMs") ||
+        event.affectsConfiguration("loom.mills.alertingIntervalMs")
+      ) {
+        const next = deriveMillsConfig();
+        const nextSettings = {
+          hudBaseUrl: next.hudBaseUrl,
+          cfAccessClientId: next.cfAccessClientId,
+          cfAccessClientSecret: next.cfAccessClientSecret,
+        };
+        manager.updateSettings(nextSettings, next.refreshIntervalMs);
+        treeProvider.updateSettings(nextSettings);
+        alertingManager.updateSettings(nextSettings, next.alertingIntervalMs);
+        millsLogger.info(
+          `Mills settings updated (hudBaseUrl=${next.hudBaseUrl || "<empty>"}, refreshMs=${next.refreshIntervalMs}, alertMs=${next.alertingIntervalMs})`
+        );
+      }
+    })
+  );
+
+  return {
+    millsStatusManager: manager,
+    millsTreeProvider: treeProvider,
+    millsAlertingManager: alertingManager,
+  };
 }
 
 function registerRegistryAndServers(
@@ -230,7 +359,10 @@ function registerRegistryAndServers(
 }
 
 function registerConfigSync(
-  env: Pick<ActivationEnvironment, "workspaceRoot" | "loomChannel" | "configManager">,
+  env: Pick<
+    ActivationEnvironment,
+    "workspaceRoot" | "loomChannel" | "configManager" | "hubStatusManager"
+  >,
   context: vscode.ExtensionContext
 ): { configSyncManager: ConfigSyncManager; secretsProvider: SecretsProvider } {
   // Config sync drift detection
@@ -258,6 +390,15 @@ function registerConfigSync(
     })
   );
 
+  // Keep offline mode in sync with hub connectivity.
+  context.subscriptions.push(
+    env.hubStatusManager.onDidChange(() => {
+      const snapshot = env.hubStatusManager.getStatus();
+      const { mode, reason } = getOfflineModeFromHub(snapshot);
+      configSyncManager.setOfflineMode(mode, reason);
+    })
+  );
+
   // Secrets tree view provider
   const secretsProvider = new SecretsProvider(env.workspaceRoot, env.loomChannel);
   context.subscriptions.push(
@@ -265,6 +406,44 @@ function registerConfigSync(
   );
 
   return { configSyncManager, secretsProvider };
+}
+
+function getOfflineModeFromHub(snapshot: HubStatusSnapshot): {
+  mode: "online" | "offline" | "degraded";
+  reason?: string;
+} {
+  if (snapshot.error) {
+    if (isConnectivityFailure(snapshot.error)) {
+      return { mode: "offline", reason: snapshot.error };
+    }
+    return { mode: "degraded", reason: snapshot.error };
+  }
+
+  if (snapshot.readiness && snapshot.readiness.ready === false) {
+    return { mode: "degraded", reason: snapshot.readiness.error ?? "Hub not ready" };
+  }
+
+  if (snapshot.health?.status && snapshot.health.status !== "ok") {
+    return { mode: "degraded", reason: `Hub health: ${snapshot.health.status}` };
+  }
+
+  return { mode: "online", reason: undefined };
+}
+
+function isConnectivityFailure(message: string): boolean {
+  const text = message.toLowerCase();
+  return [
+    "econnrefused",
+    "enotfound",
+    "etimedout",
+    "timed out",
+    "network",
+    "socket",
+    "connect",
+    "offline",
+    "unable to fetch",
+    "fetch failed",
+  ].some((pattern) => text.includes(pattern));
 }
 
 // ============================================================================
@@ -324,7 +503,7 @@ function registerPlatforms(
 function registerOnboarding(
   env: Pick<
     ActivationEnvironment,
-    "workspaceRoot" | "configManager" | "daemonClient" | "platformConfigClient"
+    "workspaceRoot" | "configManager" | "daemonClient" | "platformConfigClient" | "profileManager"
   >,
   context: vscode.ExtensionContext
 ): void {
@@ -334,6 +513,7 @@ function registerOnboarding(
         context.extensionUri,
         env.platformConfigClient,
         env.daemonClient,
+        env.profileManager,
         env.workspaceRoot
       );
     })
@@ -384,18 +564,20 @@ function registerDeepSearch(
         },
         async (_progress) => {
           const results: SearchResult[] = await deepSearchManager.search(query);
+          const successCount = results.filter((result) => result.status === "ok").length;
 
-          // Simple output for now - create a new untitled document with JSON results
-          // Long term: Use a Webview or QuickPick
           const content = results
-            .map(
-              (r: SearchResult) =>
-                `## ${r.source.toUpperCase()} (${r.tool})\n${r.error ? `⚠️ Error: ${r.error}` : JSON.stringify(r.data, null, 2)}\n`
-            )
+            .map((result: SearchResult) => formatDeepSearchResult(result))
             .join("\n---\n\n");
 
           const doc = await vscode.workspace.openTextDocument({
-            content: `# Deep Search Results: "${query}"\n\n${content}`,
+            content: [
+              `# Deep Search Results: "${query}"`,
+              "",
+              `Summary: ${successCount}/${results.length} tools succeeded`,
+              "",
+              content || "_No results_",
+            ].join("\n"),
             language: "markdown",
           });
           await vscode.window.showTextDocument(doc);
@@ -403,6 +585,39 @@ function registerDeepSearch(
       );
     })
   );
+}
+
+function formatDeepSearchResult(result: SearchResult): string {
+  const status = result.status === "ok" ? "ok" : "error";
+  const latency = result.durationMs !== undefined ? `${result.durationMs}ms` : "n/a";
+  const count = result.resultCount !== undefined ? String(result.resultCount) : "n/a";
+  const executedAt = result.executedAt ? result.executedAt.toISOString() : "n/a";
+  const snippet = result.snippet ?? "n/a";
+
+  const lines = [
+    `## ${result.source.toUpperCase()} (${result.tool})`,
+    `- Status: ${status}`,
+    `- Latency: ${latency}`,
+    `- Result count: ${count}`,
+    `- Executed at: ${executedAt}`,
+    `- Snippet: ${snippet}`,
+  ];
+
+  if (result.error) {
+    lines.push("", `⚠️ Error: ${result.error}`);
+    return lines.join("\n");
+  }
+
+  const rawPayload = (() => {
+    try {
+      return JSON.stringify(result.data, null, 2);
+    } catch {
+      return String(result.data);
+    }
+  })();
+
+  lines.push("", "```json", rawPayload, "```");
+  return lines.join("\n");
 }
 
 function registerCoreCommands(
@@ -418,7 +633,16 @@ function registerCoreCommands(
     | "serverProvider"
     | "toolProvider"
     | "secretsProvider"
-  >,
+    | "usageAnalyticsManager"
+    | "remoteTunnelManager"
+    | "agentContextClient"
+    | "agentSessionManager"
+  > & {
+    millsStatusManager?: MillsStatusManager;
+    millsTreeProvider?: MillsTreeProvider;
+    millsTokenStore?: MillsTokenStore;
+    weaverTreeProvider?: WeaverTreeProvider;
+  },
   context: vscode.ExtensionContext
 ): void {
   // Create command context with all dependencies
@@ -427,13 +651,21 @@ function registerCoreCommands(
     pythonExecutable: env.pythonExecutable,
     loomChannel: env.loomChannel,
     hubStatusManager: env.hubStatusManager,
+    millsStatusManager: env.millsStatusManager,
+    millsTreeProvider: env.millsTreeProvider,
+    millsTokenStore: env.millsTokenStore,
+    weaverTreeProvider: env.weaverTreeProvider,
     configSyncManager: env.configSyncManager,
     daemonClient: env.daemonClient,
     registryProvider: env.registryProvider,
     serverProvider: env.serverProvider,
     toolProvider: env.toolProvider,
     secretsProvider: env.secretsProvider,
+    usageAnalyticsManager: env.usageAnalyticsManager,
+    remoteTunnelManager: env.remoteTunnelManager,
     extensionContext: context,
+    agentContextClient: env.agentContextClient,
+    agentSessionManager: env.agentSessionManager,
   };
 
   // Register all commands
@@ -452,6 +684,32 @@ function registerCoreCommands(
       }
     })
   );
+}
+
+function registerUsageAnalytics(
+  env: Pick<ActivationEnvironment, "daemonClient" | "loomChannel">,
+  context: vscode.ExtensionContext
+): UsageAnalyticsManager {
+  const usageAnalyticsManager = new UsageAnalyticsManager(
+    env.daemonClient,
+    context.workspaceState,
+    env.loomChannel
+  );
+  context.subscriptions.push(usageAnalyticsManager);
+  return usageAnalyticsManager;
+}
+
+function registerRemoteTunnels(
+  env: Pick<ActivationEnvironment, "workspaceRoot" | "configManager" | "loomChannel">,
+  context: vscode.ExtensionContext
+): RemoteTunnelManager {
+  const remoteTunnelManager = new RemoteTunnelManager(
+    env.workspaceRoot,
+    env.configManager,
+    env.loomChannel
+  );
+  context.subscriptions.push(remoteTunnelManager);
+  return remoteTunnelManager;
 }
 
 // ============================================================================
@@ -608,10 +866,10 @@ function registerAgentContext(
 function registerServerHealth(
   env: Pick<
     ActivationEnvironment,
-    "configManager" | "daemonClient" | "hubStatusManager" | "loomChannel"
+    "configManager" | "daemonClient" | "hubStatusManager" | "loomChannel" | "workspaceRoot"
   >,
   context: vscode.ExtensionContext
-): void {
+): ProfileManager {
   const serverMetricsManager = new ServerMetricsManager(
     env.daemonClient,
     env.hubStatusManager,
@@ -623,18 +881,57 @@ function registerServerHealth(
   const profileManager = new ProfileManager(
     env.hubStatusManager,
     env.daemonClient,
+    env.workspaceRoot,
     env.loomChannel,
     env.configManager
   );
   context.subscriptions.push(profileManager);
 
+  // Hub client for the Server Health panel's degraded/divergence banner.
+  const hubClient = new HubClient(env.hubStatusManager.getSettings(), env.loomChannel);
+
   const serverHealthCommandDisposables = registerServerHealthCommands({
     loomChannel: env.loomChannel,
     serverMetricsManager,
     profileManager,
+    hubClient,
     extensionContext: context,
   });
   context.subscriptions.push(...serverHealthCommandDisposables);
+  return profileManager;
+}
+
+// ============================================================================
+// Plugin System Integration
+// ============================================================================
+function registerPlugins(
+  env: Pick<ActivationEnvironment, "workspaceRoot" | "loomChannel" | "configManager">,
+  context: vscode.ExtensionContext
+): void {
+  const pluginLogger = new Logger(env.loomChannel, "Plugins");
+  const pluginManager = new PluginManager({
+    workspaceRoot: env.workspaceRoot,
+    extensionContext: context,
+    outputChannel: env.loomChannel,
+    logger: pluginLogger,
+  });
+  context.subscriptions.push(pluginManager);
+
+  const reloadConfiguredPlugins = () => {
+    const pluginSpecs = env.configManager.get("plugins");
+    void pluginManager.reloadConfiguredPlugins(pluginSpecs);
+  };
+
+  reloadConfiguredPlugins();
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration("loom.plugins")) {
+        pluginLogger.info("Reloading plugins after configuration change");
+        reloadConfiguredPlugins();
+      }
+    })
+  );
 }
 
 function maybeAutoStartSession(
@@ -657,42 +954,75 @@ export async function activate(context: vscode.ExtensionContext) {
   const base = initializeEnvironment(context);
 
   const hubStatusManager = registerHubIntegration(base.loomChannel, base.logger, context);
+  const { millsStatusManager, millsTreeProvider } = registerMillsIntegration(
+    base.loomChannel,
+    base.logger,
+    context
+  );
+  const millsTokenStore = new MillsTokenStore(context.secrets);
+  const weaverTreeProvider = registerWeaverIntegration(base.loomChannel, base.logger, context);
 
   const { registryProvider, serverProvider, toolProvider, daemonClient } =
     registerRegistryAndServers({ ...base, hubStatusManager }, context);
 
-  const { configSyncManager, secretsProvider } = registerConfigSync(base, context);
+  const usageAnalyticsManager = registerUsageAnalytics(
+    { daemonClient, loomChannel: base.loomChannel },
+    context
+  );
+  const remoteTunnelManager = registerRemoteTunnels(base, context);
+
+  const { configSyncManager, secretsProvider } = registerConfigSync(
+    { ...base, hubStatusManager },
+    context
+  );
 
   const platformConfigClient = registerPlatforms(base, context);
+  const profileManager = registerServerHealth(
+    {
+      configManager: base.configManager,
+      daemonClient,
+      hubStatusManager,
+      loomChannel: base.loomChannel,
+      workspaceRoot: base.workspaceRoot,
+    },
+    context
+  );
 
-  registerOnboarding({ ...base, daemonClient, platformConfigClient }, context);
+  registerOnboarding({ ...base, daemonClient, platformConfigClient, profileManager }, context);
 
   registerDeepSearch({ daemonClient, loomChannel: base.loomChannel }, context);
+
+  registerSkillsIntegration(base, context);
+
+  const { agentContextClient, agentSessionManager } = registerAgentContext(base, context);
 
   registerCoreCommands(
     {
       ...base,
       hubStatusManager,
+      millsStatusManager,
+      millsTreeProvider,
+      millsTokenStore,
+      weaverTreeProvider,
       configSyncManager,
       daemonClient,
       registryProvider,
       serverProvider,
       toolProvider,
       secretsProvider,
+      usageAnalyticsManager,
+      remoteTunnelManager,
+      agentContextClient,
+      agentSessionManager,
     },
     context
   );
 
-  registerSkillsIntegration(base, context);
-
-  const { agentSessionManager } = registerAgentContext(base, context);
-
-  registerServerHealth(
+  registerPlugins(
     {
-      configManager: base.configManager,
-      daemonClient,
-      hubStatusManager,
+      workspaceRoot: base.workspaceRoot,
       loomChannel: base.loomChannel,
+      configManager: base.configManager,
     },
     context
   );

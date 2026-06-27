@@ -14,8 +14,8 @@ import {
 } from "./platform";
 
 describe("PLATFORMS registry", () => {
-  it("should have 6 platform entries", () => {
-    expect(Object.keys(PLATFORMS)).toHaveLength(6);
+  it("should have 8 platform entries", () => {
+    expect(Object.keys(PLATFORMS)).toHaveLength(8);
   });
 
   it("should have required fields for each platform", () => {
@@ -147,21 +147,28 @@ describe("getPlatformInfo", () => {
   it("should return correct info for each platform", () => {
     expect(getPlatformInfo("vscode").displayName).toBe("VS Code");
     expect(getPlatformInfo("claude").icon).toBe("comment-discussion");
-    expect(getPlatformInfo("gemini").configFormat).toBe("toml");
+    expect(getPlatformInfo("gemini").configFormat).toBe("json");
+    expect(getPlatformInfo("antigravity").homeConfigPath).toBe(
+      ".gemini/antigravity/mcp_config.json"
+    );
+    expect(getPlatformInfo("opencode").repoConfigPath).toBe(".opencode/opencode.json");
+    expect(getPlatformInfo("zed").homeConfigPath).toBe("Library/Application Support/Zed/mcp.json");
   });
 });
 
 describe("getSupportedPlatforms", () => {
-  it("should return all 6 platforms", () => {
+  it("should return all 8 platforms", () => {
     const platforms = getSupportedPlatforms();
 
-    expect(platforms).toHaveLength(6);
+    expect(platforms).toHaveLength(8);
     expect(platforms).toContain("vscode");
     expect(platforms).toContain("antigravity");
     expect(platforms).toContain("gemini");
     expect(platforms).toContain("codex");
     expect(platforms).toContain("kilocode");
     expect(platforms).toContain("claude");
+    expect(platforms).toContain("opencode");
+    expect(platforms).toContain("zed");
   });
 });
 
@@ -211,6 +218,8 @@ describe("isValidPlatformType", () => {
     expect(isValidPlatformType("vscode")).toBe(true);
     expect(isValidPlatformType("claude")).toBe(true);
     expect(isValidPlatformType("gemini")).toBe(true);
+    expect(isValidPlatformType("opencode")).toBe(true);
+    expect(isValidPlatformType("zed")).toBe(true);
   });
 
   it("should return false for invalid types", () => {
