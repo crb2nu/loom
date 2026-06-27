@@ -4,10 +4,16 @@ import {
   MillsAuditFinding,
   MillsBacklogItem,
   MillsClient,
+  MillsCostPreview,
   MillsCouncilRun,
+  MillsCrossRepoRun,
+  MillsEvalScore,
   MillsPipelineRun,
   MillsPolicyProposal,
   MillsSettings,
+  MillsSquadMemory,
+  MillsSquadOutcome,
+  MillsWorkflowRunDetail,
 } from "../clients/mills";
 import { MillsSubjectRef } from "../providers/mills";
 
@@ -197,6 +203,28 @@ export class MillsDetailPanel extends BaseWebviewPanel {
           }
           return match;
         });
+      case "cross-repo":
+        return client.fetchCrossRepoRun(subject.id);
+      case "workflow":
+        return client.fetchWorkflowRun(subject.id);
+      case "cost-preview":
+        // subject.id is the backlog id to estimate.
+        return client.fetchCostPreview(subject.id);
+      case "eval":
+        // No per-score GET on the operator; locate the row in the list.
+        return client.fetchEvalScores().then((items) => {
+          const match = items.find((s) => String(s.ID ?? "") === subject.id);
+          if (!match) {
+            throw new Error(`Eval score ${subject.id} not found`);
+          }
+          return match;
+        });
+      case "squad-memory":
+        // subject.id is the squad name; returns a list of memory rows.
+        return client.fetchSquadMemory(subject.id);
+      case "squad-outcomes":
+        // subject.id is the squad name; returns a list of outcome rows.
+        return client.fetchSquadOutcomes(subject.id);
     }
   }
 }
@@ -228,6 +256,18 @@ function renderFields(kind: MillsSubjectRef["kind"], payload: unknown): string {
       return renderAudit(payload as MillsAuditFinding);
     case "policy-proposal":
       return renderPolicyProposal(payload as MillsPolicyProposal);
+    case "cross-repo":
+      return renderCrossRepo(payload as MillsCrossRepoRun);
+    case "workflow":
+      return renderWorkflow(payload as MillsWorkflowRunDetail);
+    case "cost-preview":
+      return renderCostPreview(payload as MillsCostPreview);
+    case "eval":
+      return renderEval(payload as MillsEvalScore);
+    case "squad-memory":
+      return renderSquadMemory(payload as MillsSquadMemory[]);
+    case "squad-outcomes":
+      return renderSquadOutcomes(payload as MillsSquadOutcome[]);
   }
 }
 
@@ -304,6 +344,159 @@ function renderPolicyProposal(item: MillsPolicyProposal): string {
     return base + `<h2>Diff</h2><pre>${escapeHtml(item.Diff)}</pre>`;
   }
   return base;
+}
+
+function renderCrossRepo(item: MillsCrossRepoRun): string {
+  const base = fieldList([
+    ["Run ID", item.id],
+    ["Backlog item", item.backlog_item_id],
+    ["State", item.state],
+    ["Atomicity", item.atomicity_strategy],
+    ["Created at", item.created_at],
+    ["Updated at", item.updated_at],
+  ]);
+  const repos = item.repos ?? [];
+  if (repos.length === 0) {
+    return base + `<h2>Repos</h2><p class="empty">No repos in this run.</p>`;
+  }
+  const rows = repos
+    .map((r) =>
+      fieldList([
+        ["Repo", r.repo_name ?? (r.project_id != null ? `project ${r.project_id}` : undefined)],
+        ["Branch", r.branch],
+        ["MR", r.mr_iid != null ? `!${r.mr_iid}` : undefined],
+        ["CI status", r.ci_status],
+        ["Gate status", r.gate_status],
+      ])
+    )
+    .join("");
+  return base + `<h2>Repos (${repos.length})</h2>` + rows;
+}
+
+function renderWorkflow(detail: MillsWorkflowRunDetail): string {
+  const run = detail?.run ?? {};
+  const base = fieldList([
+    ["Run ID", run.id],
+    ["Backlog", run.backlog_id],
+    ["Engine", run.engine],
+    ["Template", run.template],
+    ["State", run.state],
+    ["Steps", run.step_count != null ? String(run.step_count) : undefined],
+    ["Started at", run.started_at ?? undefined],
+    ["Ended at", run.ended_at ?? undefined],
+    ["Cost", typeof run.cost_usd === "number" ? `$${run.cost_usd.toFixed(2)}` : undefined],
+  ]);
+  const steps = detail?.steps ?? [];
+  if (steps.length === 0) {
+    return base + `<h2>Steps</h2><p class="empty">No journaled steps.</p>`;
+  }
+  const rows = steps
+    .map((s) =>
+      fieldList([
+        ["Step", s.step_key],
+        ["Event", s.event_type],
+        ["Status", s.status],
+        ["Badge", s.badge],
+        ["Effects", s.effect_count != null ? String(s.effect_count) : undefined],
+        ["Cost", typeof s.cost_usd === "number" ? `$${s.cost_usd.toFixed(2)}` : undefined],
+      ])
+    )
+    .join("");
+  return base + `<h2>Steps (${steps.length})</h2>` + rows;
+}
+
+function renderCostPreview(item: MillsCostPreview): string {
+  return fieldList([
+    ["Backlog", item.backlog_id],
+    ["Path class", item.path_class],
+    [
+      "Estimate",
+      typeof item.estimate_usd === "number" ? `$${item.estimate_usd.toFixed(2)}` : undefined,
+    ],
+    [
+      "Median historical",
+      typeof item.median_historical_usd === "number"
+        ? `$${item.median_historical_usd.toFixed(2)}`
+        : undefined,
+    ],
+    [
+      "Sidecar overhead",
+      typeof item.sidecar_overhead_usd === "number"
+        ? `$${item.sidecar_overhead_usd.toFixed(2)} (${item.sidecar_slice_count ?? 0} slices)`
+        : undefined,
+    ],
+    [
+      "Recursion overhead",
+      typeof item.recursion_overhead_usd === "number"
+        ? `$${item.recursion_overhead_usd.toFixed(2)}`
+        : undefined,
+    ],
+    [
+      "Ensemble cap",
+      typeof item.ensemble_cap_usd === "number"
+        ? `$${item.ensemble_cap_usd.toFixed(2)}`
+        : undefined,
+    ],
+    ["Capped by policy", item.capped_by_policy != null ? String(item.capped_by_policy) : undefined],
+    ["Confidence", item.confidence],
+    ["Sample size", item.sample_size != null ? String(item.sample_size) : undefined],
+    ["Source", item.source],
+  ]);
+}
+
+function renderEval(item: MillsEvalScore): string {
+  const base = fieldList([
+    ["Score ID", item.ID != null ? String(item.ID) : undefined],
+    ["Subject kind", item.SubjectKind],
+    ["Subject", item.SubjectID],
+    ["Rubric", item.Rubric],
+    ["Score", typeof item.Score === "number" ? item.Score.toFixed(2) : undefined],
+    ["Judged by", item.JudgedBy],
+    ["Evaluated at", item.EvaluatedAt],
+    ["Notes", item.Notes],
+  ]);
+  if (item.Breakdown && Object.keys(item.Breakdown).length > 0) {
+    return base + `<h2>Breakdown</h2><pre>${escapeHtml(prettyJson(item.Breakdown))}</pre>`;
+  }
+  return base;
+}
+
+function renderSquadMemory(rows: MillsSquadMemory[]): string {
+  const list = Array.isArray(rows) ? rows : [];
+  if (list.length === 0) {
+    return `<p class="empty">No working-memory entries for this squad.</p>`;
+  }
+  return list
+    .map((m) =>
+      fieldList([
+        ["Title", m.Title],
+        ["Kind", m.Kind],
+        ["Importance", typeof m.Importance === "number" ? m.Importance.toFixed(2) : undefined],
+        ["Body", m.Body],
+        ["Refs", m.Refs?.join(", ")],
+        ["Last seen", m.LastSeenAt],
+      ])
+    )
+    .join("");
+}
+
+function renderSquadOutcomes(rows: MillsSquadOutcome[]): string {
+  const list = Array.isArray(rows) ? rows : [];
+  if (list.length === 0) {
+    return `<p class="empty">No recorded outcomes for this squad.</p>`;
+  }
+  return list
+    .map((o) =>
+      fieldList([
+        ["Outcome", o.Outcome],
+        ["Path class", o.PathClass],
+        ["Pipeline run", o.PipelineRunID],
+        ["Cost", typeof o.CostUSD === "number" ? `$${o.CostUSD.toFixed(2)}` : undefined],
+        ["Duration", o.DurationSeconds != null ? `${o.DurationSeconds}s` : undefined],
+        ["Created at", o.CreatedAt],
+      ])
+    )
+    .join("");
 }
 
 function fieldList(rows: Array<[string, string | undefined]>): string {

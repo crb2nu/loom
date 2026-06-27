@@ -112,4 +112,131 @@ describe("renderBody", () => {
     });
     expect(html).toContain("No content");
   });
+
+  it("renders a cross-repo run with its nested repos", () => {
+    const html = renderBody({
+      subject: { kind: "cross-repo", id: "cr-1" },
+      loading: false,
+      payload: {
+        id: "cr-1",
+        backlog_item_id: "MILLS-3",
+        state: "gates_green",
+        atomicity_strategy: "all_or_nothing",
+        repos: [{ repo_name: "loom", branch: "feat/x", mr_iid: 7, ci_status: "passed" }],
+      },
+    });
+    expect(html).toContain("gates_green");
+    expect(html).toContain("Repos (1)");
+    expect(html).toContain("feat/x");
+    expect(html).toContain("!7");
+  });
+
+  it("renders a workflow run with its steps", () => {
+    const html = renderBody({
+      subject: { kind: "workflow", id: "wf-1" },
+      loading: false,
+      payload: {
+        run: { id: "wf-1", engine: "imperative", state: "succeeded", step_count: 2, cost_usd: 1.5 },
+        steps: [{ step_key: "plan", status: "success", badge: "cache_hit", effect_count: 0 }],
+      },
+    });
+    expect(html).toContain("succeeded");
+    expect(html).toContain("$1.50");
+    expect(html).toContain("Steps (1)");
+    expect(html).toContain("cache_hit");
+  });
+
+  it("renders a workflow run with no steps without throwing", () => {
+    const html = renderBody({
+      subject: { kind: "workflow", id: "wf-2" },
+      loading: false,
+      payload: { run: { id: "wf-2", state: "running" }, steps: [] },
+    });
+    expect(html).toContain("running");
+    expect(html).toContain("No journaled steps");
+  });
+
+  it("renders a cost preview with the capped flag and source", () => {
+    const html = renderBody({
+      subject: { kind: "cost-preview", id: "MILLS-4" },
+      loading: false,
+      payload: {
+        backlog_id: "MILLS-4",
+        path_class: "feature",
+        estimate_usd: 4.2,
+        ensemble_cap_usd: 5,
+        capped_by_policy: false,
+        confidence: "medium",
+        sample_size: 12,
+        source: "estimator/v1",
+      },
+    });
+    expect(html).toContain("$4.20");
+    expect(html).toContain("feature");
+    expect(html).toContain("medium");
+    expect(html).toContain("estimator/v1");
+  });
+
+  it("renders an eval score with its breakdown", () => {
+    const html = renderBody({
+      subject: { kind: "eval", id: "9" },
+      loading: false,
+      payload: {
+        ID: 9,
+        SubjectKind: "council_artifact",
+        Rubric: "default",
+        Score: 0.87,
+        Breakdown: { clarity: 0.9 },
+        JudgedBy: "auditor-a",
+      },
+    });
+    expect(html).toContain("council_artifact");
+    expect(html).toContain("0.87");
+    expect(html).toContain("Breakdown");
+    expect(html).toContain("clarity");
+  });
+
+  it("renders squad memory rows", () => {
+    const html = renderBody({
+      subject: { kind: "squad-memory", id: "alpha" },
+      loading: false,
+      payload: [
+        { ID: 1, Title: "pattern X works", Kind: "lesson", Importance: 0.8, Refs: ["MR!12"] },
+      ],
+    });
+    expect(html).toContain("pattern X works");
+    expect(html).toContain("lesson");
+    expect(html).toContain("MR!12");
+  });
+
+  it("renders an empty-state for a squad with no memory (200-empty)", () => {
+    const html = renderBody({
+      subject: { kind: "squad-memory", id: "alpha" },
+      loading: false,
+      payload: [],
+    });
+    expect(html).toContain("No working-memory entries");
+  });
+
+  it("renders squad outcomes rows", () => {
+    const html = renderBody({
+      subject: { kind: "squad-outcomes", id: "alpha" },
+      loading: false,
+      payload: [
+        { ID: 1, Outcome: "merged_clean", PathClass: "feature", CostUSD: 2.5, DurationSeconds: 90 },
+      ],
+    });
+    expect(html).toContain("merged_clean");
+    expect(html).toContain("$2.50");
+    expect(html).toContain("90s");
+  });
+
+  it("renders an empty-state for a squad with no outcomes", () => {
+    const html = renderBody({
+      subject: { kind: "squad-outcomes", id: "alpha" },
+      loading: false,
+      payload: [],
+    });
+    expect(html).toContain("No recorded outcomes");
+  });
 });

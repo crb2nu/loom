@@ -3,12 +3,44 @@ import * as vscode from "vscode";
 import { requestJson } from "../utils/http";
 
 import {
+  MILLS_REST_BASE,
   MILLS_REST_PATHS,
   millsAuditFindingPath,
   millsBacklogItemPath,
   millsCouncilRunPath,
   millsPipelineRunPath,
 } from "./millsTransport";
+
+/**
+ * Additional read-only REST paths surfaced in S7 (cost-preview, eval
+ * scores, cross-repo runs, workflow runs, per-squad memory/outcomes,
+ * capabilities). Kept here rather than in millsTransport so the S7
+ * client expansion is self-contained; a future loom-core rename of the
+ * shared `/api/mills` prefix still flows through MILLS_REST_BASE.
+ */
+const MILLS_S7_PATHS = {
+  costPreview: `${MILLS_REST_BASE}/cost-preview`,
+  evalScores: `${MILLS_REST_BASE}/eval/scores`,
+  crossRepoRuns: `${MILLS_REST_BASE}/cross-repo/runs`,
+  workflowRuns: `${MILLS_REST_BASE}/workflow/runs`,
+  capabilities: `${MILLS_REST_BASE}/capabilities`,
+} as const;
+
+function millsCrossRepoRunPath(id: string): string {
+  return `${MILLS_S7_PATHS.crossRepoRuns}/${encodeURIComponent(id)}`;
+}
+
+function millsWorkflowRunPath(id: string): string {
+  return `${MILLS_S7_PATHS.workflowRuns}/${encodeURIComponent(id)}`;
+}
+
+function millsSquadMemoryPath(name: string): string {
+  return `${MILLS_REST_PATHS.squads}/${encodeURIComponent(name)}/memory`;
+}
+
+function millsSquadOutcomesPath(name: string): string {
+  return `${MILLS_REST_PATHS.squads}/${encodeURIComponent(name)}/outcomes`;
+}
 
 /**
  * Settings for the Mills HUD client.
@@ -137,6 +169,170 @@ export interface MillsPolicyProposal {
   [key: string]: unknown;
 }
 
+/**
+ * `/api/mills/cost-preview?backlog_id=…` returns a `budget.CostEstimate`
+ * (snake_case json tags) wrapped in a `{ ...estimate, source }` envelope.
+ * Requires a backlog_id query param; the operator 400s without it and
+ * 503s when the policy manager isn't ready.
+ */
+export interface MillsCostPreview {
+  backlog_id?: string;
+  path_class?: string;
+  median_historical_usd?: number;
+  sidecar_slice_count?: number;
+  sidecar_overhead_usd?: number;
+  recursion_overhead_usd?: number;
+  estimate_usd?: number;
+  ensemble_cap_usd?: number;
+  capped_by_policy?: boolean;
+  confidence?: string;
+  sample_size?: number;
+  source?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * `/api/mills/eval/scores` returns a bare array of `store.EvalScore`
+ * (no json tags → Go-default PascalCase field names). The table stays
+ * empty until loom-core slice 3.5 starts recording judgments, so an
+ * empty array is the common case.
+ */
+export interface MillsEvalScore {
+  ID?: number;
+  SubjectKind?: string;
+  SubjectID?: string;
+  Rubric?: string;
+  Score?: number;
+  Breakdown?: Record<string, unknown>;
+  JudgedBy?: string;
+  EvaluatedAt?: string;
+  Notes?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * `/api/mills/cross-repo/runs` summary row (snake_case json tags). The
+ * list endpoint wraps rows in `{ runs, total, limit, filter }`; the get
+ * endpoint returns a bare summary object.
+ */
+export interface MillsCrossRepoRepoEntry {
+  project_id?: number;
+  repo_name?: string;
+  branch?: string;
+  mr_iid?: number | null;
+  ci_status?: string;
+  gate_status?: string;
+  [key: string]: unknown;
+}
+
+export interface MillsCrossRepoRun {
+  id: string;
+  backlog_item_id?: string;
+  state?: string;
+  atomicity_strategy?: string;
+  repos?: MillsCrossRepoRepoEntry[];
+  created_at?: string;
+  updated_at?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * `/api/mills/workflow/runs` summary row (snake_case json tags). The
+ * list endpoint wraps rows in `{ runs }`; the detail endpoint returns
+ * `{ run, steps }` where each step is a `workflowStepView`.
+ */
+export interface MillsWorkflowRun {
+  id: string;
+  backlog_id?: string;
+  engine?: string;
+  template?: string;
+  state?: string;
+  started_at?: string | null;
+  ended_at?: string | null;
+  cost_usd?: number;
+  step_count?: number;
+  [key: string]: unknown;
+}
+
+export interface MillsWorkflowStep {
+  id?: number;
+  step_key?: string;
+  event_type?: string;
+  status?: string;
+  spawn_id?: string;
+  call_hash?: string;
+  cost_usd?: number;
+  cost_source?: string;
+  effect_count?: number;
+  started_at?: string | null;
+  ended_at?: string | null;
+  badge?: string;
+  [key: string]: unknown;
+}
+
+export interface MillsWorkflowRunDetail {
+  run: MillsWorkflowRun;
+  steps: MillsWorkflowStep[];
+}
+
+/**
+ * `/api/mills/squads/{name}/memory` returns a bare array of
+ * `store.SquadMemory` (no json tags → PascalCase).
+ */
+export interface MillsSquadMemory {
+  ID?: number;
+  SquadName?: string;
+  Kind?: string;
+  Title?: string;
+  Body?: string;
+  Refs?: string[];
+  Importance?: number;
+  CreatedAt?: string;
+  LastSeenAt?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * `/api/mills/squads/{name}/outcomes` returns a bare array of
+ * `store.SquadOutcome` (no json tags → PascalCase).
+ */
+export interface MillsSquadOutcome {
+  ID?: number;
+  SquadName?: string;
+  PathClass?: string;
+  PipelineRunID?: string;
+  Outcome?: string;
+  CostUSD?: number;
+  DurationSeconds?: number;
+  CreatedAt?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * `/api/mills/capabilities` returns the operator's autonomy-readiness
+ * report (snake_case json tags). Used to render a read-only capability
+ * matrix; never throws when a subsystem is unwired.
+ */
+export interface MillsCapabilityRow {
+  id: string;
+  status?: string;
+  mode?: string;
+  required_for_autonomy?: boolean;
+  last_checked_at?: string;
+  message?: string;
+  source?: string;
+  config_key?: string;
+  [key: string]: unknown;
+}
+
+export interface MillsCapabilityReport {
+  autonomy_ready?: boolean;
+  autonomy_blockers?: string[];
+  capabilities?: MillsCapabilityRow[];
+  checked_at?: string;
+  [key: string]: unknown;
+}
+
 export type MillsHealth = "ok" | "paused" | "degraded" | "unreachable" | "unconfigured";
 
 export interface MillsStatusSnapshot {
@@ -215,6 +411,69 @@ export class MillsClient {
 
   async fetchAuditFinding(id: string): Promise<MillsAuditFinding> {
     return this.getJson<MillsAuditFinding>(millsAuditFindingPath(id));
+  }
+
+  // ---- S7 read surfaces ----------------------------------------------------
+
+  /**
+   * Cost preview for a backlog item. The operator requires a
+   * `backlog_id` query param (400 without it) and 503s when the policy
+   * manager isn't ready; both surface as a thrown Error the caller can
+   * render in a detail/empty state.
+   */
+  async fetchCostPreview(backlogId: string): Promise<MillsCostPreview> {
+    const path = `${MILLS_S7_PATHS.costPreview}?backlog_id=${encodeURIComponent(backlogId)}`;
+    return this.getJson<MillsCostPreview>(path);
+  }
+
+  async fetchEvalScores(): Promise<MillsEvalScore[]> {
+    return this.getJsonList<MillsEvalScore>(MILLS_S7_PATHS.evalScores);
+  }
+
+  async fetchCrossRepoRuns(): Promise<MillsCrossRepoRun[]> {
+    return this.getJsonList<MillsCrossRepoRun>(MILLS_S7_PATHS.crossRepoRuns);
+  }
+
+  async fetchCrossRepoRun(id: string): Promise<MillsCrossRepoRun> {
+    return this.getJson<MillsCrossRepoRun>(millsCrossRepoRunPath(id));
+  }
+
+  async fetchWorkflowRuns(): Promise<MillsWorkflowRun[]> {
+    return this.getJsonList<MillsWorkflowRun>(MILLS_S7_PATHS.workflowRuns);
+  }
+
+  /**
+   * Workflow run detail. The operator returns `{ run, steps }`; we
+   * normalize a missing `steps` to an empty array so the detail panel
+   * never iterates over undefined.
+   */
+  async fetchWorkflowRun(id: string): Promise<MillsWorkflowRunDetail> {
+    const raw = await this.getJson<Partial<MillsWorkflowRunDetail>>(millsWorkflowRunPath(id));
+    return {
+      run: raw?.run ?? { id },
+      steps: Array.isArray(raw?.steps) ? raw.steps : [],
+    };
+  }
+
+  /**
+   * Per-squad working memory. The operator 404s when the squad isn't in
+   * the canonical store and returns a bare array otherwise (empty when
+   * the squads loader is unconfigured); both are handled by the caller.
+   */
+  async fetchSquadMemory(name: string): Promise<MillsSquadMemory[]> {
+    return this.getJsonList<MillsSquadMemory>(millsSquadMemoryPath(name));
+  }
+
+  async fetchSquadOutcomes(name: string): Promise<MillsSquadOutcome[]> {
+    return this.getJsonList<MillsSquadOutcome>(millsSquadOutcomesPath(name));
+  }
+
+  /**
+   * Autonomy-readiness capability report. Always 200 — the operator
+   * reports per-row status rather than erroring on unwired subsystems.
+   */
+  async fetchCapabilities(): Promise<MillsCapabilityReport> {
+    return this.getJson<MillsCapabilityReport>(MILLS_S7_PATHS.capabilities);
   }
 
   /**
@@ -306,7 +565,16 @@ export function deriveHealth(status: MillsStatusResponse, kpis: MillsKpisRespons
   return "ok";
 }
 
-const LIST_WRAPPER_KEYS = ["items", "runs", "findings", "squads", "backlog"] as const;
+const LIST_WRAPPER_KEYS = [
+  "items",
+  "runs",
+  "findings",
+  "squads",
+  "backlog",
+  "scores",
+  "outcomes",
+  "memory",
+] as const;
 
 export function coerceList<T>(raw: unknown): T[] {
   if (Array.isArray(raw)) {

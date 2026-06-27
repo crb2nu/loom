@@ -306,6 +306,218 @@ describe("MillsClient detail endpoints", () => {
   });
 });
 
+describe("MillsClient S7 read surfaces", () => {
+  let channel: vscode.OutputChannel;
+  let client: MillsClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRequestJson.mockReset();
+    channel = makeChannel();
+    client = new MillsClient({ hudBaseUrl: "https://hud.example.com" }, channel);
+  });
+
+  it("fetchCostPreview hits /api/mills/cost-preview with backlog_id", async () => {
+    mockRequestJson.mockResolvedValue({ backlog_id: "MILLS-1", estimate_usd: 2.5, source: "x" });
+    const preview = await client.fetchCostPreview("MILLS-1");
+    expect(preview.estimate_usd).toBe(2.5);
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/cost-preview?backlog_id=MILLS-1",
+      {}
+    );
+  });
+
+  it("fetchCostPreview URL-encodes the backlog id", async () => {
+    mockRequestJson.mockResolvedValue({});
+    await client.fetchCostPreview("MILLS A/1");
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/cost-preview?backlog_id=MILLS%20A%2F1",
+      {}
+    );
+  });
+
+  it("fetchCostPreview propagates a 503 (policy manager not ready) as an Error", async () => {
+    mockRequestJson.mockRejectedValue(new Error("503 policy manager not ready"));
+    await expect(client.fetchCostPreview("MILLS-1")).rejects.toThrow("policy manager not ready");
+  });
+
+  it("fetchEvalScores hits /api/mills/eval/scores and returns the array", async () => {
+    mockRequestJson.mockResolvedValue([{ ID: 1, Score: 0.9 }]);
+    const scores = await client.fetchEvalScores();
+    expect(scores).toHaveLength(1);
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/eval/scores",
+      {}
+    );
+  });
+
+  it("fetchEvalScores returns [] on a 200-empty body (table empty until 3.5)", async () => {
+    mockRequestJson.mockResolvedValue([]);
+    const scores = await client.fetchEvalScores();
+    expect(scores).toEqual([]);
+  });
+
+  it("fetchEvalScores returns [] when requestJson yields {} (empty body)", async () => {
+    mockRequestJson.mockResolvedValue({});
+    const scores = await client.fetchEvalScores();
+    expect(scores).toEqual([]);
+  });
+
+  it("fetchCrossRepoRuns unwraps the {runs,total,limit} envelope", async () => {
+    mockRequestJson.mockResolvedValue({
+      runs: [{ id: "cr-1", state: "open" }],
+      total: 1,
+      limit: 50,
+    });
+    const runs = await client.fetchCrossRepoRuns();
+    expect(runs).toHaveLength(1);
+    expect(runs[0].id).toBe("cr-1");
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/cross-repo/runs",
+      {}
+    );
+  });
+
+  it("fetchCrossRepoRuns returns [] for an empty envelope", async () => {
+    mockRequestJson.mockResolvedValue({ runs: [], total: 0, limit: 50 });
+    expect(await client.fetchCrossRepoRuns()).toEqual([]);
+  });
+
+  it("fetchCrossRepoRun hits /api/mills/cross-repo/runs/{id}", async () => {
+    mockRequestJson.mockResolvedValue({ id: "cr-1", state: "merged" });
+    const run = await client.fetchCrossRepoRun("cr-1");
+    expect(run.state).toBe("merged");
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/cross-repo/runs/cr-1",
+      {}
+    );
+  });
+
+  it("fetchWorkflowRuns hits /api/mills/workflow/runs and unwraps {runs}", async () => {
+    mockRequestJson.mockResolvedValue({ runs: [{ id: "wf-1", state: "running" }] });
+    const runs = await client.fetchWorkflowRuns();
+    expect(runs).toHaveLength(1);
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/workflow/runs",
+      {}
+    );
+  });
+
+  it("fetchWorkflowRun returns {run, steps} and normalizes missing steps", async () => {
+    mockRequestJson.mockResolvedValue({ run: { id: "wf-1", state: "succeeded" } });
+    const detail = await client.fetchWorkflowRun("wf-1");
+    expect(detail.run.id).toBe("wf-1");
+    expect(detail.steps).toEqual([]);
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/workflow/runs/wf-1",
+      {}
+    );
+  });
+
+  it("fetchWorkflowRun carries nested steps through", async () => {
+    mockRequestJson.mockResolvedValue({
+      run: { id: "wf-1" },
+      steps: [{ step_key: "plan", badge: "live" }],
+    });
+    const detail = await client.fetchWorkflowRun("wf-1");
+    expect(detail.steps).toHaveLength(1);
+    expect(detail.steps[0].badge).toBe("live");
+  });
+
+  it("fetchWorkflowRun synthesizes a run id when the body is empty", async () => {
+    mockRequestJson.mockResolvedValue({});
+    const detail = await client.fetchWorkflowRun("wf-9");
+    expect(detail.run.id).toBe("wf-9");
+    expect(detail.steps).toEqual([]);
+  });
+
+  it("fetchSquadMemory hits the squad memory path and returns rows", async () => {
+    mockRequestJson.mockResolvedValue([{ ID: 1, Title: "note" }]);
+    const rows = await client.fetchSquadMemory("alpha");
+    expect(rows).toHaveLength(1);
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/squads/alpha/memory",
+      {}
+    );
+  });
+
+  it("fetchSquadMemory returns [] on a 200-empty body (loader unconfigured)", async () => {
+    mockRequestJson.mockResolvedValue([]);
+    expect(await client.fetchSquadMemory("alpha")).toEqual([]);
+  });
+
+  it("fetchSquadMemory URL-encodes the squad name", async () => {
+    mockRequestJson.mockResolvedValue([]);
+    await client.fetchSquadMemory("team a/b");
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/squads/team%20a%2Fb/memory",
+      {}
+    );
+  });
+
+  it("fetchSquadOutcomes hits the squad outcomes path", async () => {
+    mockRequestJson.mockResolvedValue([{ ID: 2, Outcome: "merged_clean" }]);
+    const rows = await client.fetchSquadOutcomes("alpha");
+    expect(rows[0].Outcome).toBe("merged_clean");
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/squads/alpha/outcomes",
+      {}
+    );
+  });
+
+  it("fetchSquadOutcomes returns [] when empty", async () => {
+    mockRequestJson.mockResolvedValue([]);
+    expect(await client.fetchSquadOutcomes("alpha")).toEqual([]);
+  });
+
+  it("propagates a 404 (squad not found) from squad memory/outcomes", async () => {
+    mockRequestJson.mockRejectedValue(new Error("404 squad not found"));
+    await expect(client.fetchSquadMemory("ghost")).rejects.toThrow("squad not found");
+  });
+
+  it("fetchCapabilities hits /api/mills/capabilities", async () => {
+    mockRequestJson.mockResolvedValue({
+      autonomy_ready: false,
+      autonomy_blockers: ["council.ensemble"],
+      capabilities: [{ id: "x", status: "stub" }],
+      checked_at: "2026-06-27T00:00:00Z",
+    });
+    const report = await client.fetchCapabilities();
+    expect(report.autonomy_ready).toBe(false);
+    expect(report.capabilities).toHaveLength(1);
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/capabilities",
+      {}
+    );
+  });
+
+  it("S7 reads throw when HUD URL is missing", async () => {
+    const bare = new MillsClient({ hudBaseUrl: "" }, channel);
+    await expect(bare.fetchEvalScores()).rejects.toThrow("Mills HUD URL is not configured");
+    await expect(bare.fetchCapabilities()).rejects.toThrow("Mills HUD URL is not configured");
+  });
+
+  it("S7 reads forward CF Access headers when configured", async () => {
+    mockRequestJson.mockResolvedValue([]);
+    const cfClient = new MillsClient(
+      {
+        hudBaseUrl: "https://hud.example.com",
+        cfAccessClientId: "id",
+        cfAccessClientSecret: "secret",
+      },
+      channel
+    );
+    await cfClient.fetchCrossRepoRuns();
+    expect(mockRequestJson).toHaveBeenCalledWith(
+      "https://hud.example.com/api/mills/cross-repo/runs",
+      expect.objectContaining({
+        "CF-Access-Client-Id": "id",
+        "CF-Access-Client-Secret": "secret",
+      })
+    );
+  });
+});
+
 describe("coerceList", () => {
   it("returns array unchanged", () => {
     expect(coerceList([{ a: 1 }])).toEqual([{ a: 1 }]);
@@ -317,6 +529,9 @@ describe("coerceList", () => {
     expect(coerceList({ findings: [3] })).toEqual([3]);
     expect(coerceList({ squads: [4] })).toEqual([4]);
     expect(coerceList({ backlog: [5] })).toEqual([5]);
+    expect(coerceList({ scores: [6] })).toEqual([6]);
+    expect(coerceList({ outcomes: [7] })).toEqual([7]);
+    expect(coerceList({ memory: [8] })).toEqual([8]);
   });
 
   it("returns [] for null, undefined, or unknown shape", () => {
