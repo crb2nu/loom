@@ -41,12 +41,22 @@ describe("MillsTreeProvider", () => {
     }
   });
 
-  it("returns six sections at root when configured", async () => {
+  it("returns nine sections at root when configured", async () => {
     const provider = new MillsTreeProvider({ hudBaseUrl: "https://hud.example.com" }, channel);
     const children = await provider.getChildren();
-    expect(children).toHaveLength(6);
+    expect(children).toHaveLength(9);
     const ids = children.map((n) => (n.kind === "section" ? n.sectionId : null));
-    expect(ids).toEqual(["backlog", "pipelines", "council", "squads", "audit", "proposals"]);
+    expect(ids).toEqual([
+      "backlog",
+      "pipelines",
+      "council",
+      "crossRepo",
+      "workflows",
+      "evalScores",
+      "squads",
+      "audit",
+      "proposals",
+    ]);
   });
 
   it("attaches an open-detail command to actionable leaves", async () => {
@@ -61,14 +71,67 @@ describe("MillsTreeProvider", () => {
     expect(item.command?.arguments).toEqual([{ kind: "backlog", id: "MILLS-1" }]);
   });
 
-  it("does not attach a command to squad leaves (no detail endpoint)", async () => {
+  it("makes squad leaves expandable (Memory/Outcomes children) with no direct command", async () => {
     mockRequestJson.mockResolvedValue([{ Name: "alpha" }]);
     const provider = new MillsTreeProvider({ hudBaseUrl: "https://hud.example.com" }, channel);
     const sections = await provider.getChildren();
     const squads = sections.find((s) => s.kind === "section" && s.sectionId === "squads");
     const leaves = await provider.getChildren(squads);
     const item = provider.getTreeItem(leaves[0]);
+    // The squad leaf itself is not directly clickable; it expands.
     expect(item.command).toBeUndefined();
+    expect(item.collapsibleState).toBe(vscode.TreeItemCollapsibleState.Collapsed);
+    // Its children are Memory + Outcomes, each opening the detail panel.
+    const children = await provider.getChildren(leaves[0]);
+    expect(children).toHaveLength(2);
+    const childSubjects = children.map((c) => (c.kind === "squad-child" ? c.subject : undefined));
+    expect(childSubjects).toEqual([
+      { kind: "squad-memory", id: "alpha" },
+      { kind: "squad-outcomes", id: "alpha" },
+    ]);
+    const memItem = provider.getTreeItem(children[0]);
+    expect(memItem.command?.command).toBe("loom.openMillsDetail");
+    expect(memItem.command?.arguments).toEqual([{ kind: "squad-memory", id: "alpha" }]);
+  });
+
+  it("exposes a Cost Preview child under each backlog leaf", async () => {
+    mockRequestJson.mockResolvedValue([{ ID: "MILLS-9", State: "queued" }]);
+    const provider = new MillsTreeProvider({ hudBaseUrl: "https://hud.example.com" }, channel);
+    const sections = await provider.getChildren();
+    const backlog = sections.find((s) => s.kind === "section" && s.sectionId === "backlog");
+    const leaves = await provider.getChildren(backlog);
+    const children = await provider.getChildren(leaves[0]);
+    expect(children).toHaveLength(1);
+    const childSubject = children[0].kind === "squad-child" ? children[0].subject : undefined;
+    expect(childSubject).toEqual({ kind: "cost-preview", id: "MILLS-9" });
+  });
+
+  it("renders new read sections (cross-repo, workflow, eval) with leaves", async () => {
+    mockRequestJson
+      .mockResolvedValueOnce({ runs: [{ id: "cr-1", state: "open", repos: [{ branch: "x" }] }] })
+      .mockResolvedValueOnce({ runs: [{ id: "wf-1", engine: "imperative", state: "running" }] })
+      .mockResolvedValueOnce([{ ID: 5, SubjectKind: "council_artifact", Score: 0.8 }]);
+    const provider = new MillsTreeProvider({ hudBaseUrl: "https://hud.example.com" }, channel);
+    const sections = await provider.getChildren();
+
+    const cr = sections.find((s) => s.kind === "section" && s.sectionId === "crossRepo");
+    const crLeaves = await provider.getChildren(cr);
+    expect(crLeaves[0].kind).toBe("leaf");
+    if (crLeaves[0].kind === "leaf") {
+      expect(crLeaves[0].leaf.subject).toEqual({ kind: "cross-repo", id: "cr-1" });
+    }
+
+    const wf = sections.find((s) => s.kind === "section" && s.sectionId === "workflows");
+    const wfLeaves = await provider.getChildren(wf);
+    if (wfLeaves[0].kind === "leaf") {
+      expect(wfLeaves[0].leaf.subject).toEqual({ kind: "workflow", id: "wf-1" });
+    }
+
+    const ev = sections.find((s) => s.kind === "section" && s.sectionId === "evalScores");
+    const evLeaves = await provider.getChildren(ev);
+    if (evLeaves[0].kind === "leaf") {
+      expect(evLeaves[0].leaf.subject).toEqual({ kind: "eval", id: "5" });
+    }
   });
 
   it("each section's getTreeItem returns a Collapsed item", async () => {
