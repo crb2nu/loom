@@ -5,7 +5,13 @@ import { promisify } from "util";
 
 import * as vscode from "vscode";
 
-import { DaemonClient, SkillsClient, AgentContextClient, PlatformConfigClient } from "./clients";
+import {
+  DaemonClient,
+  HubClient,
+  SkillsClient,
+  AgentContextClient,
+  PlatformConfigClient,
+} from "./clients";
 import {
   registerAllCommands,
   CommandContext,
@@ -881,10 +887,14 @@ function registerServerHealth(
   );
   context.subscriptions.push(profileManager);
 
+  // Hub client for the Server Health panel's degraded/divergence banner.
+  const hubClient = new HubClient(env.hubStatusManager.getSettings(), env.loomChannel);
+
   const serverHealthCommandDisposables = registerServerHealthCommands({
     loomChannel: env.loomChannel,
     serverMetricsManager,
     profileManager,
+    hubClient,
     extensionContext: context,
   });
   context.subscriptions.push(...serverHealthCommandDisposables);

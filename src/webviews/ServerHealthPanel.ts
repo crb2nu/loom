@@ -1,13 +1,40 @@
 import { Webview, WebviewPanel, window, Uri, ViewColumn } from "vscode";
 
+import { HubServerHealth, HubHealthDivergenceEntry } from "../clients/hub";
 import { ServerHealthMetrics, ServerHealthHistory, RoutingStatus } from "../types";
 
 import { BaseWebviewPanel } from "./BaseWebviewPanel";
+import {
+  collectDegradedServers,
+  renderDegradedBanner,
+  renderDivergenceSummary,
+  renderServerHealthDetail,
+} from "./server-health/healthBanner";
 
 export interface ServerHealthData {
   metrics: ServerHealthMetrics[];
   history: Map<string, ServerHealthHistory>;
   routing: RoutingStatus;
+  /** Parsed `/api/health` per-server map; drives the degraded banner + per-card detail. */
+  hubServers?: Record<string, HubServerHealth>;
+  /** Top-level `/api/health` divergence summary entries. */
+  divergence?: HubHealthDivergenceEntry[];
+}
+
+/**
+ * Build the top-of-body health banner section (degraded servers + health/router
+ * divergence summary) from a parsed `/api/health` payload. Returns an empty
+ * string when nothing is degraded and there is no divergence, so callers can
+ * inject the result unconditionally.
+ */
+export function renderHealthBannerSection(
+  hubServers: Record<string, HubServerHealth> | undefined,
+  divergence: HubHealthDivergenceEntry[] | undefined
+): string {
+  return (
+    renderDegradedBanner(collectDegradedServers(hubServers ?? {})) +
+    renderDivergenceSummary(divergence ?? [])
+  );
 }
 
 interface ServerHealthMessage {
@@ -53,12 +80,25 @@ export class ServerHealthPanel extends BaseWebviewPanel {
       }));
     });
 
+    // Pre-render the health banner + per-server detail in the extension host so
+    // the webview JS only has to inject the resulting HTML strings.
+    const bannerHtml = renderHealthBannerSection(data.hubServers, data.divergence);
+    const serverDetails: Record<string, string> = {};
+    for (const [name, server] of Object.entries(data.hubServers ?? {})) {
+      const detail = renderServerHealthDetail(server);
+      if (detail) {
+        serverDetails[name] = detail;
+      }
+    }
+
     this.postMessage({
       type: "updateData",
       data: {
         metrics: data.metrics,
         history: historyData,
         routing: data.routing,
+        bannerHtml,
+        serverDetails,
       },
     });
   }
@@ -155,11 +195,26 @@ export class ServerHealthPanel extends BaseWebviewPanel {
         .gauge-fill-warn { background: #f57c00; }
         .gauge-fill-error { background: #c62828; }
         .empty-state { text-align: center; padding: 40px; color: var(--vscode-descriptionForeground); }
+        .health-banner-host:empty { display: none; }
+        .health-banner-host { margin-bottom: 16px; }
+        .health-banner { border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; border: 1px solid transparent; }
+        .health-banner:last-child { margin-bottom: 0; }
+        .health-banner-degraded { background: rgba(245, 124, 0, 0.12); border-color: #f57c00; }
+        .health-banner-divergence { background: rgba(198, 40, 40, 0.12); border-color: #c62828; }
+        .health-banner-title { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+        .health-banner-list { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.5; }
+        .banner-server { font-weight: 600; }
+        .health-detail { font-size: 11px; margin-top: 8px; padding: 6px 8px; border-radius: 4px; background: var(--vscode-textBlockQuote-background); }
+        .health-detail-label { font-weight: 600; margin-right: 4px; }
+        .health-monitor-unhealthy { color: var(--vscode-errorForeground); }
+        .health-divergence-flags { color: var(--vscode-descriptionForeground); }
     </style>
 </head>
 <body>
     <h1>Server Health Dashboard</h1>
     <div class="subtitle" id="lastUpdate">Waiting for data...</div>
+
+    <div class="health-banner-host" id="healthBanner"></div>
 
     <div class="routing-summary" id="routingSummary">
         <div class="routing-group">
@@ -211,6 +266,10 @@ export class ServerHealthPanel extends BaseWebviewPanel {
             document.getElementById('lastUpdate').textContent =
                 'Last updated: ' + new Date().toLocaleTimeString();
 
+            // Update health banner (degraded servers + health/router divergence).
+            // bannerHtml is pre-escaped and pre-rendered by the extension host.
+            document.getElementById('healthBanner').innerHTML = data.bannerHtml || '';
+
             // Update routing summary
             if (data.routing) {
                 document.getElementById('hubRoutedList').textContent =
@@ -244,7 +303,10 @@ export class ServerHealthPanel extends BaseWebviewPanel {
                 return;
             }
 
-            grid.innerHTML = metrics.map(m => renderServerCard(m, data.history[m.serverName])).join('');
+            const serverDetails = data.serverDetails || {};
+            grid.innerHTML = metrics
+                .map(m => renderServerCard(m, data.history[m.serverName], serverDetails[m.serverName]))
+                .join('');
 
             // Initialize charts
             metrics.forEach(m => {
@@ -255,7 +317,7 @@ export class ServerHealthPanel extends BaseWebviewPanel {
             });
         }
 
-        function renderServerCard(metrics, history) {
+        function renderServerCard(metrics, history, detailHtml) {
             return \`
                 <div class="server-card">
                     <div class="server-header">
@@ -280,6 +342,7 @@ export class ServerHealthPanel extends BaseWebviewPanel {
                     <div class="chart-container">
                         <canvas id="chart-\${metrics.serverName}"></canvas>
                     </div>
+                    \${detailHtml || ''}
                 </div>
             \`;
         }
