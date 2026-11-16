@@ -20,3 +20,11 @@ out
 claude_desktop_config/
 coverage/
 .husky/_/
+
+# Planning notes under .loom/ stay out of the repository (2026-11-16).
+# Files that tooling reads stay tracked.
+.loom/**/*.md
+.loom/**/*.txt
+.loom/**/*.html
+.loom/**/*.log
+.loom/**/*.csv
